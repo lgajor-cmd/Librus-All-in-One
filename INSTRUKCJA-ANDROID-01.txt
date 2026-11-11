@@ -1,0 +1,32 @@
+LIBRUS ALL-IN-ONE — PACZKA 01
+
+To jest szkielet Androida do sprawdzenia budowania APK i połączenia z serwerem.
+To NIE jest jeszcze działająca integracja Librusa. Nie wpisuj loginu ani hasła Librus.
+
+Wgrywanie z telefonu:
+1. Otwórz https://github.com/lgajor-cmd/Librus-All-in-One i wybierz gałąź main.
+2. Dla każdego pliku z paczki wybierz Add file -> Create new file.
+3. W polu nazwy wpisz dokładną ścieżkę poniżej.
+4. Otwórz odpowiadający plik z paczki, skopiuj całą zawartość i wklej do GitHuba.
+5. Kliknij Commit changes.
+
+Kolejność:
+1. settings.gradle.kts
+2. build.gradle.kts
+3. gradle.properties
+4. app/build.gradle.kts
+5. app/src/main/AndroidManifest.xml
+6. app/src/main/java/pl/domreksio/librusallinone/MainActivity.kt
+7. .github/workflows/build-apk.yml
+
+UWAGA: .github/workflows/build-apk.yml JUŻ ISTNIEJE. Otwórz go w repozytorium, kliknij ołówek (Edit), zastąp całą treść treścią pliku z paczki i zatwierdź. Nie twórz drugiego workflow.
+
+Jeśli plik o tej nazwie już istnieje, edytuj go i zastąp całą treść — nie twórz duplikatu.
+Nie usuwaj LibrusAllInOne_ProjektStartowy.zip ani folderu backend.
+
+Po wgraniu wszystkich plików:
+GitHub -> Actions -> Build Librus APK -> Run workflow.
+Po zakończeniu otwórz zielone wykonanie, sekcja Artifacts, pobierz Librus-All-in-One-APK.zip.
+Rozpakuj ZIP w telefonie i zainstaluj app-debug.apk.
+
+Następny etap to bezpieczne logowanie do Librusa i podłączenie rzeczywistych danych.
