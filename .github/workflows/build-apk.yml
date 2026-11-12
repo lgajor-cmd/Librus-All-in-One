@@ -52,7 +52,7 @@ jobs:
           test -f app/src/main/java/pl/domreksio/librusallinone/MainActivity.kt
 
       - name: Build APK
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug --stacktrace --info
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
