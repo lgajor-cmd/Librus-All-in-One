@@ -60,7 +60,7 @@ class MainActivity : Activity() {
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(165, 178, 198)
     private val panel = Color.rgb(25, 34, 51)
-    private val background = Color.rgb(13, 18, 30)
+    private val bgColor = Color.rgb(13, 18, 30)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,7 +113,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 36, 24, 28)
-            setBackgroundColor(background)
+            setBackgroundColor(bgColor)
         }
 
         content.addView(
@@ -176,7 +176,7 @@ class MainActivity : Activity() {
         )
 
         setContentView(ScrollView(this).apply {
-            setBackgroundColor(background)
+            setBackgroundColor(bgColor)
             addView(content)
         })
     }
@@ -187,7 +187,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 36, 24, 28)
-            setBackgroundColor(background)
+            setBackgroundColor(bgColor)
         }
 
         content.addView(
@@ -216,7 +216,7 @@ class MainActivity : Activity() {
         }, params(0, 24, 0, 8))
 
         setContentView(ScrollView(this).apply {
-            setBackgroundColor(background)
+            setBackgroundColor(bgColor)
             addView(content)
         })
     }
