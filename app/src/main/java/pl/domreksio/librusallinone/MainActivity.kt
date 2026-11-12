@@ -2,6 +2,7 @@
 package pl.domreksio.librusallinone
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.content.Intent
 import android.graphics.Color
@@ -68,6 +69,13 @@ class MainActivity : Activity() {
     private lateinit var librusPasswordInput: EditText
     private lateinit var librusStatusText: TextView
     private lateinit var librusConnectButton: Button
+
+    // Dane Librusa przechowywane tylko w pamięci aplikacji.
+    private var librusLoginMemory: String? = null
+    private var librusPasswordMemory: String? = null
+    private var librusSessionMemory: JSONObject? = null
+    private var librusDataMemory: JSONObject? = null
+    private var syncInProgress = false
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(165, 178, 198)
@@ -243,8 +251,6 @@ class MainActivity : Activity() {
             }
         }, params(0, 8, 0, 12))
 
-        // POŁĄCZENIE Z LIBRUSEM
-
         content.addView(
             label("POŁĄCZ KONTO LIBRUS", 18f, white, true),
             params(0, 20, 0, 4)
@@ -267,10 +273,7 @@ class MainActivity : Activity() {
             setBackgroundColor(panel)
         }
 
-        content.addView(
-            librusLoginInput,
-            params(0, 12, 0, 8)
-        )
+        content.addView(librusLoginInput, params(0, 12, 0, 8))
 
         librusPasswordInput = EditText(this).apply {
             hint = "Hasło do Librusa"
@@ -284,10 +287,7 @@ class MainActivity : Activity() {
             setBackgroundColor(panel)
         }
 
-        content.addView(
-            librusPasswordInput,
-            params(0, 0, 0, 8)
-        )
+        content.addView(librusPasswordInput, params(0, 0, 0, 8))
 
         librusConnectButton = Button(this).apply {
             text = "POŁĄCZ Z LIBRUSEM"
@@ -296,10 +296,7 @@ class MainActivity : Activity() {
             }
         }
 
-        content.addView(
-            librusConnectButton,
-            params(0, 4, 0, 8)
-        )
+        content.addView(librusConnectButton, params(0, 4, 0, 8))
 
         librusStatusText = label(
             "Konto Librus nie zostało jeszcze podłączone.",
@@ -310,7 +307,7 @@ class MainActivity : Activity() {
 
         content.addView(
             label(
-                "Dane logowania są przesyłane do Twojego backendu przez HTTPS. Nie zapisujemy ich w kodzie aplikacji.",
+                "Dane logowania są przesyłane do Twojego backendu przez HTTPS. Hasło nie jest zapisywane na serwerze.",
                 12f, muted
             ),
             params(0, 4, 0, 12)
@@ -325,25 +322,25 @@ class MainActivity : Activity() {
         addHomeSection(
             content,
             "OCENY",
-            "Oceny i średnie – po podłączeniu Librusa"
+            "Oceny zwykłe, opisowe, punktowe i tekstowe"
         )
 
         addHomeSection(
             content,
             "FREKWENCJA",
-            "Obecności i nieobecności – po podłączeniu Librusa"
+            "Obecności i nieobecności"
         )
 
         addHomeSection(
             content,
             "PLAN LEKCJI",
-            "Plan i zastępstwa – po podłączeniu Librusa"
+            "Plan lekcji i zajęcia"
         )
 
         addHomeSection(
             content,
             "WIADOMOŚCI",
-            "Ogłoszenia i wiadomości – po podłączeniu Librusa"
+            "Wiadomości i ogłoszenia"
         )
 
         content.addView(Button(this).apply {
@@ -445,10 +442,16 @@ class MainActivity : Activity() {
                 if (responseCode in 200..299) {
                     val json = JSONObject(responseBody)
 
-                    if (json.has("student")) {
-                        "SUCCESS|Połączenie z Librusem powiodło się. Serwer przyjął dane konta rodzica."
+                    if (json.has("student") && json.has("session")) {
+                        librusLoginMemory = login
+                        librusPasswordMemory = password
+                        librusSessionMemory =
+                            json.optJSONObject("session")
+                        librusDataMemory = null
+
+                        "SUCCESS|Połączono z Librusem. Wybierz sekcję, aby pobrać dane."
                     } else {
-                        "ERROR|Serwer odpowiedział, ale nie zwrócił danych profilu. Sprawdź dokumentację backendu."
+                        "ERROR|Serwer nie zwrócił profilu lub sesji Librusa."
                     }
                 } else {
                     val detail = try {
@@ -485,12 +488,255 @@ class MainActivity : Activity() {
                     )
 
                     librusConnectButton.isEnabled = true
-
-                    // Nie pozostawiamy hasła w polu po próbie połączenia.
                     librusPasswordInput.text.clear()
                 }
             }
         }
+    }
+
+    private fun loadLibrusSection(section: String) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+
+        if (login.isNullOrBlank() || password.isNullOrBlank()) {
+            AlertDialog.Builder(this)
+                .setTitle("Brak połączenia z Librusem")
+                .setMessage(
+                    "Najpierw połącz konto Librus. Dane logowania są przechowywane tylko w pamięci aplikacji."
+                )
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+
+        if (syncInProgress) return
+
+        val cached = librusDataMemory
+        if (cached != null) {
+            showLibrusSection(section, cached)
+            return
+        }
+
+        if (token.isNullOrBlank()) {
+            librusStatusText.text =
+                "Sesja aplikacji wygasła. Zaloguj się ponownie."
+            librusStatusText.setTextColor(errorColor)
+            return
+        }
+
+        syncInProgress = true
+        librusStatusText.text = "Pobieram dane z Librusa…"
+        librusStatusText.setTextColor(muted)
+
+        thread {
+            var connection: HttpURLConnection? = null
+
+            val result = try {
+                connection =
+                    URL("$BACKEND_URL/v1/sync")
+                        .openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 120000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $token"
+                )
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+                )
+
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+
+                    librusSessionMemory?.let {
+                        put("session", it)
+                    }
+                }
+
+                connection.outputStream.use { output ->
+                    output.write(
+                        payload.toString().toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                val responseCode = connection.responseCode
+
+                val responseBody =
+                    if (responseCode in 200..299) {
+                        connection.inputStream
+                            .bufferedReader()
+                            .use { it.readText() }
+                    } else {
+                        connection.errorStream
+                            ?.bufferedReader()
+                            ?.use { it.readText() }
+                            ?: ""
+                    }
+
+                if (responseCode in 200..299) {
+                    val json = JSONObject(responseBody)
+                    val data = json.optJSONObject("data")
+
+                    if (data != null) {
+                        librusDataMemory = data
+                        librusSessionMemory =
+                            json.optJSONObject("session")
+                                ?: librusSessionMemory
+
+                        "SUCCESS"
+                    } else {
+                        "ERROR|Serwer nie zwrócił pola data."
+                    }
+                } else {
+                    val detail = try {
+                        JSONObject(responseBody)
+                            .optString(
+                                "detail",
+                                "HTTP $responseCode"
+                            )
+                    } catch (_: Exception) {
+                        "HTTP $responseCode"
+                    }
+
+                    "ERROR|Synchronizacja nie powiodła się ($responseCode): $detail"
+                }
+
+            } catch (e: Exception) {
+                "ERROR|Błąd pobierania: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+
+                if (isFinishing) return@runOnUiThread
+
+                if (result == "SUCCESS") {
+                    if (::librusStatusText.isInitialized) {
+                        librusStatusText.text =
+                            "Dane Librusa pobrane."
+                        librusStatusText.setTextColor(successColor)
+                    }
+
+                    librusDataMemory?.let {
+                        showLibrusSection(section, it)
+                    }
+                } else if (::librusStatusText.isInitialized) {
+                    librusStatusText.text =
+                        result.substringAfter("|")
+                    librusStatusText.setTextColor(errorColor)
+                }
+            }
+        }
+    }
+
+    private fun showLibrusSection(
+        section: String,
+        data: JSONObject
+    ) {
+        val keys = when (section) {
+            "OCENY" -> listOf(
+                "grades",
+                "descriptive_grades",
+                "partial_grades",
+                "point_grades",
+                "text_grades",
+                "behaviour_grades",
+                "grading_system"
+            )
+
+            "FREKWENCJA" -> listOf(
+                "attendances",
+                "attendance_types"
+            )
+
+            "PLAN LEKCJI" -> listOf(
+                "timetable"
+            )
+
+            "WIADOMOŚCI" -> listOf(
+                "messages",
+                "announcements"
+            )
+
+            "PROFILE" -> listOf(
+                "me",
+                "students",
+                "classes",
+                "subjects",
+                "teachers"
+            )
+
+            else -> data.keys().asSequence().toList()
+        }
+
+        val output = StringBuilder()
+
+        for (key in keys) {
+            if (data.has(key) && !data.isNull(key)) {
+                if (output.isNotEmpty()) {
+                    output.append("\n\n")
+                }
+
+                output.append(key.uppercase()).append("\n")
+                output.append(data.opt(key).toString())
+            }
+        }
+
+        if (output.isEmpty()) {
+            output.append(
+                "Nie znaleziono danych tej sekcji w odpowiedzi API.\n\n"
+            )
+
+            output.append("Dostępne pola: ")
+            output.append(
+                data.keys().asSequence().toList().joinToString(", ")
+            )
+        }
+
+        val body = TextView(this).apply {
+            text = output.toString()
+            textSize = 13f
+            setTextColor(white)
+            setPadding(20, 16, 20, 16)
+        }
+
+        val scroll = ScrollView(this).apply {
+            addView(body)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(section)
+            .setView(scroll)
+            .setPositiveButton("ZAMKNIJ", null)
+            .setNeutralButton("ODŚWIEŻ", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                .setOnClickListener {
+                    librusDataMemory = null
+                    dialog.dismiss()
+                    loadLibrusSection(section)
+                }
+        }
+
+        dialog.show()
     }
 
     private fun checkBackendConnection() {
@@ -610,8 +856,10 @@ class MainActivity : Activity() {
     ) {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 12, 16, 12)
+            setPadding(18, 16, 18, 16)
             setBackgroundColor(panel)
+            isClickable = true
+            isFocusable = true
         }
 
         card.addView(
@@ -621,6 +869,10 @@ class MainActivity : Activity() {
         card.addView(
             label(description, 13f, muted)
         )
+
+        card.setOnClickListener {
+            loadLibrusSection(heading)
+        }
 
         parent.addView(card, params(0, 10, 0, 0))
     }
