@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.FlowType
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.createSupabaseClient
@@ -66,6 +67,7 @@ class MainActivity : Activity() {
 
         content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
         content.addView(label("Twoje konto\nw jednym miejscu", 30f, white, true))
+
         content.addView(
             label(
                 "Załóż konto lub zaloguj się. Konto aplikacji jest oddzielne od danych Librusa.",
