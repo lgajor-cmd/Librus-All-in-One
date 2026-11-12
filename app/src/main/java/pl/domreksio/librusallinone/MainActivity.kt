@@ -3,10 +3,14 @@ package pl.domreksio.librusallinone
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.os.Bundle
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
 import android.text.InputType
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -27,9 +31,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.concurrent.thread
 
 private const val SUPABASE_URL =
@@ -81,37 +89,35 @@ class MainActivity : Activity() {
     private var autoRestoreStarted = false
 
     private val white = Color.rgb(242, 245, 250)
-    private val muted = Color.rgb(165, 178, 198)
+    private val muted = Color.rgb(155, 169, 190)
     private val panel = Color.rgb(25, 34, 51)
+    private val panelLight = Color.rgb(34, 45, 65)
     private val bgColor = Color.rgb(13, 18, 30)
     private val successColor = Color.rgb(100, 210, 140)
     private val errorColor = Color.rgb(255, 125, 125)
+    private val accentColor = Color.rgb(105, 165, 255)
+    private val warningColor = Color.rgb(255, 190, 95)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         librusVault = LibrusCredentialVault(applicationContext)
-
         showLogin("Sprawdzam sesję konta…")
 
         activityScope.launch {
             supabase.auth.sessionStatus.collect { state ->
                 when (state) {
-                    is SessionStatus.Authenticated -> {
+                    is SessionStatus.Authenticated ->
                         showHome(state.session.user?.email.orEmpty())
-                    }
 
-                    SessionStatus.Initializing -> {
+                    SessionStatus.Initializing ->
                         showLogin("Sprawdzam zapisane konto…")
-                    }
 
-                    is SessionStatus.NotAuthenticated -> {
+                    is SessionStatus.NotAuthenticated ->
                         showLogin("Zaloguj się, aby otworzyć aplikację.")
-                    }
 
-                    is SessionStatus.RefreshFailure -> {
+                    is SessionStatus.RefreshFailure ->
                         showLogin("Sesja wygasła. Zaloguj się ponownie.")
-                    }
                 }
             }
         }
@@ -134,6 +140,10 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------
+    // LOGOWANIE DO APLIKACJI
+    // ---------------------------------------------------------
+
     private fun showLogin(message: String) {
         if (isFinishing) return
 
@@ -145,50 +155,34 @@ class MainActivity : Activity() {
 
         content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
         content.addView(label("Twoje konto\nw jednym miejscu", 30f, white, true))
-
         content.addView(
             label(
                 "Zaloguj się do konta aplikacji. To konto jest oddzielne od danych Librusa.",
-                15f, muted
+                15f,
+                muted
             )
         )
 
-        emailInput = EditText(this).apply {
-            hint = "Adres e-mail"
-            setSingleLine(true)
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
+        emailInput = inputField(
+            "Adres e-mail",
+            InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-            setTextColor(white)
-            setHintTextColor(muted)
-            setPadding(16, 12, 16, 12)
-            setBackgroundColor(panel)
-        }
-
+        )
         content.addView(emailInput, params(0, 18, 0, 8))
 
-        passwordInput = EditText(this).apply {
-            hint = "Hasło do konta aplikacji"
-            setSingleLine(true)
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
+        passwordInput = inputField(
+            "Hasło do konta aplikacji",
+            InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setTextColor(white)
-            setHintTextColor(muted)
-            setPadding(16, 12, 16, 12)
-            setBackgroundColor(panel)
-        }
-
+        )
         content.addView(passwordInput, params(0, 0, 0, 12))
 
-        content.addView(Button(this).apply {
-            text = "ZAREJESTRUJ KONTO"
-            setOnClickListener { authenticate(true) }
+        content.addView(actionButton("ZAREJESTRUJ KONTO") {
+            authenticate(true)
         }, params(0, 4, 0, 6))
 
-        content.addView(Button(this).apply {
-            text = "ZALOGUJ SIĘ"
-            setOnClickListener { authenticate(false) }
+        content.addView(actionButton("ZALOGUJ SIĘ") {
+            authenticate(false)
         }, params(0, 4, 0, 6))
 
         statusText = label(message, 14f, muted)
@@ -197,7 +191,8 @@ class MainActivity : Activity() {
         content.addView(
             label(
                 "Po rejestracji potwierdź adres e-mail. Po zalogowaniu otworzy się ekran główny.",
-                13f, muted
+                13f,
+                muted
             )
         )
 
@@ -207,19 +202,23 @@ class MainActivity : Activity() {
         })
     }
 
+    // ---------------------------------------------------------
+    // EKRAN GŁÓWNY
+    // ---------------------------------------------------------
+
     private fun showHome(email: String) {
         if (isFinishing) return
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 36, 24, 28)
+            setPadding(20, 28, 20, 28)
             setBackgroundColor(bgColor)
         }
 
         content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
         content.addView(label("Witaj!", 32f, white, true))
         content.addView(label("Zalogowano jako: $email", 14f, muted))
-        content.addView(label("Konto aplikacji działa.", 15f, white))
+        content.addView(label("Konto aplikacji działa.", 15f, successColor))
 
         val savedLibrus = librusVault.load()
 
@@ -236,69 +235,37 @@ class MainActivity : Activity() {
             }
         }
 
-        content.addView(
-            label("POŁĄCZENIE Z BACKENDEM", 14f, white, true),
-            params(0, 18, 0, 4)
-        )
+        content.addView(sectionHeader("POŁĄCZENIE Z BACKENDEM"), params(0, 20, 0, 5))
 
-        backendStatusText = label(
-            "Nie sprawdzono jeszcze połączenia.",
-            14f, muted
-        )
-
+        backendStatusText = label("Nie sprawdzono jeszcze połączenia.", 14f, muted)
         content.addView(backendStatusText)
 
-        content.addView(Button(this).apply {
-            text = "SPRAWDŹ POŁĄCZENIE Z SERWEREM"
-            setOnClickListener { checkBackendConnection() }
+        content.addView(actionButton("SPRAWDŹ POŁĄCZENIE Z SERWEREM") {
+            checkBackendConnection()
         }, params(0, 8, 0, 12))
 
-        content.addView(
-            label("POŁĄCZ KONTO LIBRUS", 18f, white, true),
-            params(0, 20, 0, 4)
-        )
-
+        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 16, 0, 5))
         content.addView(
             label(
                 "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
-                14f, muted
+                14f,
+                muted
             )
         )
 
-        librusLoginInput = EditText(this).apply {
-            hint = "Login do Librusa"
-            setSingleLine(true)
-            inputType = InputType.TYPE_CLASS_TEXT
-            setTextColor(white)
-            setHintTextColor(muted)
-            setPadding(16, 12, 16, 12)
-            setBackgroundColor(panel)
-        }
-
+        librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
         content.addView(librusLoginInput, params(0, 12, 0, 8))
-        savedLibrus?.let {
-            librusLoginInput.setText(it.login)
-        }
+        savedLibrus?.let { librusLoginInput.setText(it.login) }
 
-        librusPasswordInput = EditText(this).apply {
-            hint = "Hasło do Librusa"
-            setSingleLine(true)
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setTextColor(white)
-            setHintTextColor(muted)
-            setPadding(16, 12, 16, 12)
-            setBackgroundColor(panel)
-        }
-
+        librusPasswordInput = inputField(
+            "Hasło do Librusa",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
         content.addView(librusPasswordInput, params(0, 0, 0, 8))
 
-        librusConnectButton = Button(this).apply {
-            text = "POŁĄCZ Z LIBRUSEM"
-            setOnClickListener { connectLibrus() }
+        librusConnectButton = actionButton("POŁĄCZ Z LIBRUSEM") {
+            connectLibrus()
         }
-
         content.addView(librusConnectButton, params(0, 4, 0, 8))
 
         librusStatusText = label(
@@ -306,28 +273,30 @@ class MainActivity : Activity() {
                 "Znaleziono zapisane połączenie z Librusem."
             else
                 "Konto Librus nie zostało jeszcze podłączone.",
-            14f, muted
+            14f,
+            muted
         )
-
         content.addView(librusStatusText)
 
         content.addView(
             label(
                 "Dane logowania są przesyłane do Twojego backendu przez HTTPS. Hasło jest przechowywane lokalnie w postaci zaszyfrowanej.",
-                12f, muted
+                12f,
+                muted
             ),
             params(0, 4, 0, 12)
         )
 
-        addHomeSection(content, "PROFILE", "Profile rodzica i ucznia")
-        addHomeSection(content, "OCENY", "Oceny zwykłe, opisowe, punktowe i tekstowe")
-        addHomeSection(content, "FREKWENCJA", "Obecności i nieobecności")
-        addHomeSection(content, "PLAN LEKCJI", "Plan lekcji i zajęcia")
-        addHomeSection(content, "WIADOMOŚCI", "Wiadomości i ogłoszenia")
+        content.addView(sectionHeader("DANE UCZNIA"), params(0, 14, 0, 8))
 
-        content.addView(Button(this).apply {
-            text = "WYLOGUJ"
-            setOnClickListener { signOut() }
+        addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
+        addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
+        addHomeSection(content, "FREKWENCJA", "Obecności, nieobecności i spóźnienia", "📅")
+        addHomeSection(content, "PLAN LEKCJI", "Tygodniowy harmonogram zajęć", "🗓")
+        addHomeSection(content, "WIADOMOŚCI", "Wiadomości i ogłoszenia", "✉")
+
+        content.addView(actionButton("WYLOGUJ") {
+            signOut()
         }, params(0, 24, 0, 8))
 
         setContentView(ScrollView(this).apply {
@@ -337,66 +306,52 @@ class MainActivity : Activity() {
 
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
-
-            librusStatusText.text =
-                "Przywrócono zapisane połączenie. Synchronizuję dane…"
-            librusStatusText.setTextColor(muted)
-
+            librusStatusText.text = "Przywrócono zapisane połączenie. Synchronizuję dane…"
             loadLibrusSection("PROFILE")
         }
     }
+
+    // ---------------------------------------------------------
+    // POŁĄCZENIE Z LIBRUSEM
+    // ---------------------------------------------------------
 
     private fun connectLibrus() {
         val login = librusLoginInput.text.toString().trim()
         val password = librusPasswordInput.text.toString()
 
         if (login.isBlank()) {
-            librusStatusText.text = "Podaj login do Librusa."
-            librusStatusText.setTextColor(errorColor)
+            setLibrusStatus("Podaj login do Librusa.", false)
             return
         }
 
         if (password.isBlank()) {
-            librusStatusText.text = "Podaj hasło do Librusa."
-            librusStatusText.setTextColor(errorColor)
+            setLibrusStatus("Podaj hasło do Librusa.", false)
             return
         }
 
         val accessToken = supabase.auth.currentAccessTokenOrNull()
 
         if (accessToken.isNullOrBlank()) {
-            librusStatusText.text =
-                "Brak aktywnej sesji aplikacji. Zaloguj się ponownie."
-            librusStatusText.setTextColor(errorColor)
+            setLibrusStatus("Brak aktywnej sesji aplikacji. Zaloguj się ponownie.", false)
             return
         }
 
         librusConnectButton.isEnabled = false
-        librusStatusText.text =
-            "Łączę się z Librusem. To może chwilę potrwać…"
-        librusStatusText.setTextColor(muted)
+        setLibrusStatus("Łączę się z Librusem. To może chwilę potrwać…", null)
 
         thread {
             var connection: HttpURLConnection? = null
 
             val result = try {
-                connection =
-                    URL("$BACKEND_URL/v1/connect")
-                        .openConnection() as HttpURLConnection
+                connection = URL("$BACKEND_URL/v1/connect")
+                    .openConnection() as HttpURLConnection
 
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 30000
                 connection.readTimeout = 60000
                 connection.doOutput = true
-
-                connection.setRequestProperty(
-                    "Authorization",
-                    "Bearer $accessToken"
-                )
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json; charset=utf-8"
-                )
+                connection.setRequestProperty("Authorization", "Bearer $accessToken")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
@@ -405,27 +360,15 @@ class MainActivity : Activity() {
                     put("password", password)
                 }
 
-                connection.outputStream.use { output ->
-                    output.write(
-                        payload.toString().toByteArray(Charsets.UTF_8)
-                    )
+                connection.outputStream.use {
+                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
                 }
 
-                val responseCode = connection.responseCode
+                val code = connection.responseCode
+                val body = readResponse(connection, code)
 
-                val responseBody =
-                    if (responseCode in 200..299) {
-                        connection.inputStream.bufferedReader().use {
-                            it.readText()
-                        }
-                    } else {
-                        connection.errorStream
-                            ?.bufferedReader()
-                            ?.use { it.readText() } ?: ""
-                    }
-
-                if (responseCode in 200..299) {
-                    val json = JSONObject(responseBody)
+                if (code in 200..299) {
+                    val json = JSONObject(body)
 
                     if (json.has("student") && json.has("session")) {
                         librusLoginMemory = login
@@ -433,27 +376,15 @@ class MainActivity : Activity() {
                         librusSessionMemory = json.optJSONObject("session")
                         librusDataMemory = null
 
-                        librusVault.save(
-                            login,
-                            password,
-                            librusSessionMemory?.toString()
-                        )
+                        librusVault.save(login, password, librusSessionMemory?.toString())
 
-                        "SUCCESS|Połączono z Librusem. Wybierz sekcję, aby pobrać dane."
+                        "SUCCESS|Połączono z Librusem. Dane można teraz pobrać."
                     } else {
                         "ERROR|Serwer nie zwrócił profilu lub sesji Librusa."
                     }
                 } else {
-                    val detail = try {
-                        JSONObject(responseBody).optString(
-                            "detail",
-                            "Kod HTTP $responseCode"
-                        )
-                    } catch (_: Exception) {
-                        "Kod HTTP $responseCode"
-                    }
-
-                    "ERROR|Błąd połączenia ($responseCode): $detail"
+                    val detail = errorDetail(body, "Kod HTTP $code")
+                    "ERROR|Błąd połączenia ($code): $detail"
                 }
             } catch (e: Exception) {
                 "ERROR|Nie udało się połączyć: ${e.message ?: e.javaClass.simpleName}"
@@ -462,20 +393,19 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
-                if (!isFinishing && ::librusStatusText.isInitialized) {
-                    val successful = result.startsWith("SUCCESS|")
+                if (isFinishing) return@runOnUiThread
 
-                    librusStatusText.text = result.substringAfter("|")
-                    librusStatusText.setTextColor(
-                        if (successful) successColor else errorColor
-                    )
-
-                    librusConnectButton.isEnabled = true
-                    librusPasswordInput.text.clear()
-                }
+                val ok = result.startsWith("SUCCESS|")
+                setLibrusStatus(result.substringAfter("|"), ok)
+                librusConnectButton.isEnabled = true
+                librusPasswordInput.text.clear()
             }
         }
     }
+
+    // ---------------------------------------------------------
+    // SYNCHRONIZACJA
+    // ---------------------------------------------------------
 
     private fun loadLibrusSection(section: String) {
         val login = librusLoginMemory
@@ -485,9 +415,7 @@ class MainActivity : Activity() {
         if (login.isNullOrBlank() || password.isNullOrBlank()) {
             AlertDialog.Builder(this)
                 .setTitle("Brak połączenia z Librusem")
-                .setMessage(
-                    "Najpierw połącz konto Librus. Dane logowania są przechowywane lokalnie w postaci zaszyfrowanej."
-                )
+                .setMessage("Najpierw połącz konto Librus.")
                 .setPositiveButton("OK", null)
                 .show()
             return
@@ -495,104 +423,63 @@ class MainActivity : Activity() {
 
         if (syncInProgress) return
 
-        val cached = librusDataMemory
-
-        if (cached != null) {
-            showLibrusSection(section, cached)
+        librusDataMemory?.let {
+            showLibrusSection(section, it)
             return
         }
 
         if (token.isNullOrBlank()) {
-            librusStatusText.text =
-                "Sesja aplikacji wygasła. Zaloguj się ponownie."
-            librusStatusText.setTextColor(errorColor)
+            setLibrusStatus("Sesja aplikacji wygasła. Zaloguj się ponownie.", false)
             return
         }
 
         syncInProgress = true
-        librusStatusText.text = "Pobieram dane z Librusa…"
-        librusStatusText.setTextColor(muted)
+        setLibrusStatus("Pobieram dane z Librusa…", null)
 
         thread {
             var connection: HttpURLConnection? = null
 
             val result = try {
-                connection =
-                    URL("$BACKEND_URL/v1/sync")
-                        .openConnection() as HttpURLConnection
+                connection = URL("$BACKEND_URL/v1/sync")
+                    .openConnection() as HttpURLConnection
 
                 connection.requestMethod = "POST"
                 connection.connectTimeout = 30000
                 connection.readTimeout = 120000
                 connection.doOutput = true
-
-                connection.setRequestProperty(
-                    "Authorization",
-                    "Bearer $token"
-                )
-                connection.setRequestProperty(
-                    "Content-Type",
-                    "application/json; charset=utf-8"
-                )
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
                     put("profile", "parent")
                     put("login", login)
                     put("password", password)
-                    librusSessionMemory?.let {
-                        put("session", it)
-                    }
+                    librusSessionMemory?.let { put("session", it) }
                 }
 
-                connection.outputStream.use { output ->
-                    output.write(
-                        payload.toString().toByteArray(Charsets.UTF_8)
-                    )
+                connection.outputStream.use {
+                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
                 }
 
-                val responseCode = connection.responseCode
+                val code = connection.responseCode
+                val body = readResponse(connection, code)
 
-                val responseBody =
-                    if (responseCode in 200..299) {
-                        connection.inputStream.bufferedReader().use {
-                            it.readText()
-                        }
-                    } else {
-                        connection.errorStream
-                            ?.bufferedReader()
-                            ?.use { it.readText() } ?: ""
-                    }
-
-                if (responseCode in 200..299) {
-                    val json = JSONObject(responseBody)
+                if (code in 200..299) {
+                    val json = JSONObject(body)
                     val data = json.optJSONObject("data")
 
                     if (data != null) {
                         librusDataMemory = data
-
                         librusSessionMemory =
                             json.optJSONObject("session") ?: librusSessionMemory
-
-                        librusVault.updateSession(
-                            librusSessionMemory?.toString()
-                        )
-
+                        librusVault.updateSession(librusSessionMemory?.toString())
                         "SUCCESS"
                     } else {
                         "ERROR|Serwer nie zwrócił pola data."
                     }
                 } else {
-                    val detail = try {
-                        JSONObject(responseBody).optString(
-                            "detail",
-                            "HTTP $responseCode"
-                        )
-                    } catch (_: Exception) {
-                        "HTTP $responseCode"
-                    }
-
-                    "ERROR|Synchronizacja nie powiodła się ($responseCode): $detail"
+                    "ERROR|Synchronizacja nie powiodła się ($code): ${errorDetail(body, "HTTP $code")}"
                 }
             } catch (e: Exception) {
                 "ERROR|Błąd pobierania: ${e.message ?: e.javaClass.simpleName}"
@@ -602,157 +489,54 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-
                 if (isFinishing) return@runOnUiThread
 
                 if (result == "SUCCESS") {
-                    if (::librusStatusText.isInitialized) {
-                        librusStatusText.text = "Dane Librusa pobrane."
-                        librusStatusText.setTextColor(successColor)
-                    }
-
-                    librusDataMemory?.let {
-                        showLibrusSection(section, it)
-                    }
-                } else if (::librusStatusText.isInitialized) {
-                    librusStatusText.text = result.substringAfter("|")
-                    librusStatusText.setTextColor(errorColor)
+                    setLibrusStatus("Dane Librusa pobrane.", true)
+                    librusDataMemory?.let { showLibrusSection(section, it) }
+                } else {
+                    setLibrusStatus(result.substringAfter("|"), false)
                 }
             }
         }
     }
 
-    // WYŚWIETLANIE SEKCJI LIBRUSA
+    // ---------------------------------------------------------
+    // WYŚWIETLANIE SEKCJI
+    // ---------------------------------------------------------
 
     private fun showLibrusSection(section: String, data: JSONObject) {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 12, 18, 20)
+            setPadding(18, 12, 18, 22)
             setBackgroundColor(bgColor)
         }
 
         val subtitle = when (section) {
-            "OCENY" -> "Wszystkie oceny i informacje o postępach ucznia"
+            "OCENY" -> "Oceny i postępy ucznia"
             "FREKWENCJA" -> "Obecności, nieobecności i spóźnienia"
-            "PLAN LEKCJI" -> "Plan zajęć"
+            "PLAN LEKCJI" -> "Harmonogram zajęć"
             "WIADOMOŚCI" -> "Wiadomości oraz ogłoszenia"
-            "PROFILE" -> "Dane ucznia, przedmioty, nauczyciele i klasy"
+            "PROFILE" -> "Dane ucznia, przedmioty i nauczyciele"
             else -> "Dane z Librusa"
         }
 
         root.addView(label(subtitle, 14f, muted))
-
-        val keys = when (section) {
-            "OCENY" -> listOf(
-                "grades",
-                "descriptive_grades",
-                "partial_grades",
-                "point_grades",
-                "text_grades",
-                "behaviour_grades",
-                "grading_system"
-            )
-
-            "FREKWENCJA" -> listOf(
-                "attendances",
-                "attendance_types"
-            )
-
-            "PLAN LEKCJI" -> listOf("timetable")
-
-            "WIADOMOŚCI" -> listOf(
-                "messages",
-                "announcements"
-            )
-
-            "PROFILE" -> listOf(
-                "me",
-                "student",
-                "students",
-                "classes",
-                "subjects",
-                "teachers"
-            )
-
-            else -> data.keys().asSequence().toList()
-        }
+        root.addView(actionButton("POWRÓT DO EKRANU GŁÓWNEGO") {
+            showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+        }, params(0, 8, 0, 8))
 
         val subjects = data.optJSONObject("subjects")
         val teachers = data.optJSONObject("teachers")
-        var count = 0
+        val classrooms = data.optJSONObject("classrooms")
 
-        for (key in keys) {
-            if (!data.has(key) || data.isNull(key)) continue
-
-            val value = data.opt(key) ?: continue
-
-            if (value.toString() == "[]" || value.toString() == "{}") {
-                continue
-            }
-
-            val heading = when (key) {
-                "grades" -> "Oceny"
-                "descriptive_grades" -> "Oceny opisowe"
-                "partial_grades" -> "Oceny cząstkowe i umiejętności"
-                "point_grades" -> "Oceny punktowe"
-                "text_grades" -> "Oceny tekstowe"
-                "behaviour_grades" -> "Oceny zachowania"
-                "grading_system" -> "Skala ocen"
-                "attendances" -> "Frekwencja"
-                "attendance_types" -> "Rodzaje obecności"
-                "timetable" -> "Plan zajęć"
-                "messages" -> "Wiadomości"
-                "announcements" -> "Ogłoszenia"
-                "me" -> "Dane konta"
-                "student" -> "Uczeń"
-                "students" -> "Uczniowie"
-                "classes" -> "Klasy"
-                "subjects" -> "Przedmioty"
-                "teachers" -> "Nauczyciele"
-                else -> key.replace("_", " ")
-                    .replaceFirstChar { it.uppercase() }
-            }
-
-            root.addView(
-                sectionHeader(heading),
-                params(0, 18, 0, 8)
-            )
-
-            when (value) {
-                is org.json.JSONArray -> {
-                    if (section == "OCENY" && key in listOf(
-                            "grades",
-                            "descriptive_grades",
-                            "partial_grades",
-                            "point_grades",
-                            "text_grades",
-                            "behaviour_grades"
-                        )
-                    ) {
-                        renderGradeItems(root, value, subjects, teachers)
-                    } else {
-                        renderGenericArray(root, value, subjects, teachers)
-                    }
-                }
-
-                is JSONObject -> {
-                    renderObjectCard(root, value, subjects, teachers)
-                }
-
-                else -> {
-                    root.addView(infoCard(value.toString()))
-                }
-            }
-
-            count++
-        }
-
-        if (count == 0) {
-            root.addView(
-                infoCard(
-                    "Brak danych w tej sekcji. Użyj ODŚWIEŻ, aby pobrać je ponownie."
-                )
-            )
+        when (section) {
+            "PLAN LEKCJI" -> renderTimetable(root, data, subjects, teachers, classrooms)
+            "OCENY" -> renderGradesSection(root, data, subjects, teachers)
+            "FREKWENCJA" -> renderAttendanceSection(root, data)
+            "WIADOMOŚCI" -> renderMessagesSection(root, data)
+            "PROFILE" -> renderProfileSection(root, data)
+            else -> root.addView(infoCard("Nieznana sekcja."))
         }
 
         val scroll = ScrollView(this).apply {
@@ -768,184 +552,544 @@ class MainActivity : Activity() {
             .create()
 
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-                .setOnClickListener {
-                    librusDataMemory = null
-                    dialog.dismiss()
-                    loadLibrusSection(section)
-                }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                librusDataMemory = null
+                dialog.dismiss()
+                loadLibrusSection(section)
+            }
         }
 
         dialog.show()
     }
 
-    /*
-     * Grupowanie ocen według przedmiotów.
-     * Inspiracja: Szkolny.eu
-     * https://github.com/szkolny-eu/szkolny-android
-     * Licencja projektu źródłowego: GPL-3.0.
-     */
-    private fun renderGradeItems(
+    // ---------------------------------------------------------
+    // PLAN LEKCJI
+    // Obsługa planu grupowanego po dacie oraz listy lekcji.
+    // ---------------------------------------------------------
+
+    private data class TimetableLesson(
+        val date: String,
+        val number: Int,
+        val from: String,
+        val to: String,
+        val subject: String,
+        val teacher: String,
+        val classroom: String,
+        val canceled: Boolean,
+        val substitution: Boolean,
+        val note: String
+    )
+
+    private fun renderTimetable(
         parent: LinearLayout,
-        items: org.json.JSONArray,
+        data: JSONObject,
         subjects: JSONObject?,
-        teachers: JSONObject?
+        teachers: JSONObject?,
+        classrooms: JSONObject?
     ) {
-        if (items.length() == 0) {
-            parent.addView(infoCard("Brak ocen."))
+        val raw = data.opt("timetable")
+
+        if (raw == null || raw == JSONObject.NULL) {
+            parent.addView(infoCard("Brak danych planu lekcji."))
             return
         }
 
+        val lessons = mutableListOf<TimetableLesson>()
+
+        fun addLesson(date: String, obj: JSONObject) {
+            val number = obj.optInt("lesson_no", 0)
+            val from = firstValue(obj, "hour_from", "start", "start_time")
+            val to = firstValue(obj, "hour_to", "end", "end_time")
+
+            val subjectId = firstValue(obj, "subject_id", "subject")
+            val teacherId = firstValue(obj, "teacher_id", "teacher")
+            val roomId = firstValue(obj, "classroom_id", "classroom", "room")
+
+            val subject = lookupName(subjects, subjectId)
+                .ifBlank { obj.optString("subject_name").ifBlank { subjectId } }
+
+            val teacher = lookupName(teachers, teacherId)
+                .ifBlank { obj.optString("teacher_name").ifBlank { teacherId } }
+
+            val room = lookupName(classrooms, roomId)
+                .ifBlank { obj.optString("classroom_name").ifBlank { roomId } }
+
+            val canceled = obj.optBoolean("is_canceled", false)
+            val substitution = obj.optBoolean("is_substitution", false)
+            val note = firstValue(obj, "substitution_note", "note", "description")
+
+            lessons.add(
+                TimetableLesson(
+                    date = date,
+                    number = number,
+                    from = from,
+                    to = to,
+                    subject = subject.ifBlank { "Przedmiot" },
+                    teacher = teacher,
+                    classroom = room,
+                    canceled = canceled,
+                    substitution = substitution,
+                    note = note
+                )
+            )
+        }
+
+        fun parseDay(date: String, value: Any?) {
+            when (value) {
+                is JSONArray -> {
+                    for (i in 0 until value.length()) {
+                        value.optJSONObject(i)?.let { addLesson(date, it) }
+                    }
+                }
+
+                is JSONObject -> {
+                    if (value.has("lesson_no") || value.has("hour_from")) {
+                        addLesson(date, value)
+                    } else {
+                        val nested = value.optJSONArray("lessons")
+                            ?: value.optJSONArray("items")
+                        if (nested != null) {
+                            parseDay(date, nested)
+                        } else {
+                            val iterator = value.keys()
+                            while (iterator.hasNext()) {
+                                val key = iterator.next()
+                                val child = value.opt(key)
+                                if (child is JSONObject || child is JSONArray) {
+                                    parseDay(date, child)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        when (raw) {
+            is JSONArray -> {
+                for (i in 0 until raw.length()) {
+                    val item = raw.optJSONObject(i) ?: continue
+                    val date = firstValue(item, "date", "lesson_date", "day")
+                    val nested = item.optJSONArray("lessons")
+                        ?: item.optJSONArray("items")
+
+                    if (nested != null) {
+                        parseDay(date, nested)
+                    } else {
+                        addLesson(date, item)
+                    }
+                }
+            }
+
+            is JSONObject -> {
+                val iterator = raw.keys()
+                while (iterator.hasNext()) {
+                    val date = iterator.next()
+                    parseDay(date, raw.opt(date))
+                }
+            }
+
+            else -> Unit
+        }
+
+        if (lessons.isEmpty()) {
+            parent.addView(
+                infoCard(
+                    "Nie udało się odczytać struktury planu lekcji. Dane zostały pobrane, ale ich format wymaga dopasowania."
+                )
+            )
+            return
+        }
+
+        lessons.sortWith(
+            compareBy<TimetableLesson> { it.date }
+                .thenBy { it.from.ifBlank { "99:99" } }
+                .thenBy { it.number }
+        )
+
+        val grouped = lessons.groupBy { it.date }.toSortedMap()
+
+        parent.addView(
+            infoCard("Znaleziono ${lessons.size} lekcji w ${grouped.size} dniach.")
+        )
+
+        for ((date, dayLessons) in grouped) {
+            val dayCard = card()
+
+            val dayTitle = dateLabel(date)
+            dayCard.addView(label(dayTitle, 18f, white, true))
+            dayCard.addView(
+                label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
+            )
+
+            for (lesson in dayLessons.sortedWith(
+                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
+                    .thenBy { it.number }
+            )) {
+                dayCard.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
+            }
+
+            parent.addView(dayCard, params(0, 10, 0, 4))
+        }
+    }
+
+    private fun renderLessonCard(lesson: TimetableLesson): LinearLayout {
+        val canceled = lesson.canceled
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(10, 11, 10, 11)
+            background = roundedBackground(
+                if (canceled) Color.rgb(65, 39, 48) else panelLight,
+                12
+            )
+            alpha = if (canceled) 0.72f else 1f
+        }
+
+        val number = TextView(this).apply {
+            text = if (lesson.number > 0) lesson.number.toString() else "•"
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(accentColor)
+        }
+        container.addView(number, LinearLayout.LayoutParams(34, -2))
+
+        val details = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        val title = when {
+            lesson.canceled -> "${lesson.subject}  •  ODWOŁANA"
+            lesson.substitution -> "${lesson.subject}  •  ZASTĘPSTWO"
+            else -> lesson.subject
+        }
+
+        details.addView(
+            label(
+                title,
+                15f,
+                if (lesson.canceled) errorColor else white,
+                true
+            )
+        )
+
+        val time = listOf(lesson.from, lesson.to)
+            .filter { it.isNotBlank() }
+            .joinToString(" – ")
+
+        if (time.isNotBlank()) {
+            details.addView(label(time, 13f, successColor, true))
+        }
+
+        if (lesson.classroom.isNotBlank()) {
+            details.addView(label("Sala: ${lesson.classroom}", 12f, muted))
+        }
+
+        if (lesson.teacher.isNotBlank()) {
+            details.addView(label("Nauczyciel: ${lesson.teacher}", 12f, muted))
+        }
+
+        if (lesson.note.isNotBlank()) {
+            details.addView(label(lesson.note, 12f, warningColor))
+        }
+
+        container.addView(
+            details,
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+
+        return container
+    }
+
+    // ---------------------------------------------------------
+    // OCENY
+    // ---------------------------------------------------------
+
+    private fun renderGradesSection(
+        parent: LinearLayout,
+        data: JSONObject,
+        subjects: JSONObject?,
+        teachers: JSONObject?
+    ) {
+        val gradeKeys = listOf(
+            "grades",
+            "descriptive_grades",
+            "partial_grades",
+            "point_grades",
+            "text_grades",
+            "behaviour_grades"
+        )
+
+        var total = 0
+
+        for (key in gradeKeys) {
+            val array = data.optJSONArray(key) ?: continue
+            total += array.length()
+        }
+
+        parent.addView(infoCard("Łącznie znaleziono $total wpisów ocen."))
+
+        val headings = mapOf(
+            "grades" to "Oceny",
+            "descriptive_grades" to "Oceny opisowe",
+            "partial_grades" to "Oceny cząstkowe",
+            "point_grades" to "Oceny punktowe",
+            "text_grades" to "Oceny tekstowe",
+            "behaviour_grades" to "Oceny zachowania"
+        )
+
+        for (key in gradeKeys) {
+            val array = data.optJSONArray(key) ?: continue
+            if (array.length() == 0) continue
+
+            parent.addView(sectionHeader(headings[key] ?: key), params(0, 18, 0, 8))
+            renderGradeItems(parent, array, subjects, teachers)
+        }
+
+        data.optJSONObject("grading_system")?.let {
+            parent.addView(sectionHeader("Skala ocen"), params(0, 18, 0, 8))
+            renderObjectCard(parent, it, null, null)
+        }
+
+        if (total == 0) parent.addView(infoCard("Brak ocen do wyświetlenia."))
+    }
+
+    /*
+     * Grupowanie ocen według przedmiotów.
+     * Własna implementacja widoku inspirowana układem aplikacji Szkolny.eu.
+     * Nie zawiera skopiowanego kodu źródłowego Szkolny.eu.
+     */
+    private fun renderGradeItems(
+        parent: LinearLayout,
+        items: JSONArray,
+        subjects: JSONObject?,
+        teachers: JSONObject?
+    ) {
         val grouped = linkedMapOf<String, MutableList<JSONObject>>()
 
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-
-            val sid = item.opt("subject_id")?.toString()
-
-            val subject = sid?.let {
-                subjects?.optString(it)
-            }?.takeIf {
-                !it.isNullOrBlank() && it != "null"
-            } ?: item.optString("subject")
-                .takeIf { it.isNotBlank() && it != "null" }
-                ?: "Pozostałe"
+            val sid = firstValue(item, "subject_id", "subject")
+            val subject = lookupName(subjects, sid)
+                .ifBlank { item.optString("subject_name").ifBlank { "Pozostałe" } }
 
             grouped.getOrPut(subject) { mutableListOf() }.add(item)
         }
 
         if (grouped.isEmpty()) {
-            parent.addView(infoCard("Brak ocen do wyświetlenia."))
+            parent.addView(infoCard("Brak wpisów do wyświetlenia."))
             return
         }
 
         for ((subject, grades) in grouped.toSortedMap(String.CASE_INSENSITIVE_ORDER)) {
             grades.sortByDescending {
-                it.optString("date")
-                    .ifBlank { it.optString("add_date") }
+                firstValue(it, "date", "add_date", "created_at")
             }
 
-            val subjectCard = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(14, 12, 14, 12)
-                setBackgroundColor(panel)
-            }
-
-            val heading = LinearLayout(this).apply {
+            val subjectCard = card()
+            val header = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
             }
 
-            heading.addView(
+            header.addView(
                 label(subject, 16f, white, true),
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
+            header.addView(label("${grades.size} wpisów", 12f, successColor))
+            subjectCard.addView(header)
 
-            heading.addView(
-                label("${grades.size} ocen", 12f, successColor)
-            )
-
-            subjectCard.addView(heading)
-
-            for (item in grades) {
-                val value = item.optString("value")
-                    .takeIf { it.isNotBlank() && it != "null" } ?: "—"
-
-                val date = item.optString("date")
-                    .takeIf { it.isNotBlank() && it != "null" }
-                    ?: item.optString("add_date").take(10)
-
-                val skill = item.optString("skill")
-                    .takeIf { it.isNotBlank() && it != "null" }
-
-                val teacherId = item.optString("teacher_id")
-                    .takeIf { it.isNotBlank() && it != "null" }
-
-                val teacher = teacherId?.let {
-                    teachers?.optString(it)
-                }?.takeIf {
-                    !it.isNullOrBlank() && it != "null"
-                }
+            for (grade in grades) {
+                val value = firstValue(grade, "value", "grade", "symbol")
+                    .ifBlank { "—" }
+                val date = firstValue(grade, "date", "add_date").take(10)
+                val description = firstValue(grade, "skill", "description", "comment")
+                val teacherId = firstValue(grade, "teacher_id")
+                val teacher = lookupName(teachers, teacherId)
+                    .ifBlank { grade.optString("teacher_name") }
 
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    setPadding(0, 8, 0, 8)
-                }
-
-                val gradeText = TextView(this).apply {
-                    text = value
-                    textSize = 22f
-                    setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(
-                        if (
-                            value.startsWith("6") ||
-                            value.startsWith("5") ||
-                            value.startsWith("+5")
-                        ) successColor else white
-                    )
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, 9, 0, 9)
                 }
 
                 row.addView(
-                    gradeText,
-                    LinearLayout.LayoutParams(48, -2)
+                    label(value, 23f, gradeColor(value), true),
+                    LinearLayout.LayoutParams(54, -2)
                 )
 
                 val details = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                 }
 
-                details.addView(label(date, 12f, muted))
-
-                if (skill != null) {
-                    details.addView(label(skill, 13f, white))
+                if (date.isNotBlank()) details.addView(label(date, 12f, muted))
+                if (description.isNotBlank()) {
+                    details.addView(label(description, 13f, white))
                 }
-
-                if (teacher != null) {
+                if (teacher.isNotBlank()) {
                     details.addView(label("Nauczyciel: $teacher", 11f, muted))
                 }
 
-                row.addView(
-                    details,
-                    LinearLayout.LayoutParams(0, -2, 1f)
-                )
-
+                row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
                 subjectCard.addView(row)
 
-                val comments = item.optJSONArray("comments")
-                if (comments != null) {
-                    for (j in 0 until comments.length()) {
-                        val comment = comments.optString(j)
-                        if (comment.isNotBlank() && comment != "null") {
-                            subjectCard.addView(
-                                label("Komentarz: $comment", 12f, muted)
-                            )
-                        }
-                    }
-                }
-
-                val requirements = item.optJSONArray("requirements")
-                if (requirements != null) {
-                    for (j in 0 until requirements.length()) {
-                        val requirement = requirements.optString(j)
-                        if (requirement.isNotBlank() && requirement != "null") {
-                            subjectCard.addView(
-                                label("Wymaganie: $requirement", 12f, muted)
-                            )
-                        }
-                    }
-                }
+                appendStringArray(subjectCard, grade.optJSONArray("comments"), "Komentarz")
+                appendStringArray(subjectCard, grade.optJSONArray("requirements"), "Wymaganie")
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
         }
     }
 
+    // ---------------------------------------------------------
+    // FREKWENCJA
+    // ---------------------------------------------------------
+
+    private fun renderAttendanceSection(parent: LinearLayout, data: JSONObject) {
+        val types = data.optJSONObject("attendance_types")
+        val array = data.optJSONArray("attendances")
+
+        if (array == null || array.length() == 0) {
+            parent.addView(infoCard("Brak wpisów frekwencji."))
+            return
+        }
+
+        parent.addView(infoCard("Liczba wpisów: ${array.length()}"))
+
+        val sorted = (0 until array.length())
+            .mapNotNull { array.optJSONObject(it) }
+            .sortedByDescending { firstValue(it, "date", "lesson_date", "created_at") }
+
+        for (item in sorted) {
+            val date = firstValue(item, "date", "lesson_date")
+            val typeId = firstValue(item, "type_id", "attendance_type_id", "type")
+            val type = lookupName(types, typeId)
+                .ifBlank { item.optString("type_name").ifBlank { typeId } }
+
+            val subject = firstValue(item, "subject", "subject_name")
+            val lesson = firstValue(item, "lesson_no", "lesson_number")
+            val description = firstValue(item, "description", "comment", "note")
+
+            val card = card()
+            card.addView(label(type.ifBlank { "Wpis frekwencji" }, 15f, white, true))
+            if (date.isNotBlank()) card.addView(label(date, 13f, successColor))
+            if (subject.isNotBlank()) card.addView(label("Przedmiot: $subject", 12f, muted))
+            if (lesson.isNotBlank()) card.addView(label("Lekcja: $lesson", 12f, muted))
+            if (description.isNotBlank()) card.addView(label(description, 12f, muted))
+
+            parent.addView(card, params(0, 0, 0, 8))
+        }
+    }
+
+    // ---------------------------------------------------------
+    // WIADOMOŚCI I OGŁOSZENIA
+    // ---------------------------------------------------------
+
+    private fun renderMessagesSection(parent: LinearLayout, data: JSONObject) {
+        renderMessageArray(parent, data.optJSONArray("messages"), "Wiadomości")
+        renderMessageArray(parent, data.optJSONArray("announcements"), "Ogłoszenia")
+    }
+
+    private fun renderMessageArray(
+        parent: LinearLayout,
+        array: JSONArray?,
+        heading: String
+    ) {
+        if (array == null || array.length() == 0) return
+
+        parent.addView(sectionHeader(heading), params(0, 18, 0, 8))
+
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val title = firstValue(item, "title", "subject", "topic")
+                .ifBlank { heading.removeSuffix("i") }
+            val sender = firstValue(item, "sender", "author", "teacher_name", "from")
+            val date = firstValue(item, "date", "created_at", "send_date")
+            val body = firstValue(item, "content", "message", "body", "text")
+
+            val card = card()
+            card.addView(label(title, 15f, white, true))
+            if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
+            if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
+
+            if (body.isNotBlank()) {
+                val preview = body.take(180) + if (body.length > 180) "…" else ""
+                card.addView(label(preview, 13f, white))
+
+                if (body.length > 180) {
+                    card.addView(actionButton("CZYTAJ CAŁĄ TREŚĆ") {
+                        AlertDialog.Builder(this)
+                            .setTitle(title)
+                            .setMessage(body)
+                            .setPositiveButton("ZAMKNIJ", null)
+                            .show()
+                    })
+                }
+            }
+
+            parent.addView(card, params(0, 0, 0, 8))
+        }
+    }
+
+    // ---------------------------------------------------------
+    // PROFILE I SŁOWNIKI
+    // ---------------------------------------------------------
+
+    private fun renderProfileSection(parent: LinearLayout, data: JSONObject) {
+        val keys = listOf(
+            "me",
+            "student",
+            "students",
+            "classes",
+            "subjects",
+            "teachers",
+            "classrooms"
+        )
+
+        val headings = mapOf(
+            "me" to "Dane konta",
+            "student" to "Uczeń",
+            "students" to "Uczniowie",
+            "classes" to "Klasy",
+            "subjects" to "Przedmioty",
+            "teachers" to "Nauczyciele",
+            "classrooms" to "Sale lekcyjne"
+        )
+
+        var found = false
+
+        for (key in keys) {
+            val value = data.opt(key) ?: continue
+            if (value == JSONObject.NULL || value.toString() == "{}" ||
+                value.toString() == "[]"
+            ) continue
+
+            found = true
+            parent.addView(
+                sectionHeader(headings[key] ?: key),
+                params(0, 18, 0, 8)
+            )
+
+            when (value) {
+                is JSONObject -> renderObjectCard(parent, value, null, null)
+                is JSONArray -> renderGenericArray(parent, value)
+                else -> parent.addView(infoCard(readableValue(value)))
+            }
+        }
+
+        if (!found) parent.addView(infoCard("Brak danych profilu."))
+    }
+
+    // ---------------------------------------------------------
+    // UNIWERSALNE RENDEROWANIE DANYCH
+    // ---------------------------------------------------------
+
     private fun renderGenericArray(
         parent: LinearLayout,
-        items: org.json.JSONArray,
-        subjects: JSONObject?,
-        teachers: JSONObject?
+        items: JSONArray
     ) {
         if (items.length() == 0) {
             parent.addView(infoCard("Brak wpisów."))
@@ -953,18 +1097,10 @@ class MainActivity : Activity() {
         }
 
         for (i in 0 until items.length()) {
-            val item = items.opt(i)
-
-            when (item) {
-                is JSONObject -> {
-                    renderObjectCard(parent, item, subjects, teachers)
-                }
-
-                null -> Unit
-
-                else -> {
-                    parent.addView(infoCard(readableValue(item)))
-                }
+            when (val item = items.opt(i)) {
+                is JSONObject -> renderObjectCard(parent, item, null, null)
+                null, JSONObject.NULL -> Unit
+                else -> parent.addView(infoCard(readableValue(item)))
             }
         }
     }
@@ -975,74 +1111,40 @@ class MainActivity : Activity() {
         subjects: JSONObject?,
         teachers: JSONObject?
     ) {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(15, 11, 15, 11)
-            setBackgroundColor(panel)
-        }
+        val card = card()
 
         val preferred = listOf(
-            "subject_id",
-            "name",
-            "title",
-            "subject",
-            "date",
-            "start",
-            "start_time",
-            "time",
-            "value",
-            "type",
-            "status",
-            "description",
-            "content",
-            "message",
-            "teacher_id",
-            "class_id",
-            "room",
-            "lesson"
+            "name", "title", "subject", "subject_id",
+            "date", "value", "type", "status",
+            "description", "content", "message",
+            "teacher_id", "class_id", "room"
         )
 
-        val keys = preferred.filter {
-            obj.has(it)
-        } + obj.keys().asSequence()
-            .filter { it !in preferred }
-            .toList()
+        val keys = preferred.filter { obj.has(it) } +
+            obj.keys().asSequence().filter { it !in preferred }.toList()
 
         for (key in keys) {
             val raw = obj.opt(key) ?: continue
-
             if (raw == JSONObject.NULL) continue
 
             val value = when (key) {
-                "subject_id" ->
-                    subjects?.optString(raw.toString()) ?: raw.toString()
+                "subject_id" -> lookupName(subjects, raw.toString())
+                    .ifBlank { raw.toString() }
 
-                "teacher_id" ->
-                    teachers?.optString(raw.toString()) ?: raw.toString()
+                "teacher_id" -> lookupName(teachers, raw.toString())
+                    .ifBlank { raw.toString() }
 
                 else -> readableValue(raw)
             }
 
-            if (
-                value.isBlank() ||
-                value == "null" ||
-                value == "[]"
-            ) continue
-
-            val name = key.replace("_", " ")
-                .replaceFirstChar { it.uppercase() }
+            if (value.isBlank() || value == "null" || value == "[]") continue
 
             card.addView(
                 label(
-                    "$name: $value",
+                    "${key.replace("_", " ").replaceFirstChar { it.uppercase() }}: $value",
                     13f,
                     white,
-                    key in listOf(
-                        "name",
-                        "title",
-                        "value",
-                        "subject_id"
-                    )
+                    key in listOf("name", "title", "value", "subject_id")
                 )
             )
         }
@@ -1055,45 +1157,28 @@ class MainActivity : Activity() {
             "$it: ${readableValue(value.opt(it) ?: "")}"
         }
 
-        is org.json.JSONArray -> {
-            (0 until value.length()).joinToString(", ") {
-                readableValue(value.opt(it) ?: "")
-            }
+        is JSONArray -> (0 until value.length()).joinToString(", ") {
+            readableValue(value.opt(it) ?: "")
         }
 
+        JSONObject.NULL -> ""
         else -> value.toString()
     }
 
-    private fun sectionHeader(title: String): TextView =
-        TextView(this).apply {
-            text = title.uppercase()
-            textSize = 13f
-            setTextColor(successColor)
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(2, 8, 2, 5)
-        }
-
-    private fun infoCard(message: String): TextView =
-        TextView(this).apply {
-            text = message
-            textSize = 14f
-            setTextColor(white)
-            setPadding(16, 14, 16, 14)
-            setBackgroundColor(panel)
-        }
+    // ---------------------------------------------------------
+    // SPRAWDZENIE BACKENDU
+    // ---------------------------------------------------------
 
     private fun checkBackendConnection() {
         if (!::backendStatusText.isInitialized) return
 
-        backendStatusText.text =
-            "Sprawdzam sesję Supabase i połączenie z serwerem…"
+        backendStatusText.text = "Sprawdzam sesję Supabase i połączenie z serwerem…"
         backendStatusText.setTextColor(muted)
 
         val accessToken = supabase.auth.currentAccessTokenOrNull()
 
         if (accessToken.isNullOrBlank()) {
-            backendStatusText.text =
-                "Brak aktywnego tokenu. Zaloguj się ponownie."
+            backendStatusText.text = "Brak aktywnego tokenu. Zaloguj się ponownie."
             backendStatusText.setTextColor(errorColor)
             return
         }
@@ -1102,59 +1187,32 @@ class MainActivity : Activity() {
             var connection: HttpURLConnection? = null
 
             val result = try {
-                connection =
-                    URL("$BACKEND_URL/v1/session-check")
-                        .openConnection() as HttpURLConnection
+                connection = URL("$BACKEND_URL/v1/session-check")
+                    .openConnection() as HttpURLConnection
 
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 20000
                 connection.readTimeout = 20000
-
-                connection.setRequestProperty(
-                    "Authorization",
-                    "Bearer $accessToken"
-                )
+                connection.setRequestProperty("Authorization", "Bearer $accessToken")
                 connection.setRequestProperty("Accept", "application/json")
 
-                val responseCode = connection.responseCode
+                val code = connection.responseCode
+                val body = readResponse(connection, code)
 
-                val responseBody =
-                    if (responseCode in 200..299) {
-                        connection.inputStream.bufferedReader().use {
-                            it.readText()
-                        }
-                    } else {
-                        connection.errorStream
-                            ?.bufferedReader()
-                            ?.use { it.readText() } ?: ""
-                    }
-
-                if (responseCode in 200..299) {
-                    val json = JSONObject(responseBody)
-                    val authenticated =
-                        json.optBoolean("authenticated", false)
+                if (code in 200..299) {
+                    val json = JSONObject(body)
+                    val authenticated = json.optBoolean("authenticated", false)
                     val userId = json.optString("user_id", "")
 
-                    if (
-                        json.optBoolean("ok", false) &&
-                        authenticated &&
-                        userId.isNotBlank()
+                    if (json.optBoolean("ok", false) &&
+                        authenticated && userId.isNotBlank()
                     ) {
                         "SUCCESS|Serwer potwierdził Twoje konto Supabase.\nID użytkownika: $userId"
                     } else {
                         "ERROR|Serwer odpowiedział, ale nie potwierdził użytkownika."
                     }
                 } else {
-                    val message = try {
-                        JSONObject(responseBody).optString(
-                            "detail",
-                            "Kod HTTP $responseCode"
-                        )
-                    } catch (_: Exception) {
-                        "Kod HTTP $responseCode"
-                    }
-
-                    "ERROR|Błąd serwera ($responseCode): $message"
+                    "ERROR|Błąd serwera ($code): ${errorDetail(body, "HTTP $code")}"
                 }
             } catch (e: Exception) {
                 "ERROR|Nie udało się połączyć: ${e.message ?: e.javaClass.simpleName}"
@@ -1164,64 +1222,17 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 if (!isFinishing && ::backendStatusText.isInitialized) {
-                    val successful = result.startsWith("SUCCESS|")
-
+                    val ok = result.startsWith("SUCCESS|")
                     backendStatusText.text = result.substringAfter("|")
-                    backendStatusText.setTextColor(
-                        if (successful) successColor else errorColor
-                    )
+                    backendStatusText.setTextColor(if (ok) successColor else errorColor)
                 }
             }
         }
     }
 
-    private fun addHomeSection(
-        parent: LinearLayout,
-        heading: String,
-        description: String
-    ) {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 16, 18, 16)
-            setBackgroundColor(panel)
-            isClickable = true
-            isFocusable = true
-        }
-
-        card.addView(label(heading, 14f, white, true))
-        card.addView(label(description, 13f, muted))
-
-        card.setOnClickListener {
-            loadLibrusSection(heading)
-        }
-
-        parent.addView(card, params(0, 10, 0, 0))
-    }
-
-    private fun label(
-        value: String,
-        size: Float,
-        color: Int,
-        bold: Boolean = false
-    ) = TextView(this).apply {
-        text = value
-        textSize = size
-        setTextColor(color)
-
-        if (bold) {
-            setTypeface(null, android.graphics.Typeface.BOLD)
-        }
-
-        setPadding(0, 8, 0, 8)
-    }
-
-    private fun params(l: Int, t: Int, r: Int, b: Int) =
-        LinearLayout.LayoutParams(
-            -1,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            setMargins(l, t, r, b)
-        }
+    // ---------------------------------------------------------
+    // LOGOWANIE I WYLOGOWANIE SUPABASE
+    // ---------------------------------------------------------
 
     private fun authenticate(register: Boolean) {
         val email = emailInput.text.toString().trim()
@@ -1237,8 +1248,7 @@ class MainActivity : Activity() {
             return
         }
 
-        statusText.text =
-            if (register) "Tworzę konto…" else "Loguję…"
+        statusText.text = if (register) "Tworzę konto…" else "Loguję…"
 
         thread {
             val result = try {
@@ -1251,14 +1261,12 @@ class MainActivity : Activity() {
                             this.email = email
                             this.password = password
                         }
-
                         "Konto utworzone. Sprawdź pocztę i potwierdź adres e-mail."
                     } else {
                         supabase.auth.signInWith(Email) {
                             this.email = email
                             this.password = password
                         }
-
                         "Logowanie przyjęte. Otwieram ekran główny…"
                     }
                 }
@@ -1267,18 +1275,13 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
-                if (!isFinishing) {
-                    statusText.text = result
+                if (isFinishing) return@runOnUiThread
+                statusText.text = result
 
-                    if (!register) {
-                        val session =
-                            supabase.auth.currentSessionOrNull()
-
-                        if (session != null) {
-                            showHome(
-                                session.user?.email.orEmpty()
-                            )
-                        }
+                if (!register) {
+                    val session = supabase.auth.currentSessionOrNull()
+                    if (session != null) {
+                        showHome(session.user?.email.orEmpty())
                     }
                 }
             }
@@ -1288,9 +1291,7 @@ class MainActivity : Activity() {
     private fun signOut() {
         thread {
             val result = try {
-                runBlocking {
-                    supabase.auth.signOut()
-                }
+                runBlocking { supabase.auth.signOut() }
                 null
             } catch (e: Exception) {
                 e.message ?: "Nie udało się wylogować."
@@ -1299,10 +1300,229 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (!isFinishing && result != null) {
                     showHome(
-                        supabase.auth.currentSessionOrNull()
-                            ?.user?.email.orEmpty()
+                        supabase.auth.currentSessionOrNull()?.user?.email.orEmpty()
                     )
                 }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // KOMPONENTY UI
+    // ---------------------------------------------------------
+
+    private fun addHomeSection(
+        parent: LinearLayout,
+        heading: String,
+        description: String,
+        emoji: String
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(15, 13, 15, 13)
+            background = roundedBackground(panel, 14)
+            isClickable = true
+            isFocusable = true
+        }
+
+        card.addView(
+            label(emoji, 24f, white),
+            LinearLayout.LayoutParams(42, -2)
+        )
+
+        val texts = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        texts.addView(label(heading, 15f, white, true))
+        texts.addView(label(description, 12f, muted))
+
+        card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        card.addView(label("›", 27f, accentColor, true))
+
+        card.setOnClickListener { loadLibrusSection(heading) }
+        parent.addView(card, params(0, 5, 0, 5))
+    }
+
+    private fun card(): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14, 12, 14, 12)
+            background = roundedBackground(panel, 14)
+        }
+
+    private fun sectionHeader(title: String): TextView =
+        TextView(this).apply {
+            text = title.uppercase(Locale("pl", "PL"))
+            textSize = 13f
+            setTextColor(successColor)
+            setTypeface(null, Typeface.BOLD)
+            setPadding(2, 8, 2, 5)
+        }
+
+    private fun infoCard(message: String): TextView =
+        TextView(this).apply {
+            text = message
+            textSize = 14f
+            setTextColor(white)
+            setPadding(15, 13, 15, 13)
+            background = roundedBackground(panel, 12)
+        }
+
+    private fun label(
+        value: String,
+        size: Float,
+        color: Int,
+        bold: Boolean = false
+    ): TextView = TextView(this).apply {
+        text = value
+        textSize = size
+        setTextColor(color)
+        if (bold) setTypeface(null, Typeface.BOLD)
+        setPadding(0, 5, 0, 5)
+    }
+
+    private fun inputField(hintText: String, type: Int): EditText =
+        EditText(this).apply {
+            hint = hintText
+            setSingleLine(true)
+            inputType = type
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(15, 12, 15, 12)
+            background = roundedBackground(panel, 10)
+        }
+
+    private fun actionButton(
+        title: String,
+        action: () -> Unit
+    ): Button = Button(this).apply {
+        text = title
+        isAllCaps = false
+        setOnClickListener { action() }
+    }
+
+    private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = radiusDp * resources.displayMetrics.density
+        }
+
+    private fun params(l: Int, t: Int, r: Int, b: Int) =
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            val d = resources.displayMetrics.density
+            setMargins(
+                (l * d).toInt(),
+                (t * d).toInt(),
+                (r * d).toInt(),
+                (b * d).toInt()
+            )
+        }
+
+    // ---------------------------------------------------------
+    // FUNKCJE POMOCNICZE
+    // ---------------------------------------------------------
+
+    private fun setLibrusStatus(message: String, success: Boolean?) {
+        if (!::librusStatusText.isInitialized) return
+        librusStatusText.text = message
+        librusStatusText.setTextColor(
+            when (success) {
+                true -> successColor
+                false -> errorColor
+                null -> muted
+            }
+        )
+    }
+
+    private fun readResponse(
+        connection: HttpURLConnection,
+        code: Int
+    ): String {
+        return if (code in 200..299) {
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } else {
+            connection.errorStream?.bufferedReader()?.use { it.readText() } ?: ""
+        }
+    }
+
+    private fun errorDetail(body: String, fallback: String): String =
+        try {
+            JSONObject(body).optString("detail", fallback)
+        } catch (_: Exception) {
+            fallback
+        }
+
+    private fun firstValue(obj: JSONObject, vararg keys: String): String {
+        for (key in keys) {
+            if (!obj.has(key) || obj.isNull(key)) continue
+            val value = obj.opt(key)?.toString()?.trim().orEmpty()
+            if (value.isNotBlank() && value != "null") return value
+        }
+        return ""
+    }
+
+    private fun lookupName(dictionary: JSONObject?, id: String): String {
+        if (id.isBlank() || dictionary == null) return ""
+
+        val direct = dictionary.opt(id)
+
+        return when (direct) {
+            is JSONObject -> firstValue(direct, "name", "subject_name", "teacher_name", "value")
+            is String -> direct
+            null, JSONObject.NULL -> {
+                var found = ""
+                val iterator = dictionary.keys()
+                while (iterator.hasNext()) {
+                    val key = iterator.next()
+                    val item = dictionary.optJSONObject(key) ?: continue
+                    val itemId = firstValue(item, "id", "subject_id", "teacher_id", "classroom_id")
+                    if (itemId == id) {
+                        found = firstValue(item, "name", "title", "value")
+                        break
+                    }
+                }
+                found
+            }
+            else -> direct.toString()
+        }
+    }
+
+    private fun dateLabel(date: String): String {
+        return try {
+            val input = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val parsed = input.parse(date) ?: return date
+            val output = SimpleDateFormat("EEEE, d MMMM yyyy", Locale("pl", "PL"))
+            output.format(parsed).replaceFirstChar { it.uppercase() }
+        } catch (_: Exception) {
+            date
+        }
+    }
+
+    private fun gradeColor(value: String): Int {
+        val normalized = value.trim()
+        return when {
+            normalized.startsWith("6") || normalized.startsWith("5") ||
+                normalized.startsWith("+5") -> successColor
+            normalized.startsWith("1") || normalized.startsWith("2") ->
+                errorColor
+            else -> white
+        }
+    }
+
+    private fun appendStringArray(
+        parent: LinearLayout,
+        array: JSONArray?,
+        heading: String
+    ) {
+        if (array == null) return
+        for (i in 0 until array.length()) {
+            val value = array.optString(i)
+            if (value.isNotBlank() && value != "null") {
+                parent.addView(label("$heading: $value", 12f, muted))
             }
         }
     }
