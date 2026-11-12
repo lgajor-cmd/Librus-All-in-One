@@ -32,7 +32,7 @@ dependencies {
         platform("io.github.jan-tennert.supabase:bom:3.5.0")
     )
 
-    implementation("io.github.jan.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:auth-kt")
     implementation("io.ktor:ktor-client-android:3.0.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 }
