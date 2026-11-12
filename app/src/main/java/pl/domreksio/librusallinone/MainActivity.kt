@@ -64,6 +64,11 @@ class MainActivity : Activity() {
     private lateinit var statusText: TextView
     private lateinit var backendStatusText: TextView
 
+    private lateinit var librusLoginInput: EditText
+    private lateinit var librusPasswordInput: EditText
+    private lateinit var librusStatusText: TextView
+    private lateinit var librusConnectButton: Button
+
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(165, 178, 198)
     private val panel = Color.rgb(25, 34, 51)
@@ -216,10 +221,7 @@ class MainActivity : Activity() {
         )
 
         content.addView(
-            label(
-                "Konto aplikacji działa.",
-                15f, white
-            )
+            label("Konto aplikacji działa.", 15f, white)
         )
 
         content.addView(
@@ -240,6 +242,79 @@ class MainActivity : Activity() {
                 checkBackendConnection()
             }
         }, params(0, 8, 0, 12))
+
+        // POŁĄCZENIE Z LIBRUSEM
+
+        content.addView(
+            label("POŁĄCZ KONTO LIBRUS", 18f, white, true),
+            params(0, 20, 0, 4)
+        )
+
+        content.addView(
+            label(
+                "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
+                14f, muted
+            )
+        )
+
+        librusLoginInput = EditText(this).apply {
+            hint = "Login do Librusa"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(16, 12, 16, 12)
+            setBackgroundColor(panel)
+        }
+
+        content.addView(
+            librusLoginInput,
+            params(0, 12, 0, 8)
+        )
+
+        librusPasswordInput = EditText(this).apply {
+            hint = "Hasło do Librusa"
+            setSingleLine(true)
+            inputType =
+                InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(16, 12, 16, 12)
+            setBackgroundColor(panel)
+        }
+
+        content.addView(
+            librusPasswordInput,
+            params(0, 0, 0, 8)
+        )
+
+        librusConnectButton = Button(this).apply {
+            text = "POŁĄCZ Z LIBRUSEM"
+            setOnClickListener {
+                connectLibrus()
+            }
+        }
+
+        content.addView(
+            librusConnectButton,
+            params(0, 4, 0, 8)
+        )
+
+        librusStatusText = label(
+            "Konto Librus nie zostało jeszcze podłączone.",
+            14f, muted
+        )
+
+        content.addView(librusStatusText)
+
+        content.addView(
+            label(
+                "Dane logowania są przesyłane do Twojego backendu przez HTTPS. Nie zapisujemy ich w kodzie aplikacji.",
+                12f, muted
+            ),
+            params(0, 4, 0, 12)
+        )
 
         addHomeSection(
             content,
@@ -282,6 +357,142 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun connectLibrus() {
+        val login = librusLoginInput.text.toString().trim()
+        val password = librusPasswordInput.text.toString()
+
+        if (login.isBlank()) {
+            librusStatusText.text = "Podaj login do Librusa."
+            librusStatusText.setTextColor(errorColor)
+            return
+        }
+
+        if (password.isBlank()) {
+            librusStatusText.text = "Podaj hasło do Librusa."
+            librusStatusText.setTextColor(errorColor)
+            return
+        }
+
+        val accessToken =
+            supabase.auth.currentAccessTokenOrNull()
+
+        if (accessToken.isNullOrBlank()) {
+            librusStatusText.text =
+                "Brak aktywnej sesji aplikacji. Zaloguj się ponownie."
+            librusStatusText.setTextColor(errorColor)
+            return
+        }
+
+        librusConnectButton.isEnabled = false
+        librusStatusText.text =
+            "Łączę się z Librusem. To może chwilę potrwać…"
+        librusStatusText.setTextColor(muted)
+
+        thread {
+            var connection: HttpURLConnection? = null
+
+            val result = try {
+                connection =
+                    URL("$BACKEND_URL/v1/connect")
+                        .openConnection() as HttpURLConnection
+
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 60000
+                connection.doOutput = true
+
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $accessToken"
+                )
+
+                connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=utf-8"
+                )
+
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                }
+
+                connection.outputStream.use { output ->
+                    output.write(
+                        payload.toString().toByteArray(Charsets.UTF_8)
+                    )
+                }
+
+                val responseCode = connection.responseCode
+
+                val responseBody =
+                    if (responseCode in 200..299) {
+                        connection.inputStream
+                            .bufferedReader()
+                            .use { it.readText() }
+                    } else {
+                        connection.errorStream
+                            ?.bufferedReader()
+                            ?.use { it.readText() }
+                            ?: ""
+                    }
+
+                if (responseCode in 200..299) {
+                    val json = JSONObject(responseBody)
+
+                    if (json.has("student")) {
+                        "SUCCESS|Połączenie z Librusem powiodło się. Serwer przyjął dane konta rodzica."
+                    } else {
+                        "ERROR|Serwer odpowiedział, ale nie zwrócił danych profilu. Sprawdź dokumentację backendu."
+                    }
+                } else {
+                    val detail = try {
+                        JSONObject(responseBody)
+                            .optString(
+                                "detail",
+                                "Kod HTTP $responseCode"
+                            )
+                    } catch (_: Exception) {
+                        "Kod HTTP $responseCode"
+                    }
+
+                    "ERROR|Błąd połączenia ($responseCode): $detail"
+                }
+
+            } catch (e: Exception) {
+                "ERROR|Nie udało się połączyć: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                if (!isFinishing &&
+                    ::librusStatusText.isInitialized
+                ) {
+                    val successful =
+                        result.startsWith("SUCCESS|")
+
+                    librusStatusText.text =
+                        result.substringAfter("|")
+
+                    librusStatusText.setTextColor(
+                        if (successful) successColor else errorColor
+                    )
+
+                    librusConnectButton.isEnabled = true
+
+                    // Nie pozostawiamy hasła w polu po próbie połączenia.
+                    librusPasswordInput.text.clear()
+                }
+            }
+        }
+    }
+
     private fun checkBackendConnection() {
         if (!::backendStatusText.isInitialized) return
 
@@ -312,10 +523,12 @@ class MainActivity : Activity() {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 20000
                 connection.readTimeout = 20000
+
                 connection.setRequestProperty(
                     "Authorization",
                     "Bearer $accessToken"
                 )
+
                 connection.setRequestProperty(
                     "Accept",
                     "application/json"
@@ -355,7 +568,10 @@ class MainActivity : Activity() {
                 } else {
                     val message = try {
                         JSONObject(responseBody)
-                            .optString("detail", "Kod HTTP $responseCode")
+                            .optString(
+                                "detail",
+                                "Kod HTTP $responseCode"
+                            )
                     } catch (_: Exception) {
                         "Kod HTTP $responseCode"
                     }
