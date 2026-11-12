@@ -1,3 +1,4 @@
+
 package pl.domreksio.librusallinone
 
 import android.app.Activity
@@ -778,6 +779,12 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    /*
+     * Grupowanie ocen według przedmiotów.
+     * Inspiracja: Szkolny.eu
+     * https://github.com/szkolny-eu/szkolny-android
+     * Licencja projektu źródłowego: GPL-3.0.
+     */
     private fun renderGradeItems(
         parent: LinearLayout,
         items: org.json.JSONArray,
@@ -785,115 +792,152 @@ class MainActivity : Activity() {
         teachers: JSONObject?
     ) {
         if (items.length() == 0) {
-            parent.addView(infoCard("Brak wpisów."))
+            parent.addView(infoCard("Brak ocen."))
             return
         }
 
-        val sorted = (0 until items.length())
-            .mapNotNull { items.optJSONObject(it) }
-            .sortedByDescending {
-                it.optString("date", it.optString("add_date"))
-            }
+        val grouped = linkedMapOf<String, MutableList<JSONObject>>()
 
-        for (item in sorted) {
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+
             val sid = item.opt("subject_id")?.toString()
 
             val subject = sid?.let {
                 subjects?.optString(it)
             }?.takeIf {
                 !it.isNullOrBlank() && it != "null"
-            } ?: "Przedmiot"
+            } ?: item.optString("subject")
+                .takeIf { it.isNotBlank() && it != "null" }
+                ?: "Pozostałe"
 
-            val skill = item.optString("skill")
-                .takeIf {
-                    it.isNotBlank() && it != "null"
-                }
+            grouped.getOrPut(subject) { mutableListOf() }.add(item)
+        }
 
-            val value = item.optString("value").ifBlank { "—" }
+        if (grouped.isEmpty()) {
+            parent.addView(infoCard("Brak ocen do wyświetlenia."))
+            return
+        }
 
-            val date = item.optString("date")
-                .takeIf {
-                    it.isNotBlank() && it != "null"
-                } ?: item.optString("add_date").take(10)
-
-            val comments = item.optJSONArray("comments")
-            val requirements = item.optJSONArray("requirements")
-
-            val tid = item.optString("teacher_id")
-                .takeIf {
-                    it.isNotBlank() && it != "null"
-                }
-
-            val teacher = tid?.let {
-                teachers?.optString(it)
-            }?.takeIf {
-                !it.isNullOrBlank() && it != "null"
+        for ((subject, grades) in grouped.toSortedMap(String.CASE_INSENSITIVE_ORDER)) {
+            grades.sortByDescending {
+                it.optString("date")
+                    .ifBlank { it.optString("add_date") }
             }
 
-            val card = LinearLayout(this).apply {
+            val subjectCard = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(16, 12, 16, 12)
+                setPadding(14, 12, 14, 12)
                 setBackgroundColor(panel)
             }
 
-            val top = LinearLayout(this).apply {
+            val heading = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
 
-            val grade = TextView(this).apply {
-                text = value
-                textSize = 25f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(
-                    if (
-                        value.startsWith("6") ||
-                        value.startsWith("5") ||
-                        value.startsWith("+5")
-                    ) successColor else white
-                )
-            }
-
-            top.addView(
-                grade,
+            heading.addView(
+                label(subject, 16f, white, true),
                 LinearLayout.LayoutParams(0, -2, 1f)
             )
 
-            top.addView(label(date, 12f, muted))
-            card.addView(top)
-            card.addView(label(subject, 15f, white, true))
+            heading.addView(
+                label("${grades.size} ocen", 12f, successColor)
+            )
 
-            if (skill != null) {
-                card.addView(label(skill, 14f, muted))
-            }
+            subjectCard.addView(heading)
 
-            if (teacher != null) {
-                card.addView(label("Nauczyciel: $teacher", 12f, muted))
-            }
+            for (item in grades) {
+                val value = item.optString("value")
+                    .takeIf { it.isNotBlank() && it != "null" } ?: "—"
 
-            if (comments != null) {
-                for (i in 0 until comments.length()) {
-                    val c = comments.optString(i)
+                val date = item.optString("date")
+                    .takeIf { it.isNotBlank() && it != "null" }
+                    ?: item.optString("add_date").take(10)
 
-                    if (c.isNotBlank() && c != "null") {
-                        card.addView(label(c, 13f, white))
+                val skill = item.optString("skill")
+                    .takeIf { it.isNotBlank() && it != "null" }
+
+                val teacherId = item.optString("teacher_id")
+                    .takeIf { it.isNotBlank() && it != "null" }
+
+                val teacher = teacherId?.let {
+                    teachers?.optString(it)
+                }?.takeIf {
+                    !it.isNullOrBlank() && it != "null"
+                }
+
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(0, 8, 0, 8)
+                }
+
+                val gradeText = TextView(this).apply {
+                    text = value
+                    textSize = 22f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(
+                        if (
+                            value.startsWith("6") ||
+                            value.startsWith("5") ||
+                            value.startsWith("+5")
+                        ) successColor else white
+                    )
+                }
+
+                row.addView(
+                    gradeText,
+                    LinearLayout.LayoutParams(48, -2)
+                )
+
+                val details = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                }
+
+                details.addView(label(date, 12f, muted))
+
+                if (skill != null) {
+                    details.addView(label(skill, 13f, white))
+                }
+
+                if (teacher != null) {
+                    details.addView(label("Nauczyciel: $teacher", 11f, muted))
+                }
+
+                row.addView(
+                    details,
+                    LinearLayout.LayoutParams(0, -2, 1f)
+                )
+
+                subjectCard.addView(row)
+
+                val comments = item.optJSONArray("comments")
+                if (comments != null) {
+                    for (j in 0 until comments.length()) {
+                        val comment = comments.optString(j)
+                        if (comment.isNotBlank() && comment != "null") {
+                            subjectCard.addView(
+                                label("Komentarz: $comment", 12f, muted)
+                            )
+                        }
+                    }
+                }
+
+                val requirements = item.optJSONArray("requirements")
+                if (requirements != null) {
+                    for (j in 0 until requirements.length()) {
+                        val requirement = requirements.optString(j)
+                        if (requirement.isNotBlank() && requirement != "null") {
+                            subjectCard.addView(
+                                label("Wymaganie: $requirement", 12f, muted)
+                            )
+                        }
                     }
                 }
             }
 
-            if (requirements != null) {
-                for (i in 0 until requirements.length()) {
-                    val q = requirements.optString(i)
-
-                    if (q.isNotBlank() && q != "null") {
-                        card.addView(
-                            label("Wymaganie: $q", 12f, muted)
-                        )
-                    }
-                }
-            }
-
-            parent.addView(card, params(0, 0, 0, 9))
+            parent.addView(subjectCard, params(0, 0, 0, 10))
         }
     }
 
