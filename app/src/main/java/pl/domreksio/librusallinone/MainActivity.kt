@@ -26,6 +26,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.concurrent.thread
 
 private const val SUPABASE_URL =
@@ -36,6 +39,9 @@ private const val SUPABASE_PUBLISHABLE_KEY =
 
 private const val AUTH_REDIRECT =
     "pl.domreksio.librusallinone://login-callback"
+
+private const val BACKEND_URL =
+    "https://librus-all-in-one-api.onrender.com"
 
 private val supabase = createSupabaseClient(
     supabaseUrl = SUPABASE_URL,
@@ -56,11 +62,14 @@ class MainActivity : Activity() {
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
     private lateinit var statusText: TextView
+    private lateinit var backendStatusText: TextView
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(165, 178, 198)
     private val panel = Color.rgb(25, 34, 51)
     private val bgColor = Color.rgb(13, 18, 30)
+    private val successColor = Color.rgb(100, 210, 140)
+    private val errorColor = Color.rgb(255, 125, 125)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,9 +128,11 @@ class MainActivity : Activity() {
         content.addView(
             label("LIBRUS / ALL-IN-ONE", 13f, muted, true)
         )
+
         content.addView(
             label("Twoje konto\nw jednym miejscu", 30f, white, true)
         )
+
         content.addView(
             label(
                 "Zaloguj się do konta aplikacji. To konto jest oddzielne od danych Librusa.",
@@ -140,6 +151,7 @@ class MainActivity : Activity() {
             setPadding(16, 12, 16, 12)
             setBackgroundColor(panel)
         }
+
         content.addView(emailInput, params(0, 18, 0, 8))
 
         passwordInput = EditText(this).apply {
@@ -153,6 +165,7 @@ class MainActivity : Activity() {
             setPadding(16, 12, 16, 12)
             setBackgroundColor(panel)
         }
+
         content.addView(passwordInput, params(0, 0, 0, 12))
 
         content.addView(Button(this).apply {
@@ -193,22 +206,70 @@ class MainActivity : Activity() {
         content.addView(
             label("LIBRUS / ALL-IN-ONE", 13f, muted, true)
         )
-        content.addView(label("Witaj!", 32f, white, true))
+
+        content.addView(
+            label("Witaj!", 32f, white, true)
+        )
+
         content.addView(
             label("Zalogowano jako: $email", 14f, muted)
         )
+
         content.addView(
             label(
-                "Konto aplikacji działa. Przygotowujemy połączenie z Librusem.",
+                "Konto aplikacji działa.",
                 15f, white
             )
         )
 
-        addHomeSection(content, "PROFILE", "Profile rodzica i ucznia")
-        addHomeSection(content, "OCENY", "Oceny i średnie – po podłączeniu Librusa")
-        addHomeSection(content, "FREKWENCJA", "Obecności i nieobecności – po podłączeniu Librusa")
-        addHomeSection(content, "PLAN LEKCJI", "Plan i zastępstwa – po podłączeniu Librusa")
-        addHomeSection(content, "WIADOMOŚCI", "Ogłoszenia i wiadomości – po podłączeniu Librusa")
+        content.addView(
+            label("POŁĄCZENIE Z BACKENDEM", 14f, white, true),
+            params(0, 18, 0, 4)
+        )
+
+        backendStatusText = label(
+            "Nie sprawdzono jeszcze połączenia.",
+            14f, muted
+        )
+
+        content.addView(backendStatusText)
+
+        content.addView(Button(this).apply {
+            text = "SPRAWDŹ POŁĄCZENIE Z SERWEREM"
+            setOnClickListener {
+                checkBackendConnection()
+            }
+        }, params(0, 8, 0, 12))
+
+        addHomeSection(
+            content,
+            "PROFILE",
+            "Profile rodzica i ucznia"
+        )
+
+        addHomeSection(
+            content,
+            "OCENY",
+            "Oceny i średnie – po podłączeniu Librusa"
+        )
+
+        addHomeSection(
+            content,
+            "FREKWENCJA",
+            "Obecności i nieobecności – po podłączeniu Librusa"
+        )
+
+        addHomeSection(
+            content,
+            "PLAN LEKCJI",
+            "Plan i zastępstwa – po podłączeniu Librusa"
+        )
+
+        addHomeSection(
+            content,
+            "WIADOMOŚCI",
+            "Ogłoszenia i wiadomości – po podłączeniu Librusa"
+        )
 
         content.addView(Button(this).apply {
             text = "WYLOGUJ"
@@ -219,6 +280,111 @@ class MainActivity : Activity() {
             setBackgroundColor(bgColor)
             addView(content)
         })
+    }
+
+    private fun checkBackendConnection() {
+        if (!::backendStatusText.isInitialized) return
+
+        backendStatusText.text =
+            "Sprawdzam sesję Supabase i połączenie z serwerem…"
+
+        backendStatusText.setTextColor(muted)
+
+        val accessToken =
+            supabase.auth.currentAccessTokenOrNull()
+
+        if (accessToken.isNullOrBlank()) {
+            backendStatusText.text =
+                "Brak aktywnego tokenu. Zaloguj się ponownie."
+
+            backendStatusText.setTextColor(errorColor)
+            return
+        }
+
+        thread {
+            var connection: HttpURLConnection? = null
+
+            val result = try {
+                connection =
+                    URL("$BACKEND_URL/v1/session-check")
+                        .openConnection() as HttpURLConnection
+
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 20000
+                connection.readTimeout = 20000
+                connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer $accessToken"
+                )
+                connection.setRequestProperty(
+                    "Accept",
+                    "application/json"
+                )
+
+                val responseCode = connection.responseCode
+
+                val responseBody =
+                    if (responseCode in 200..299) {
+                        connection.inputStream
+                            .bufferedReader()
+                            .use { it.readText() }
+                    } else {
+                        connection.errorStream
+                            ?.bufferedReader()
+                            ?.use { it.readText() }
+                            ?: ""
+                    }
+
+                if (responseCode in 200..299) {
+                    val json = JSONObject(responseBody)
+
+                    val authenticated =
+                        json.optBoolean("authenticated", false)
+
+                    val userId =
+                        json.optString("user_id", "")
+
+                    if (json.optBoolean("ok", false) &&
+                        authenticated &&
+                        userId.isNotBlank()
+                    ) {
+                        "SUCCESS|Serwer potwierdził Twoje konto Supabase.\nID użytkownika: $userId"
+                    } else {
+                        "ERROR|Serwer odpowiedział, ale nie potwierdził użytkownika."
+                    }
+                } else {
+                    val message = try {
+                        JSONObject(responseBody)
+                            .optString("detail", "Kod HTTP $responseCode")
+                    } catch (_: Exception) {
+                        "Kod HTTP $responseCode"
+                    }
+
+                    "ERROR|Błąd serwera ($responseCode): $message"
+                }
+
+            } catch (e: Exception) {
+                "ERROR|Nie udało się połączyć: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                if (!isFinishing &&
+                    ::backendStatusText.isInitialized
+                ) {
+                    val successful =
+                        result.startsWith("SUCCESS|")
+
+                    backendStatusText.text =
+                        result.substringAfter("|")
+
+                    backendStatusText.setTextColor(
+                        if (successful) successColor else errorColor
+                    )
+                }
+            }
+        }
     }
 
     private fun addHomeSection(
@@ -232,8 +398,14 @@ class MainActivity : Activity() {
             setBackgroundColor(panel)
         }
 
-        card.addView(label(heading, 14f, white, true))
-        card.addView(label(description, 13f, muted))
+        card.addView(
+            label(heading, 14f, white, true)
+        )
+
+        card.addView(
+            label(description, 13f, muted)
+        )
+
         parent.addView(card, params(0, 10, 0, 0))
     }
 
@@ -246,11 +418,23 @@ class MainActivity : Activity() {
         text = value
         textSize = size
         setTextColor(color)
-        if (bold) setTypeface(null, android.graphics.Typeface.BOLD)
+
+        if (bold) {
+            setTypeface(
+                null,
+                android.graphics.Typeface.BOLD
+            )
+        }
+
         setPadding(0, 8, 0, 8)
     }
 
-    private fun params(l: Int, t: Int, r: Int, b: Int) =
+    private fun params(
+        l: Int,
+        t: Int,
+        r: Int,
+        b: Int
+    ) =
         LinearLayout.LayoutParams(
             -1,
             ViewGroup.LayoutParams.WRAP_CONTENT
@@ -262,13 +446,17 @@ class MainActivity : Activity() {
         val email = emailInput.text.toString().trim()
         val password = passwordInput.text.toString()
 
-        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-            statusText.text = "Podaj prawidłowy adres e-mail."
+        if (!android.util.Patterns.EMAIL_ADDRESS
+                .matcher(email).matches()
+        ) {
+            statusText.text =
+                "Podaj prawidłowy adres e-mail."
             return
         }
 
         if (password.length < 10) {
-            statusText.text = "Hasło musi mieć co najmniej 10 znaków."
+            statusText.text =
+                "Hasło musi mieć co najmniej 10 znaków."
             return
         }
 
@@ -310,7 +498,9 @@ class MainActivity : Activity() {
                             supabase.auth.currentSessionOrNull()
 
                         if (session != null) {
-                            showHome(session.user?.email.orEmpty())
+                            showHome(
+                                session.user?.email.orEmpty()
+                            )
                         }
                     }
                 }
