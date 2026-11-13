@@ -353,6 +353,7 @@ class LibrusNotificationWorker(
         }
 
         val prefKey = "known_$notificationKey"
+        val pendingSeedPrefKey = "pending_seed_$notificationKey"
         val legacyPrefix = sourceKeys.first()
         val previousRaw = prefs.getString(prefKey, null)
         val previousValues = previousRaw?.split("|")?.filter { it.isNotBlank() }
@@ -360,25 +361,29 @@ class LibrusNotificationWorker(
         val previous = previousValues
             ?.map { if (it.contains(":")) it else "$legacyPrefix:$it" }
             ?.toSet()
+        val pendingSeedKeys = prefs.getString(pendingSeedPrefKey, null)
+            ?.split("|")?.filter { it.isNotBlank() }?.toSet().orEmpty()
+
+        val stateDiff = NotificationStateTracker.calculate(
+            sourceKeys = sourceKeys,
+            availableKeys = availableKeys.toSet(),
+            currentIds = current,
+            previousIds = previous,
+            pendingSeedKeys = pendingSeedKeys,
+            notificationKey = notificationKey,
+            legacyPrefix = legacyPrefix,
+            legacyState = legacyState
+        )
 
         if (previous == null) {
-            prefs.edit().putString(prefKey, current.joinToString("|")).commit()
+            prefs.edit()
+                .putString(prefKey, stateDiff.currentIds.joinToString("|"))
+                .putString(pendingSeedPrefKey, stateDiff.pendingSeedKeys.joinToString("|"))
+                .commit()
             return
         }
 
-        val unavailableKeys = sourceKeys - availableKeys.toSet()
-        unavailableKeys.forEach { unavailableKey ->
-            previous.filterTo(current) { it.startsWith("$unavailableKey:") }
-        }
-
-        // Before this update only ordinary "grades" were monitored. During
-        // migration, seed newly supported grade types without announcing
-        // every historical descriptive/partial/point grade as if it were new.
-        val newIds = if (legacyState && notificationKey == "grades") {
-            current.filterTo(linkedSetOf()) { it.startsWith("grades:") } - previous
-        } else {
-            current - previous
-        }
+        val newIds = stateDiff.newIds
         if (newIds.isNotEmpty() && notificationsEnabled(notificationKey)) {
             val newest = items.firstOrNull { it.first in newIds }?.second
             val detail = newest?.let {
@@ -401,7 +406,10 @@ class LibrusNotificationWorker(
                 return
             }
         }
-        prefs.edit().putString(prefKey, current.joinToString("|")).commit()
+        prefs.edit()
+            .putString(prefKey, stateDiff.currentIds.joinToString("|"))
+            .putString(pendingSeedPrefKey, stateDiff.pendingSeedKeys.joinToString("|"))
+            .commit()
     }
 
     private fun notificationsEnabled(key: String): Boolean {
