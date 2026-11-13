@@ -358,7 +358,7 @@ async def send_message(
             session_data=_session_data(payload.session),
             cache_reference_data=True,
         ) as librus:
-            available_ids = {item.account_id for item in await librus.message_recipients()}
+            available_ids = {item.account_id for item in (await librus.message_recipients())}
             if any(recipient_id not in available_ids for recipient_id in payload.recipient_ids):
                 raise HTTPException(422, "Odbiorca nie znajduje się na aktualnej liście odbiorców Librusa.")
 
