@@ -11,6 +11,7 @@ on:
       - 'feature/**'
       - 'improve/**'
       - 'fix/**'
+      - 'release/**'
 
 permissions:
   contents: read
@@ -56,6 +57,30 @@ jobs:
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/pl/domreksio/librusallinone/MainActivity.kt
 
+      - name: Prepare stable release signing
+        id: signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/librus-release.jks"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            test -s "$KEYSTORE_PATH"
+            echo "ANDROID_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Znaleziono komplet sekretow podpisu. Powstanie APK release."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Brak kompletu sekretow podpisu. Powstanie tylko APK debug do testow; nie instaluj go jako aktualizacji wydania."
+          fi
+
       - name: Run Android lint
         run: gradle --no-daemon lintDebug --stacktrace
 
@@ -70,12 +95,40 @@ jobs:
           path: app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
 
-      - name: Build APK
-        run: gradle --no-daemon assembleDebug --stacktrace --info
+      - name: Build signed release APK
+        if: steps.signing.outputs.available == 'true'
+        run: gradle --no-daemon assembleRelease --stacktrace
 
-      - name: Upload APK
+      - name: Upload signed release APK
+        if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Librus-All-in-One-APK
+          name: Librus-All-in-One-APK-RELEASE
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build debug APK (CI only)
+        if: steps.signing.outputs.available != 'true'
+        run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Upload debug APK (CI only)
+        if: steps.signing.outputs.available != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Librus-All-in-One-APK-DEBUG-ONLY
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Build summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
+            echo "### Librus APK: RELEASE" >> "$GITHUB_STEP_SUMMARY"
+            echo "APK jest podpisany stalym kluczem wydawniczym." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Librus APK: DEBUG ONLY" >> "$GITHUB_STEP_SUMMARY"
+            echo "Brak sekretow podpisu. Ten plik sluzy tylko do testow i nie jest stabilnym wydaniem." >> "$GITHUB_STEP_SUMMARY"
+          fi
