@@ -539,6 +539,7 @@ class MainActivity : Activity() {
         quickTile("Plan", "Lekcje i godziny", Color.rgb(47, 78, 100), "PLAN LEKCJI")
         quickTile("Wiadomości", "Ogłoszenia", Color.rgb(83, 62, 112), "WIADOMOŚCI")
         content.addView(quickAccess, params(0, 0, 0, 12))
+        addTodayPanel(content)
 
         addHomeSection(content, "PROFILE", "Dane konta, przedmioty, nauczyciele i sale lekcyjne", "🏫")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
@@ -4904,6 +4905,40 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
     // KOMPONENTY UI
     // ---------------------------------------------------------
+
+    private fun addTodayPanel(parent: LinearLayout) {
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
+        val todayLabel = SimpleDateFormat("EEEE, d MMMM", Locale("pl", "PL"))
+            .format(Calendar.getInstance().time).replaceFirstChar { it.uppercase(Locale("pl", "PL")) }
+        val events = readLocalArray("personal_events")
+        val upcoming = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
+            .filter { it.optString("date") >= today }
+            .sortedBy { it.optString("date") }
+            .take(3)
+        val panel = card()
+        panel.addView(label("DZISIAJ", 11f, accentColor, true))
+        panel.addView(label(todayLabel, 20f, white, true))
+        val todayEvents = upcoming.filter { it.optString("date") == today }
+        if (todayEvents.isEmpty()) {
+            panel.addView(label("Nie masz zapisanych prywatnych wydarzeń na dziś.", 13f, muted))
+        } else {
+            todayEvents.forEach { event ->
+                panel.addView(label("• " + event.optString("title"), 14f, white, true))
+                if (event.optString("description").isNotBlank()) {
+                    panel.addView(label(event.optString("description"), 11f, muted))
+                }
+            }
+        }
+        val later = upcoming.filter { it.optString("date") > today }
+        if (later.isNotEmpty()) {
+            panel.addView(label("NAJBLIŻEJ", 10f, muted, true), params(0, 8, 0, 2))
+            later.forEach { event ->
+                panel.addView(label(dateLabel(event.optString("date")) + "  ·  " + event.optString("title"), 12f, Color.rgb(205, 218, 237)))
+            }
+        }
+        panel.addView(actionButton("OTWÓRZ TERMINARZ") { loadLibrusSection("TERMINARZ") }, params(0, 8, 0, 0))
+        parent.addView(panel, params(0, 0, 0, 14))
+    }
 
     private fun addHomeSection(
         parent: LinearLayout,
