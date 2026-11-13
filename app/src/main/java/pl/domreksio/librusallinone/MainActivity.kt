@@ -873,7 +873,11 @@ class MainActivity : Activity() {
         val dates = grouped.keys.toList()
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             .format(java.util.Date())
-        var selectedDate = dates.firstOrNull { it == today } ?: dates.first()
+        // Wybierz dzisiaj, a gdy nie ma go w planie — najbliższy przyszły dzień.
+        // Jeśli cały pobrany plan jest z przeszłości, pokaż ostatni dostępny dzień.
+        var selectedDate = dates.firstOrNull { it == today }
+            ?: dates.firstOrNull { it > today }
+            ?: dates.last()
 
         parent.addView(
             infoCard("Znaleziono ${lessons.size} lekcji w ${grouped.size} dniach. Wybierz dzień, aby zobaczyć szczegóły planu.")
@@ -882,7 +886,12 @@ class MainActivity : Activity() {
 
         val daySelector = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val dayScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(daySelector)
         }
         val dayButtons = linkedMapOf<String, TextView>()
 
@@ -920,14 +929,25 @@ class MainActivity : Activity() {
         }
 
         for (date in dates) {
+            val weekday = try {
+                val parsed = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)
+                parsed?.let {
+                    SimpleDateFormat("EEE", Locale("pl", "PL"))
+                        .format(it)
+                        .replaceFirstChar { first -> first.uppercase() }
+                } ?: date
+            } catch (_: Exception) {
+                date
+            }
             val button = TextView(this).apply {
-                text = dateLabel(date).substringBefore(",") + "\n" + date.takeLast(5)
-                textSize = 10f
+                text = "$weekday\n${date.takeLast(5)}"
+                textSize = 11f
                 gravity = Gravity.CENTER
                 setTypeface(null, Typeface.BOLD)
-                setPadding(5, 9, 5, 9)
+                setPadding(9, 9, 9, 9)
                 isClickable = true
                 isFocusable = true
+                contentDescription = dateLabel(date)
                 setOnClickListener {
                     selectedDate = date
                     refreshDaySelection()
@@ -937,16 +957,25 @@ class MainActivity : Activity() {
             dayButtons[date] = button
             daySelector.addView(
                 button,
-                LinearLayout.LayoutParams(0, (58 * resources.displayMetrics.density).toInt(), 1f).apply {
-                    marginEnd = (4 * resources.displayMetrics.density).toInt()
+                LinearLayout.LayoutParams(
+                    (72 * resources.displayMetrics.density).toInt(),
+                    (58 * resources.displayMetrics.density).toInt()
+                ).apply {
+                    marginEnd = (5 * resources.displayMetrics.density).toInt()
                 }
             )
         }
 
-        parent.addView(daySelector, params(0, 0, 0, 4))
+        parent.addView(dayScroll, params(0, 0, 0, 4))
         parent.addView(dayContent, params(0, 0, 0, 4))
         refreshDaySelection()
         renderSelectedDay(selectedDate)
+        dayScroll.post {
+            dayButtons[selectedDate]?.let { selected ->
+                val target = selected.left - (dayScroll.width - selected.width) / 2
+                dayScroll.smoothScrollTo(target.coerceAtLeast(0), 0)
+            }
+        }
     }
 
     private fun renderLessonCard(lesson: TimetableLesson): LinearLayout {
