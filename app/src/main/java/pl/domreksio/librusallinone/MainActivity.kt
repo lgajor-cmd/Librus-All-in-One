@@ -1180,16 +1180,38 @@ class MainActivity : Activity() {
                 val teacher = lookupName(teachers, teacherId)
                     .ifBlank { firstDisplayValue(grade, "teacher_name", "teacher") }
 
+                val numericGrade = value.trim().matches(Regex("^[1-6][+-]?$"))
+                val valueColor = gradeColor(value)
                 val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, 9, 0, 9)
+                    orientation = if (numericGrade) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+                    gravity = if (numericGrade) Gravity.CENTER_VERTICAL else Gravity.START
+                    setPadding(0, 10, 0, 10)
                 }
 
-                row.addView(
-                    label(value, 23f, gradeColor(value), true),
-                    LinearLayout.LayoutParams(54, -2)
-                )
+                if (numericGrade) {
+                    val valueBadge = TextView(this).apply {
+                        text = value
+                        textSize = 22f
+                        gravity = Gravity.CENTER
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(valueColor)
+                        background = GradientDrawable().apply {
+                            setColor(Color.argb(34, Color.red(valueColor), Color.green(valueColor), Color.blue(valueColor)))
+                            cornerRadius = 14f * resources.displayMetrics.density
+                            setStroke((1 * resources.displayMetrics.density).toInt(),
+                                Color.argb(110, Color.red(valueColor), Color.green(valueColor), Color.blue(valueColor)))
+                        }
+                    }
+                    row.addView(valueBadge, LinearLayout.LayoutParams(
+                        (48 * resources.displayMetrics.density).toInt(),
+                        (48 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (12 * resources.displayMetrics.density).toInt()
+                    })
+                } else {
+                    row.addView(statusChip("OCENA OPISOWA", accentColor), params(0, 0, 0, 5))
+                    row.addView(label(value, 15f, white, true), params(0, 0, 0, 3))
+                }
 
                 val details = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
@@ -1203,7 +1225,13 @@ class MainActivity : Activity() {
                     details.addView(label("Nauczyciel: $teacher", 11f, muted))
                 }
 
-                row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+                if (numericGrade) {
+                    row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
+                } else {
+                    row.addView(details, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, -2
+                    ))
+                }
                 subjectCard.addView(row)
 
                 appendJsonDetails(subjectCard, grade, "comments", "Komentarz")
