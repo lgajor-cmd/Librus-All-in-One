@@ -99,7 +99,14 @@ class MainActivity : Activity() {
     private val bgColor = Color.rgb(13, 18, 30)
     private val successColor = Color.rgb(100, 210, 140)
     private val errorColor = Color.rgb(255, 125, 125)
-    private val accentColor = Color.rgb(105, 165, 255)
+    private val uiPrefs by lazy { getSharedPreferences("librus_ui_settings", MODE_PRIVATE) }
+    private val accentColor: Int
+        get() = when (uiPrefs.getString("accent", "blue")) {
+            "teal" -> Color.rgb(32, 174, 160)
+            "violet" -> Color.rgb(145, 112, 220)
+            "amber" -> Color.rgb(224, 156, 58)
+            else -> Color.rgb(105, 165, 255)
+        }
     private val warningColor = Color.rgb(255, 190, 95)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -275,16 +282,44 @@ class MainActivity : Activity() {
             }
         }
 
-        content.addView(sectionHeader("POŁĄCZENIE Z BACKENDEM"), params(0, 20, 0, 5))
-
-        backendStatusText = label("Nie sprawdzono jeszcze połączenia.", 14f, muted)
-        content.addView(backendStatusText)
-
-        content.addView(actionButton("SPRAWDŹ POŁĄCZENIE Z SERWEREM") {
+        val connectionCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 16)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(29, 48, 73), Color.rgb(22, 33, 51))
+            ).apply {
+                cornerRadius = 20f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(58, 83, 119))
+            }
+        }
+        val connectionTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        connectionTop.addView(label("STATUS POŁĄCZENIA", 11f, Color.rgb(180, 205, 239), true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        val statusPill = TextView(this).apply {
+            text = if (savedLibrus != null) "● ZAPISANO" else "○ NIEPOŁĄCZONO"
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (savedLibrus != null) successColor else warningColor)
+            setPadding(10, 6, 10, 6)
+            background = roundedBackground(Color.rgb(39, 55, 73), 20)
+        }
+        connectionTop.addView(statusPill)
+        connectionCard.addView(connectionTop)
+        backendStatusText = label(
+            if (savedLibrus != null) "Dane logowania Librus są zapisane na tym urządzeniu." else "Połącz konto Librus, aby pobierać dane szkolne.",
+            13f, Color.rgb(205, 217, 235)
+        )
+        connectionCard.addView(backendStatusText, params(0, 8, 0, 0))
+        connectionCard.addView(actionButton("SPRAWDŹ SERWER") {
             checkBackendConnection()
-        }, params(0, 8, 0, 12))
+        }, params(0, 12, 0, 0))
+        content.addView(connectionCard, params(0, 2, 0, 14))
 
-        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 16, 0, 5))
+        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 12, 0, 5))
         content.addView(
             label(
                 "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
@@ -327,8 +362,40 @@ class MainActivity : Activity() {
             params(0, 4, 0, 12)
         )
 
-        content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 8))
-        content.addView(label("Wszystkie najważniejsze informacje i narzędzia w jednym miejscu.", 13f, muted), params(0, 0, 0, 8))
+        content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 4))
+        content.addView(label("Wybierz moduł, aby przejść do danych z dziennika.", 13f, muted), params(0, 0, 0, 10))
+
+        val quickAccess = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun quickTile(title: String, caption: String, emoji: String, tint: Int, section: String) {
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(13, 14, 12, 14)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(tint, Color.rgb(25, 36, 55))
+                ).apply {
+                    cornerRadius = 18f * resources.displayMetrics.density
+                    setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(59, 78, 106))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { loadLibrusSection(section) }
+            }
+            tile.addView(label(emoji, 22f, white, true))
+            tile.addView(label(title, 13f, white, true), params(0, 8, 0, 1))
+            tile.addView(label(caption, 10f, Color.rgb(187, 201, 222)))
+            quickAccess.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (quickAccess.childCount == 0) marginEnd = (6 * resources.displayMetrics.density).toInt()
+                else marginStart = (6 * resources.displayMetrics.density).toInt()
+            })
+        }
+        quickTile("Oceny", "Postępy ucznia", "✦", Color.rgb(40, 78, 126), "OCENY")
+        quickTile("Plan", "Lekcje i godziny", "▦", Color.rgb(47, 78, 100), "PLAN LEKCJI")
+        quickTile("Frekwencja", "Obecności", "◷", Color.rgb(67, 66, 112), "FREKWENCJA")
+        content.addView(quickAccess, params(0, 0, 0, 12))
 
         addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
@@ -579,10 +646,38 @@ class MainActivity : Activity() {
             else -> "Dane z Librusa"
         }
 
-        root.addView(label(subtitle, 14f, muted))
-        root.addView(actionButton("POWRÓT DO EKRANU GŁÓWNEGO") {
+        val density = resources.displayMetrics.density
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 18)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(35, 78, 139), Color.rgb(27, 43, 70), Color.rgb(24, 34, 53))
+            ).apply {
+                cornerRadius = 24f * density
+                setStroke((1 * density).toInt(), Color.rgb(73, 105, 151))
+            }
+            elevation = 4f * density
+        }
+        hero.addView(label("LIBRUS  /  CENTRUM UCZNIA", 10f, Color.rgb(181, 211, 255), true))
+        hero.addView(label(section, 25f, white, true), params(0, 5, 0, 0))
+        hero.addView(label(subtitle, 13f, Color.rgb(202, 215, 235)))
+        root.addView(hero, params(0, 8, 0, 16))
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val back = actionButton("‹  PULPIT") {
             showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
-        }, params(0, 8, 0, 8))
+        }
+        val refresh = actionButton("ODŚWIEŻ  ↻") {
+            librusDataMemory = null
+            loadLibrusSection(section)
+        }
+        actions.addView(back, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * density).toInt() })
+        actions.addView(refresh, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = (6 * density).toInt() })
+        root.addView(actions, params(0, 0, 0, 14))
 
         val subjects = data.optJSONObject("subjects")
         val teachers = data.optJSONObject("teachers")
@@ -603,25 +698,14 @@ class MainActivity : Activity() {
 
         val scroll = ScrollView(this).apply {
             setBackgroundColor(bgColor)
+            clipToPadding = false
+            setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
             addView(root)
         }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(section)
-            .setView(scroll)
-            .setPositiveButton("ZAMKNIJ", null)
-            .setNeutralButton("ODŚWIEŻ", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                librusDataMemory = null
-                dialog.dismiss()
-                loadLibrusSection(section)
-            }
-        }
-
-        dialog.show()
+        setContentView(scroll)
+        root.alpha = 0f
+        root.translationY = 12f * resources.displayMetrics.density
+        root.animate().alpha(1f).translationY(0f).setDuration(280).start()
     }
 
     // ---------------------------------------------------------
@@ -1618,9 +1702,12 @@ class MainActivity : Activity() {
             .setTitle("Powiadomienia Librus")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
-                prefs.edit().putBoolean(keys[which], isChecked).apply()
             }
-            .setPositiveButton("Zapisz", null)
+            .setPositiveButton("Zapisz") { _, _ ->
+                prefs.edit().apply {
+                    keys.forEachIndexed { index, key -> putBoolean(key, checked[index]) }
+                }.apply()
+            }
             .setNegativeButton("Anuluj", null)
             .setNeutralButton("Uprawnienia") { _, _ -> requestNotificationPermissionIfNeeded() }
             .show()
@@ -1721,8 +1808,15 @@ class MainActivity : Activity() {
     private fun card(): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(14, 12, 14, 12)
-            background = roundedBackground(panel, 14)
+            setPadding(16, 14, 16, 14)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(31, 45, 66), Color.rgb(22, 32, 49))
+            ).apply {
+                cornerRadius = 18f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(49, 67, 94))
+            }
+            elevation = 2f * resources.displayMetrics.density
         }
 
     private fun sectionHeader(title: String): TextView =
@@ -1738,9 +1832,16 @@ class MainActivity : Activity() {
         TextView(this).apply {
             text = message
             textSize = 14f
-            setTextColor(white)
-            setPadding(15, 13, 15, 13)
-            background = roundedBackground(panel, 12)
+            setTextColor(Color.rgb(218, 228, 243))
+            setLineSpacing(2f, 1.05f)
+            setPadding(17, 15, 17, 15)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(33, 51, 77), Color.rgb(25, 38, 59))
+            ).apply {
+                cornerRadius = 16f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(61, 85, 119))
+            }
         }
 
     private fun label(
@@ -1773,6 +1874,15 @@ class MainActivity : Activity() {
     ): Button = Button(this).apply {
         text = title
         isAllCaps = false
+        textSize = 13f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Color.WHITE)
+        minHeight = (48 * resources.displayMetrics.density).toInt()
+        background = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.rgb(56, 112, 194), Color.rgb(43, 83, 145))
+        ).apply { cornerRadius = 14f * resources.displayMetrics.density }
+        elevation = 2f * resources.displayMetrics.density
         setOnClickListener { action() }
     }
 
