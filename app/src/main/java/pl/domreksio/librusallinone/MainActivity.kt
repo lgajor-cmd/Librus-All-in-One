@@ -90,6 +90,7 @@ class MainActivity : Activity() {
 
     private var syncInProgress = false
     private var autoRestoreStarted = false
+    private var pendingNotificationSection: String? = null
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(155, 169, 190)
@@ -105,6 +106,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         librusVault = LibrusCredentialVault(applicationContext)
+        pendingNotificationSection = intent?.getStringExtra("open_librus_section")
         requestNotificationPermissionIfNeeded()
         showLogin("Sprawdzam sesję konta…")
 
@@ -355,7 +357,9 @@ class MainActivity : Activity() {
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
             librusStatusText.text = "Przywrócono zapisane połączenie. Synchronizuję dane…"
-            loadLibrusSection("PROFILE")
+            val requestedSection = pendingNotificationSection ?: "PROFILE"
+            pendingNotificationSection = null
+            loadLibrusSection(requestedSection)
         }
     }
 
