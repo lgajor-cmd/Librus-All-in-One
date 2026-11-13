@@ -1273,116 +1273,260 @@ class MainActivity : Activity() {
     private fun renderAttendanceSection(parent: LinearLayout, data: JSONObject) {
         val types = data.optJSONObject("attendance_types")
         val array = data.optJSONArray("attendances")
+        val entries = (0 until (array?.length() ?: 0))
+            .mapNotNull { array?.optJSONObject(it) }
+            .mapNotNull { item ->
+                val rawDate = firstValue(item, "date", "lesson_date", "created_at")
+                val isoDate = normalizeLibrusDate(rawDate)
+                if (isoDate.isBlank()) null else item to isoDate
+            }
+            .sortedByDescending { it.second }
 
-        if (array == null || array.length() == 0) {
+        if (entries.isEmpty()) {
             parent.addView(infoCard("Brak wpisów frekwencji."))
             renderJustifications(parent, data.optJSONArray("justifications"))
             return
         }
 
-        parent.addView(infoCard("Liczba wpisów: ${array.length()}"))
-
-        val sorted = (0 until array.length())
-            .mapNotNull { array.optJSONObject(it) }
-            .sortedByDescending { firstValue(it, "date", "lesson_date", "created_at") }
-
-        val statusCounts = linkedMapOf<String, Int>()
-        val statusColors = linkedMapOf<String, Int>()
-
-        for (item in sorted) {
-            val date = firstValue(item, "date", "lesson_date")
-            val typeId = firstValue(item, "type_id", "attendance_type_id", "type")
-            val type = lookupName(types, typeId)
-                .ifBlank { item.optString("type_name").ifBlank { typeId } }
+        fun typeOf(item: JSONObject): String {
+            val id = firstValue(item, "type_id", "attendance_type_id", "type")
+            return lookupName(types, id)
+                .ifBlank { item.optString("type_name").ifBlank { id } }
                 .ifBlank { "Wpis frekwencji" }
+        }
 
-            val subject = firstValue(item, "subject", "subject_name")
-            val lesson = firstValue(item, "lesson_no", "lesson_number")
-            val description = firstValue(item, "description", "comment", "note")
-            val tint = attendanceStatusColor(type)
-            val category = attendanceStatusCategory(type)
-            statusCounts[category] = (statusCounts[category] ?: 0) + 1
-            statusColors[category] = tint
+        val byDate = entries.groupBy { it.second }.toSortedMap()
+        val counts = linkedMapOf<String, Int>()
+        val colors = linkedMapOf<String, Int>()
+        entries.forEach { (item, _) ->
+            val category = attendanceStatusCategory(typeOf(item))
+            counts[category] = (counts[category] ?: 0) + 1
+            colors[category] = attendanceStatusColor(typeOf(item))
+        }
 
-            val attendanceCard = card()
-            val header = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+        val summary = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        counts.forEach { (category, count) ->
+            summary.addView(
+                statusChip("$category: $count", colors[category] ?: accentColor),
+                LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginEnd = (5 * resources.displayMetrics.density).toInt()
+                }
+            )
+        }
+        parent.addView(summary, params(0, 0, 0, 12))
+
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+        var selectedDate = if (byDate.containsKey(today)) today else byDate.keys.first()
+        val monthCursor = java.util.Calendar.getInstance()
+        val initial = try {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(selectedDate)
+        } catch (_: Exception) { null }
+        if (initial != null) monthCursor.time = initial
+
+        val monthTitle = TextView(this).apply {
+            textSize = 17f
+            setTextColor(white)
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+        }
+        val calendarGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((8 * resources.displayMetrics.density).toInt(), (8 * resources.displayMetrics.density).toInt(),
+                (8 * resources.displayMetrics.density).toInt(), (8 * resources.displayMetrics.density).toInt())
+            background = roundedBackground(panel, 16)
+        }
+        val selectedDayTitle = label("", 16f, white, true)
+        val dayContent = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        fun iso(calendar: java.util.Calendar): String =
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calendar.time)
+
+        fun renderSelectedDay() {
+            dayContent.removeAllViews()
+            val dayEntries = byDate[selectedDate].orEmpty()
+            selectedDayTitle.text = dateLabel(selectedDate)
+            if (dayEntries.isEmpty()) {
+                dayContent.addView(infoCard("Brak wpisów frekwencji w tym dniu."))
+                return
             }
-            header.addView(statusChip(type, tint), LinearLayout.LayoutParams(0, -2, 1f))
-            if (date.isNotBlank()) {
-                header.addView(label(date, 12f, muted, true))
-            }
-            attendanceCard.addView(header)
-            if (subject.isNotBlank()) attendanceCard.addView(label("Przedmiot: $subject", 12f, muted), params(0, 5, 0, 0))
-            if (lesson.isNotBlank()) attendanceCard.addView(label("Lekcja: $lesson", 12f, muted))
-            if (description.isNotBlank()) attendanceCard.addView(label(description, 12f, muted))
 
-            val normalizedType = type.lowercase(Locale("pl", "PL"))
-            val isExcusedAbsence = (normalizedType.contains("uspr") ||
-                normalizedType.contains("uspraw")) && !normalizedType.contains("nieuspr")
-            val isUnexcusedAbsence = category == "Nieobecności" && !isExcusedAbsence
-            if (isUnexcusedAbsence && date.isNotBlank()) {
-                val isoDate = normalizeLibrusDate(date)
-                val lessonsForDay = if (isoDate.isBlank()) emptyList() else sorted
-                    .filter { candidate ->
-                        val candidateDate = normalizeLibrusDate(
-                            firstValue(candidate, "date", "lesson_date")
-                        )
-                        val candidateTypeId = firstValue(
-                            candidate, "type_id", "attendance_type_id", "type"
-                        )
-                        val candidateType = lookupName(types, candidateTypeId)
-                            .ifBlank { candidate.optString("type_name").ifBlank { candidateTypeId } }
-                        val candidateNormalized = candidateType.lowercase(Locale("pl", "PL"))
-                        val candidateExcused = (candidateNormalized.contains("uspr") ||
-                            candidateNormalized.contains("uspraw")) &&
-                            !candidateNormalized.contains("nieuspr")
-                        candidateDate == isoDate &&
-                            attendanceStatusCategory(candidateType) == "Nieobecności" &&
-                            !candidateExcused
-                    }
-                    .mapNotNull { firstValue(it, "lesson_no", "lesson_number").toIntOrNull() }
-                    .filter { it in 1..20 }
-                    .distinct()
-                    .sorted()
-                val openJustification = {
-                    showFormalJustificationComposer(
-                        date, subject, lesson, lessonsForDay.ifEmpty {
-                            lesson.toIntOrNull()?.let { listOf(it) } ?: emptyList()
+            dayEntries.forEach { (item, _) ->
+                val type = typeOf(item)
+                val tint = attendanceStatusColor(type)
+                val subject = firstValue(item, "subject", "subject_name")
+                val lesson = firstValue(item, "lesson_no", "lesson_number")
+                val description = firstValue(item, "description", "comment", "note")
+                val attendanceCard = card()
+                val header = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                header.addView(statusChip(type, tint), LinearLayout.LayoutParams(0, -2, 1f))
+                if (lesson.isNotBlank()) header.addView(label("Lekcja $lesson", 12f, muted, true))
+                attendanceCard.addView(header)
+                if (subject.isNotBlank()) attendanceCard.addView(label(subject, 13f, white, true), params(0, 5, 0, 0))
+                if (description.isNotBlank()) attendanceCard.addView(label(description, 12f, muted))
+
+                val normalized = type.lowercase(Locale("pl", "PL"))
+                val excused = (normalized.contains("uspr") || normalized.contains("uspraw")) &&
+                    !normalized.contains("nieuspr")
+                val unexcused = attendanceStatusCategory(type) == "Nieobecności" && !excused
+                if (unexcused) {
+                    val lessonsForDay = dayEntries
+                        .filter { (candidate, _) ->
+                            val candidateType = typeOf(candidate).lowercase(Locale("pl", "PL"))
+                            val candidateExcused = (candidateType.contains("uspr") || candidateType.contains("uspraw")) &&
+                                !candidateType.contains("nieuspr")
+                            attendanceStatusCategory(typeOf(candidate)) == "Nieobecności" && !candidateExcused
                         }
+                        .mapNotNull { (candidate, _) ->
+                            firstValue(candidate, "lesson_no", "lesson_number").toIntOrNull()
+                        }
+                        .filter { it in 1..20 }
+                        .distinct()
+                        .sorted()
+                    val openJustification = {
+                        showFormalJustificationComposer(
+                            firstValue(item, "date", "lesson_date").ifBlank { selectedDate },
+                            subject,
+                            lesson,
+                            lessonsForDay.ifEmpty { lesson.toIntOrNull()?.let { listOf(it) } ?: emptyList() }
+                        )
+                    }
+                    attendanceCard.isClickable = true
+                    attendanceCard.isFocusable = true
+                    attendanceCard.setOnClickListener { openJustification() }
+                    attendanceCard.addView(
+                        actionButton("ZŁÓŻ E-USPRAWIEDLIWIENIE", openJustification),
+                        params(0, 8, 0, 0)
                     )
                 }
-                attendanceCard.isClickable = true
-                attendanceCard.isFocusable = true
-                attendanceCard.setOnClickListener { openJustification() }
-                attendanceCard.addView(
-                    actionButton("ZŁÓŻ E-USPRAWIEDLIWIENIE", openJustification),
-                    params(0, 8, 0, 0)
-                )
+                dayContent.addView(attendanceCard, params(0, 0, 0, 8))
             }
-
-            parent.addView(attendanceCard, params(0, 0, 0, 8))
         }
 
-        if (statusCounts.isNotEmpty()) {
-            val summary = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+        fun renderCalendar() {
+            val monthName = SimpleDateFormat("LLLL yyyy", Locale("pl", "PL"))
+                .format(monthCursor.time).replaceFirstChar { it.uppercase() }
+            monthTitle.text = monthName
+            calendarGrid.removeAllViews()
+            val weekdays = listOf("Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd")
+            val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            weekdays.forEach { day ->
+                header.addView(TextView(this).apply {
+                    text = day
+                    textSize = 11f
+                    gravity = Gravity.CENTER
+                    setTextColor(muted)
+                    setTypeface(null, Typeface.BOLD)
+                }, LinearLayout.LayoutParams(0, (28 * resources.displayMetrics.density).toInt(), 1f))
             }
-            statusCounts.forEach { (category, count) ->
-                summary.addView(statusChip("$category: $count", statusColors[category] ?: accentColor),
-                    LinearLayout.LayoutParams(0, -2, 1f).apply {
-                        marginEnd = (5 * resources.displayMetrics.density).toInt()
+            calendarGrid.addView(header)
+
+            val first = (monthCursor.clone() as java.util.Calendar).apply {
+                set(java.util.Calendar.DAY_OF_MONTH, 1)
+                set(java.util.Calendar.HOUR_OF_DAY, 12)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+            }
+            val offset = (first.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
+            val daysInMonth = first.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+            var dayNumber = 1
+            for (week in 0 until 6) {
+                if (dayNumber > daysInMonth) break
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                for (column in 0 until 7) {
+                    val cellIndex = week * 7 + column
+                    val number = cellIndex - offset + 1
+                    if (number !in 1..daysInMonth) {
+                        row.addView(View(this), LinearLayout.LayoutParams(0, (46 * resources.displayMetrics.density).toInt(), 1f))
+                        continue
+                    }
+                    val cellCalendar = (first.clone() as java.util.Calendar).apply {
+                        set(java.util.Calendar.DAY_OF_MONTH, number)
+                    }
+                    val dateKey = iso(cellCalendar)
+                    val hasEntries = byDate.containsKey(dateKey)
+                    val isSelected = dateKey == selectedDate
+                    val isToday = dateKey == today
+                    val dayCell = TextView(this).apply {
+                        text = if (hasEntries) "$number\n●" else number.toString()
+                        textSize = if (hasEntries) 12f else 13f
+                        gravity = Gravity.CENTER
+                        setTypeface(null, if (isSelected || isToday || hasEntries) Typeface.BOLD else Typeface.NORMAL)
+                        setTextColor(when {
+                            isSelected -> Color.WHITE
+                            hasEntries -> attendanceStatusColor(typeOf(byDate[dateKey]!!.first().first))
+                            isToday -> accentColor
+                            else -> muted
+                        })
+                        background = GradientDrawable().apply {
+                            setColor(if (isSelected) Color.argb(220, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+                                else if (isToday) Color.argb(35, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+                                else Color.TRANSPARENT)
+                            cornerRadius = 13f * resources.displayMetrics.density
+                            if (isToday && !isSelected) setStroke((1.5f * resources.displayMetrics.density).toInt(), accentColor)
+                        }
+                        isClickable = true
+                        isFocusable = true
+                        contentDescription = dateLabel(dateKey) + if (hasEntries) ", wpisy frekwencji" else ""
+                        setOnClickListener {
+                            selectedDate = dateKey
+                            renderCalendar()
+                            renderSelectedDay()
+                            if (uiPrefs.getBoolean("motion", true)) {
+                                dayContent.alpha = 0f
+                                dayContent.translationY = 8f * resources.displayMetrics.density
+                                dayContent.animate().alpha(1f).translationY(0f).setDuration(180).start()
+                            }
+                        }
+                    }
+                    row.addView(dayCell, LinearLayout.LayoutParams(0, (46 * resources.displayMetrics.density).toInt(), 1f).apply {
+                        val margin = (2 * resources.displayMetrics.density).toInt()
+                        setMargins(margin, margin, margin, margin)
                     })
+                    dayNumber++
+                }
+                calendarGrid.addView(row)
             }
-            parent.addView(summary, 0)
         }
 
+        val monthControls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun monthButton(symbol: String, delta: Int): TextView = TextView(this).apply {
+            text = symbol
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(accentColor)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                monthCursor.add(java.util.Calendar.MONTH, delta)
+                val prefix = SimpleDateFormat("yyyy-MM", Locale.US).format(monthCursor.time)
+                selectedDate = byDate.keys.firstOrNull { it.startsWith(prefix) }
+                    ?: iso((monthCursor.clone() as java.util.Calendar).apply { set(java.util.Calendar.DAY_OF_MONTH, 1) })
+                renderCalendar()
+                renderSelectedDay()
+            }
+        }
+        monthControls.addView(monthButton("‹", -1), LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (42 * resources.displayMetrics.density).toInt()))
+        monthControls.addView(monthTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        monthControls.addView(monthButton("›", 1), LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (42 * resources.displayMetrics.density).toInt()))
+        parent.addView(sectionHeader("FREKWENCJA • KALENDARZ"), params(0, 4, 0, 4))
+        parent.addView(monthControls)
+        parent.addView(calendarGrid, params(0, 4, 0, 12))
+        parent.addView(selectedDayTitle, params(0, 4, 0, 4))
+        parent.addView(dayContent)
+        renderCalendar()
+        renderSelectedDay()
         renderJustifications(parent, data.optJSONArray("justifications"))
     }
 
-    // ---------------------------------------------------------
     private fun normalizeLibrusDate(value: String): String {
         val trimmed = value.trim()
         val parsed = parseFeatureDate(trimmed) ?: return ""
