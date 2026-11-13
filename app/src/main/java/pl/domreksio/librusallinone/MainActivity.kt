@@ -538,7 +538,10 @@ class MainActivity : Activity() {
         quickTile("Oceny", "Postępy ucznia", Color.rgb(40, 78, 126), "OCENY")
         quickTile("Plan", "Lekcje i godziny", Color.rgb(47, 78, 100), "PLAN LEKCJI")
         quickTile("Wiadomości", "Ogłoszenia", Color.rgb(83, 62, 112), "WIADOMOŚCI")
-        content.addView(quickAccess, params(0, 0, 0, 12))
+        content.addView(quickAccess, params(0, 0, 0, 10))
+        content.addView(actionButton("▤  OTWÓRZ OŚ CZASU") {
+            loadLibrusSection("OŚ CZASU")
+        }, params(0, 0, 0, 12))
         addTodayPanel(content)
 
         addHomeSection(content, "PROFILE", "Dane konta, przedmioty, nauczyciele i sale lekcyjne", "🏫")
@@ -810,6 +813,7 @@ class MainActivity : Activity() {
             "SZCZĘŚLIWY NUMEREK" -> "Szczęśliwy numerek"
             "PROFILE" -> "Dane konta i informacje szkolne"
             "NAUCZYCIELE" -> "Katalog nauczycieli i wyszukiwarka kontaktów"
+            "OŚ CZASU" -> "Najnowsze oceny, wiadomości, zadania i wydarzenia w jednym miejscu"
             else -> "Dane z Librusa"
         }
 
@@ -935,6 +939,7 @@ class MainActivity : Activity() {
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
             "NAUCZYCIELE" -> renderTeachersDirectory(root, data)
+            "OŚ CZASU" -> renderSchoolTimeline(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
         }
 
@@ -4047,6 +4052,171 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
     // FUNKCJE SZKOLNE: ZADANIA, TERMINARZ, UWAGI I NUMEREK
     // ---------------------------------------------------------
+
+    private fun renderSchoolTimeline(parent: LinearLayout, data: JSONObject) {
+        data class TimelineEntry(
+            val section: String,
+            val category: String,
+            val title: String,
+            val detail: String,
+            val date: String,
+            val icon: String
+        )
+
+        val entries = mutableListOf<TimelineEntry>()
+
+        fun collect(
+            keys: List<String>,
+            section: String,
+            category: String,
+            icon: String,
+            dateKeys: Array<String>,
+            titleKeys: Array<String>,
+            detailKeys: Array<String>
+        ) {
+            keys.forEach { key ->
+                val array = data.optJSONArray(key) ?: return@forEach
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val date = firstValue(item, *dateKeys)
+                    val title = firstValue(item, *titleKeys).ifBlank { category }
+                    val detail = firstValue(item, *detailKeys)
+                    entries.add(TimelineEntry(section, category, title, detail, date, icon))
+                }
+            }
+        }
+
+        collect(
+            listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades"),
+            "OCENY", "Ocena", "✦",
+            arrayOf("date", "grade_date", "created_at", "modified_at"),
+            arrayOf("grade", "value", "grade_value", "symbol", "mark", "text", "name"),
+            arrayOf("subject_name", "subject", "teacher_name", "comment", "description")
+        )
+        collect(
+            listOf("messages", "announcements"),
+            "WIADOMOŚCI", "Wiadomość", "✉",
+            arrayOf("send_date", "date", "created_at", "sent_at"),
+            arrayOf("title", "subject", "topic", "name"),
+            arrayOf("sender_name", "sender", "author", "teacher_name", "from")
+        )
+        collect(
+            listOf("homework_assignments", "homework", "homeworks"),
+            "ZADANIA DOMOWE", "Zadanie domowe", "▤",
+            arrayOf("due_date", "deadline", "date", "created_at", "start_date"),
+            arrayOf("title", "topic", "name", "subject_name"),
+            arrayOf("description", "content", "teacher_name", "subject_name", "status")
+        )
+        collect(
+            listOf("agenda", "events", "calendar_events"),
+            "TERMINARZ", "Wydarzenie", "▦",
+            arrayOf("start_date", "date", "event_date", "due_date"),
+            arrayOf("title", "name", "topic", "subject"),
+            arrayOf("description", "details", "type", "location")
+        )
+        collect(
+            listOf("notes", "behaviour_notes"),
+            "UWAGI", "Uwaga", "✎",
+            arrayOf("date", "created_at", "added_at"),
+            arrayOf("title", "content", "text", "description", "type"),
+            arrayOf("teacher_name", "author", "category", "comment")
+        )
+
+        val ordered = entries
+            .distinctBy { listOf(it.section, it.date, it.title, it.detail).joinToString("|") }
+            .sortedByDescending { parseFeatureDate(it.date)?.time ?: 0L }
+            .take(60)
+
+        parent.addView(infoCard(
+            "Oś czasu łączy dane, które Librus rzeczywiście zwrócił. " +
+                "Znaleziono wpisów: ${entries.size} • pokazano: ${ordered.size}. " +
+                "Dotknij wpisu, aby otworzyć odpowiedni moduł."
+        ), params(0, 0, 0, 10))
+
+        val search = EditText(this).apply {
+            hint = "Filtruj oś czasu…"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(15, 12, 15, 12)
+            background = roundedBackground(panelLight, 14)
+        }
+        parent.addView(search, params(0, 0, 0, 12))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        parent.addView(list)
+
+        fun draw(query: String) {
+            list.removeAllViews()
+            val needle = query.trim().lowercase(Locale("pl", "PL"))
+            val filtered = ordered.filter {
+                needle.isBlank() || listOf(it.category, it.title, it.detail, it.date)
+                    .joinToString(" ").lowercase(Locale("pl", "PL")).contains(needle)
+            }
+            if (filtered.isEmpty()) {
+                list.addView(infoCard(if (needle.isBlank()) "Brak wpisów w dostępnych danych Librusa."
+                    else "Nie znaleziono wpisów pasujących do wyszukiwania."))
+                return
+            }
+
+            filtered.forEach { entry ->
+                val density = resources.displayMetrics.density
+                val item = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding((14 * density).toInt(), (12 * density).toInt(),
+                        (14 * density).toInt(), (12 * density).toInt())
+                    background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                        intArrayOf(Color.rgb(37, 51, 72), Color.rgb(25, 35, 52))).apply {
+                        cornerRadius = 17f * density
+                        setStroke((1 * density).toInt(), Color.rgb(59, 82, 111))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { loadLibrusSection(entry.section) }
+                }
+                val icon = TextView(this).apply {
+                    text = entry.icon
+                    textSize = 22f
+                    gravity = Gravity.CENTER
+                    setTextColor(accentColor)
+                    background = roundedBackground(Color.argb(35,
+                        Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), 13)
+                }
+                item.addView(icon, LinearLayout.LayoutParams((44 * density).toInt(), (44 * density).toInt()))
+                val copy = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding((12 * density).toInt(), 0, 0, 0)
+                }
+                val top = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                top.addView(label(entry.category.uppercase(Locale("pl", "PL")), 9f, accentColor, true),
+                    LinearLayout.LayoutParams(0, -2, 1f))
+                val displayDate = parseFeatureDate(entry.date)?.let {
+                    SimpleDateFormat("d MMM yyyy", Locale("pl", "PL")).format(it)
+                } ?: entry.date.takeIf { it.isNotBlank() } ?: "Bez daty"
+                top.addView(label(displayDate, 10f, muted))
+                copy.addView(top)
+                copy.addView(label(entry.title, 14f, white, true), params(0, 3, 0, 0))
+                if (entry.detail.isNotBlank()) {
+                    copy.addView(label(entry.detail, 11f, Color.rgb(185, 201, 222)), params(0, 2, 0, 0))
+                }
+                item.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+                list.addView(item, params(0, 0, 0, 8))
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                draw(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        draw("")
+    }
 
     private fun renderFeatureArray(
         parent: LinearLayout,
