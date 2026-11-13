@@ -1860,7 +1860,7 @@ class MainActivity : Activity() {
                     AlertDialog.Builder(this).setTitle("Zgłoszenie wysłane")
                         .setMessage(
                             "Librus przyjął e-Usprawiedliwienie dla $displayDate, lekcje: $lesson. " +
-                                "Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.\\n\\n" +
+                                "Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.\n\n" +
                                 "Możesz teraz odświeżyć frekwencję, aby pobrać aktualny status zgłoszenia."
                         )
                         .setNegativeButton("PÓŹNIEJ", null)
