@@ -105,6 +105,12 @@ class MainActivity : Activity() {
             "teal" -> Color.rgb(32, 174, 160)
             "violet" -> Color.rgb(145, 112, 220)
             "amber" -> Color.rgb(224, 156, 58)
+            "red" -> Color.rgb(225, 86, 96)
+            "green" -> Color.rgb(75, 178, 126)
+            "mikolajki" -> Color.rgb(222, 70, 91)
+            "christmas" -> Color.rgb(48, 166, 112)
+            "halloween" -> Color.rgb(235, 119, 50)
+            "easter" -> Color.rgb(178, 143, 218)
             else -> Color.rgb(105, 165, 255)
         }
     private val warningColor = Color.rgb(255, 190, 95)
@@ -159,6 +165,90 @@ class MainActivity : Activity() {
         })
     }
 
+
+
+    private fun showLibrusLoginScreen() {
+        if (isFinishing) return
+        stopTimetableTicker()
+
+        val density = resources.displayMetrics.density
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding((26 * density).toInt(), (34 * density).toInt(), (26 * density).toInt(), (34 * density).toInt())
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(17, 29, 50), Color.rgb(10, 16, 29), Color.rgb(22, 28, 47))
+            )
+        }
+
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding((22 * density).toInt(), (28 * density).toInt(), (22 * density).toInt(), (26 * density).toInt())
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(blendColor(accentColor, Color.rgb(26, 48, 83), 0.48f), Color.rgb(24, 35, 57), Color.rgb(20, 30, 48))
+            ).apply {
+                cornerRadius = 26f * density
+                setStroke((1 * density).toInt(), blendColor(accentColor, Color.rgb(80, 104, 139), 0.55f))
+            }
+            elevation = 6f * density
+        }
+        hero.addView(label("LIBRUS", 12f, Color.rgb(205, 220, 244), true))
+        hero.addView(label("Wszystko szkolne\nw jednym miejscu", 29f, white, true), params(0, 10, 0, 4))
+        hero.addView(label("Połącz konto Librus, aby otworzyć swój pulpit.", 14f, Color.rgb(202, 215, 235)))
+        content.addView(hero, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = (22 * density).toInt() })
+
+        val formCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (20 * density).toInt(), (20 * density).toInt(), (20 * density).toInt())
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(28, 40, 60), Color.rgb(20, 30, 47))
+            ).apply {
+                cornerRadius = 22f * density
+                setStroke((1 * density).toInt(), Color.rgb(57, 76, 104))
+            }
+        }
+        formCard.addView(label("POŁĄCZENIE Z DZIENNIKIEM", 11f, accentColor, true))
+        formCard.addView(label("Dane logowania do Librus Synergia", 18f, white, true), params(0, 6, 0, 8))
+        formCard.addView(label("Wpisz login i hasło rodzica. Dane zostaną zaszyfrowane i zapisane na tym urządzeniu.", 13f, muted))
+
+        librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
+        formCard.addView(librusLoginInput, params(0, 14, 0, 8))
+        librusPasswordInput = inputField(
+            "Hasło do Librusa",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        formCard.addView(librusPasswordInput, params(0, 0, 0, 8))
+
+        librusConnectButton = actionButton("POŁĄCZ I OTWÓRZ APLIKACJĘ") {
+            connectLibrus()
+        }
+        formCard.addView(librusConnectButton, params(0, 8, 0, 6))
+        librusStatusText = label("Połączenie nie zostało jeszcze skonfigurowane.", 13f, muted)
+        formCard.addView(librusStatusText, params(0, 4, 0, 0))
+        content.addView(formCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
+        backendStatusText = label("Aplikacja korzysta z bezpiecznej sesji urządzenia.", 12f, muted)
+        content.addView(backendStatusText, params(0, 12, 0, 0))
+        content.addView(actionButton("SPRAWDŹ POŁĄCZENIE Z SERWEREM") {
+            checkBackendConnection()
+        }, params(0, 8, 0, 0))
+        content.addView(label("Nie tworzysz osobnego konta w aplikacji. W każdej chwili możesz odłączyć Librusa i podłączyć inne konto.", 12f, muted), params(0, 12, 0, 0))
+
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(bgColor)
+            addView(content)
+        }
+        setContentView(scroll)
+    }
+
     private fun ensureAnonymousSession(replaceExisting: Boolean = false) {
         if (anonymousSignInInProgress || isFinishing) return
         anonymousSignInInProgress = true
@@ -182,6 +272,12 @@ class MainActivity : Activity() {
     private fun showHome() {
         stopTimetableTicker()
         if (isFinishing) return
+
+        val savedLibrus = librusVault.load()
+        if (savedLibrus == null) {
+            showLibrusLoginScreen()
+            return
+        }
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -228,8 +324,6 @@ class MainActivity : Activity() {
         content.addView(welcomeCard, params(0, 0, 0, 16))
         welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
 
-        val savedLibrus = librusVault.load()
-
         if (savedLibrus != null) {
             librusLoginMemory = savedLibrus.login
             librusPasswordMemory = savedLibrus.password
@@ -261,67 +355,23 @@ class MainActivity : Activity() {
         connectionTop.addView(label("STATUS POŁĄCZENIA", 11f, Color.rgb(180, 205, 239), true),
             LinearLayout.LayoutParams(0, -2, 1f))
         val statusPill = TextView(this).apply {
-            text = if (savedLibrus != null) "● ZAPISANO" else "○ NIEPOŁĄCZONO"
+            text = "● POŁĄCZONO"
             textSize = 10f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(if (savedLibrus != null) successColor else warningColor)
+            setTextColor(successColor)
             setPadding(10, 6, 10, 6)
             background = roundedBackground(Color.rgb(39, 55, 73), 20)
         }
         connectionTop.addView(statusPill)
         connectionCard.addView(connectionTop)
-        backendStatusText = label(
-            if (savedLibrus != null) "Dane logowania Librus są zapisane na tym urządzeniu." else "Połącz konto Librus, aby pobierać dane szkolne.",
-            13f, Color.rgb(205, 217, 235)
-        )
-        connectionCard.addView(backendStatusText, params(0, 8, 0, 0))
+        librusStatusText = label("Konto Librus jest zapisane i gotowe do synchronizacji.", 13f, Color.rgb(205, 217, 235))
+        connectionCard.addView(librusStatusText, params(0, 8, 0, 0))
+        backendStatusText = label("Połączenie z usługą aplikacji nie zostało jeszcze sprawdzone.", 12f, muted)
+        connectionCard.addView(backendStatusText, params(0, 4, 0, 0))
         connectionCard.addView(actionButton("SPRAWDŹ SERWER") {
             checkBackendConnection()
         }, params(0, 12, 0, 0))
         content.addView(connectionCard, params(0, 2, 0, 14))
-
-        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 12, 0, 5))
-        content.addView(
-            label(
-                "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
-                14f,
-                muted
-            )
-        )
-
-        librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
-        content.addView(librusLoginInput, params(0, 12, 0, 8))
-        savedLibrus?.let { librusLoginInput.setText(it.login) }
-
-        librusPasswordInput = inputField(
-            "Hasło do Librusa",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
-        content.addView(librusPasswordInput, params(0, 0, 0, 8))
-
-        librusConnectButton = actionButton("POŁĄCZ Z LIBRUSEM") {
-            connectLibrus()
-        }
-        content.addView(librusConnectButton, params(0, 4, 0, 8))
-
-        librusStatusText = label(
-            if (savedLibrus != null)
-                "Znaleziono zapisane połączenie z Librusem."
-            else
-                "Konto Librus nie zostało jeszcze podłączone.",
-            14f,
-            muted
-        )
-        content.addView(librusStatusText)
-
-        content.addView(
-            label(
-                "Dane logowania są przesyłane do Twojego backendu przez HTTPS. Hasło jest przechowywane lokalnie w postaci zaszyfrowanej.",
-                12f,
-                muted
-            ),
-            params(0, 4, 0, 12)
-        )
 
         content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 4))
         content.addView(label("Wybierz moduł, aby przejść do danych z dziennika.", 13f, muted), params(0, 0, 0, 10))
@@ -492,11 +542,10 @@ class MainActivity : Activity() {
                 librusPasswordInput.text.clear()
 
                 if (ok) {
-                    // Po pierwszym poprawnym połączeniu pobierz dane od razu,
-                    // tak samo jak przy automatycznym przywracaniu zapisanej sesji.
-                    val requestedSection = pendingNotificationSection ?: "PROFILE"
-                    pendingNotificationSection = null
-                    loadLibrusSection(requestedSection)
+                    // Po poprawnym połączeniu przejdź do pulpitu.
+                    // showHome odtworzy zapisane połączenie i uruchomi pierwszą synchronizację.
+                    autoRestoreStarted = false
+                    showHome()
                 }
             }
         }
@@ -3800,8 +3849,19 @@ class MainActivity : Activity() {
     }
 
     private fun showAppearanceSettings(activeSection: String) {
-        val options = arrayOf("Niebieski — klasyczny", "Turkusowy — świeży", "Fioletowy — nowoczesny", "Bursztynowy — ciepły")
-        val keys = arrayOf("blue", "teal", "violet", "amber")
+        val options = arrayOf(
+            "Niebieski — klasyczny",
+            "Turkusowy — świeży",
+            "Fioletowy — nowoczesny",
+            "Bursztynowy — ciepły",
+            "Czerwony — wyrazisty",
+            "Zielony — naturalny",
+            "Mikołajki — czerwony",
+            "Boże Narodzenie — świąteczny",
+            "Halloween — pomarańczowy",
+            "Wielkanoc — pastelowy"
+        )
+        val keys = arrayOf("blue", "teal", "violet", "amber", "red", "green", "mikolajki", "christmas", "halloween", "easter")
         val selected = keys.indexOf(uiPrefs.getString("accent", "blue")).coerceAtLeast(0)
         val motionEnabled = uiPrefs.getBoolean("motion", true)
 
