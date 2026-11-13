@@ -749,7 +749,7 @@ class MainActivity : Activity() {
                     val json = JSONObject(body)
 
                     if (json.has("student") && json.has("session")) {
-                        extractSchoolName(json)?.takeIf { it.isNotBlank() }?.let { schoolName ->
+                        extractSchoolName(json).takeIf { it.isNotBlank() }?.let { schoolName ->
                             getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
                                 .putString("school_name", schoolName).apply()
                         }
