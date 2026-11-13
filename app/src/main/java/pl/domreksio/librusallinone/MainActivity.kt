@@ -1614,6 +1614,9 @@ class MainActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener {
+                // Zawsze zmieniaj miesiąc od jego pierwszego dnia.
+                // Zapobiega to przesuwaniu daty (np. 31 stycznia → 28 lutego → 28 marca).
+                monthCursor.set(java.util.Calendar.DAY_OF_MONTH, 1)
                 monthCursor.add(java.util.Calendar.MONTH, delta)
                 val prefix = SimpleDateFormat("yyyy-MM", Locale.US).format(monthCursor.time)
                 selectedDate = if (today.startsWith(prefix)) today else
@@ -1623,8 +1626,30 @@ class MainActivity : Activity() {
                 renderSelectedDay()
             }
         }
+        val todayButton = TextView(this).apply {
+            text = "DZIŚ"
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(accentColor)
+            gravity = Gravity.CENTER
+            setPadding((9 * resources.displayMetrics.density).toInt(), 0,
+                (9 * resources.displayMetrics.density).toInt(), 0)
+            background = roundedBackground(panelLight, 10)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Przejdź do dzisiejszej daty"
+            setOnClickListener {
+                monthCursor.timeInMillis = java.util.Calendar.getInstance().timeInMillis
+                selectedDate = today
+                renderCalendar()
+                renderSelectedDay()
+            }
+        }
         monthControls.addView(monthButton("‹", -1), LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (42 * resources.displayMetrics.density).toInt()))
         monthControls.addView(monthTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        monthControls.addView(todayButton, LinearLayout.LayoutParams(-2, (34 * resources.displayMetrics.density).toInt()).apply {
+            marginEnd = (5 * resources.displayMetrics.density).toInt()
+        })
         monthControls.addView(monthButton("›", 1), LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (42 * resources.displayMetrics.density).toInt()))
         parent.addView(sectionHeader("FREKWENCJA • KALENDARZ"), params(0, 4, 0, 4))
         parent.addView(monthControls)
