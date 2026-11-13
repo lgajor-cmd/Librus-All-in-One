@@ -4898,24 +4898,10 @@ class MainActivity : Activity() {
     }
 
     private fun parseFeatureDate(value: String): java.util.Date? {
-        val normalized = value.trim()
-        val formats = listOf(
-            "yyyy-MM-dd'T'HH:mm:ss",
-            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-            "yyyy-MM-dd",
-            "dd.MM.yyyy",
-            "dd-MM-yyyy"
+        val date = FeatureDateParser.parse(value) ?: return null
+        return java.util.Date.from(
+            date.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant()
         )
-        for (pattern in formats) {
-            try {
-                val format = SimpleDateFormat(pattern, Locale.US).apply { isLenient = false }
-                format.timeZone = java.util.TimeZone.getTimeZone("UTC")
-                format.parse(normalized)?.let { return it }
-            } catch (_: Exception) {
-                // Nieznany format pozostaje bez oceny terminu — nie zgadujemy.
-            }
-        }
-        return null
     }
 
     private fun featureStateColor(value: String): Int {
