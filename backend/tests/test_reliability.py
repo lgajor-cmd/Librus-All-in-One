@@ -4,11 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from app.main import (
     _api_error,
     _fetch_notification_grade_feeds,
     readiness,
+    check_rate_limit,
+    _hits,
 )
 
 
@@ -69,6 +72,34 @@ class ReadinessTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SUPABASE_URL", raised.exception.detail["missing_configuration"])
         self.assertIn("SUPABASE_PUBLISHABLE_KEY", raised.exception.detail["missing_configuration"])
 
+
+
+class RateLimitTests(unittest.TestCase):
+    def setUp(self):
+        _hits.clear()
+
+    def tearDown(self):
+        _hits.clear()
+
+    def test_rejects_request_after_ten_per_minute(self):
+        request = Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/v1/sync",
+            "headers": [],
+            "query_string": b"",
+            "scheme": "https",
+            "client": ("203.0.113.77", 54321),
+            "server": ("testserver", 443),
+        })
+
+        for _ in range(10):
+            check_rate_limit(request)
+
+        with self.assertRaises(HTTPException) as raised:
+            check_rate_limit(request)
+
+        self.assertEqual(raised.exception.status_code, 429)
 
 class ApiErrorTests(unittest.TestCase):
     def test_machine_readable_error_code_preserves_text_detail(self):
