@@ -511,7 +511,8 @@ class MainActivity : Activity() {
             if (selected) item.addView(label("●", 10f, Color.rgb(117, 190, 255), true))
             drawer.addView(item, params(0, 3, 0, 3))
             item.setOnClickListener {
-                closeDrawer()
+                drawer.animate().translationX(-drawerWidth.toFloat()).setDuration(220).start()
+                scrim.animate().alpha(0f).setDuration(180).withEndAction { scrim.visibility = View.GONE }.start()
                 if (section == "PULPIT") showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
                 else if (section == "USTAWIENIA") showAppSettings()
                 else if (section == "POWIADOMIENIA") showNotificationSettings()
