@@ -186,6 +186,11 @@ class Credentials(BaseModel):
     password: SecretStr = Field(min_length=1, max_length=512)
     session: SessionState | None = None
 
+class SyncRequest(Credentials):
+    # Background notification checks need only changed-data endpoints and
+    # the grade types not included by fetch_changes().
+    notifications_only: bool = False
+
 
 def _session_data(
     value: SessionState | None
@@ -760,7 +765,7 @@ async def get_message(
 
 @app.post("/v1/sync")
 async def sync(
-    payload: Credentials,
+    payload: SyncRequest,
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
@@ -774,7 +779,25 @@ async def sync(
             session_data=_session_data(payload.session),
             cache_reference_data=True,
         ) as librus:
-            data = await librus.fetch_all()
+            if payload.notifications_only:
+                # Poll the smaller change-tracking snapshot for background
+                # notifications. fetch_changes() is about 10 requests vs
+                # fetch_all()'s ~35; it omits the newer grade feeds, so fetch
+                # those separately and merge them into the same response.
+                data = await librus.fetch_changes()
+                descriptive, partial, point, text, behaviour = await asyncio.gather(
+                    librus.descriptive_grades(),
+                    librus.partial_grades(),
+                    librus.point_grades(),
+                    librus.text_grades(),
+                    librus.behaviour_grades(),
+                )
+                data.descriptive_grades = descriptive + partial
+                data.point_grades = point
+                data.text_grades = text
+                data.behaviour_grades = behaviour
+            else:
+                data = await librus.fetch_all()
             state = asdict(librus.session_data)
 
         return jsonable_encoder({
