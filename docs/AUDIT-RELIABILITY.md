@@ -53,7 +53,7 @@ Workflow backendu uruchamia te testy w CI.
 3. Limiter pamięciowy jest lokalny dla procesu. Przy skalowaniu backendu należy zastosować współdzielony limiter (np. Redis/managed KV) i jawnie skonfigurować zaufane proxy.
 4. Testy backendu nie zastępują testów end-to-end na koncie testowym Librusa.
 5. `MainActivity.kt` wymaga stopniowego wydzielenia ekranów i logiki domenowej. Refaktoryzacja powinna być wykonywana etapami, z testami i bez jednoczesnej zmiany zachowania UI.
-6. Trzeba dodać Gradle Wrapper i sprawdzony zestaw testów UI Androida. Nie dodano ręcznie niezweryfikowanego pliku wrapper JAR.
+6. Dodano oficjalny Gradle Wrapper 8.11.1 (skrypty i JAR z repozytorium Gradle); CI używa teraz `./gradlew`. Nadal potrzebny jest sprawdzony zestaw testów UI Androida.
 
 ## Wdrożenie
 
