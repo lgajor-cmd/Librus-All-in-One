@@ -4484,24 +4484,49 @@ class MainActivity : Activity() {
 
     private fun showPersonalNotes() {
         stopTimetableTicker()
-        val notes = readLocalArray("personal_notes")
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 16, 18, 22)
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
         }
         root.addView(label("TWOJE NOTATKI", 11f, Color.rgb(180, 205, 239), true))
-        root.addView(label("Zapisuj pomysły, informacje i sprawy do zapamiętania.", 13f, muted), params(0, 5, 0, 14))
+        root.addView(label("Zapisuj pomysły, informacje i sprawy do zapamiętania.", 13f, muted), params(0, 5, 0, 10))
+        val search = EditText(this).apply {
+            hint = "Szukaj w notatkach…"
+            setSingleLine(true)
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(15, 12, 15, 12)
+            background = roundedBackground(panelLight, 13)
+        }
+        root.addView(search, params(0, 0, 0, 10))
         root.addView(actionButton("+  DODAJ NOTATKĘ") { editPersonalNote(null) }, params(0, 0, 0, 12))
-        if (notes.length() == 0) {
-            root.addView(infoCard("Nie masz jeszcze notatek. Dodaj pierwszą, aby mieć ważne informacje pod ręką."))
-        } else {
-            val sorted = (0 until notes.length()).mapNotNull { notes.optJSONObject(it) }
-                .sortedByDescending { it.optLong("updated", 0L) }
-            sorted.forEach { note ->
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(list)
+
+        fun redraw(query: String = search.text.toString()) {
+            list.removeAllViews()
+            val notes = readLocalArray("personal_notes")
+            val needle = query.trim().lowercase(Locale.ROOT)
+            val filtered = (0 until notes.length()).mapNotNull { notes.optJSONObject(it) }
+                .filter {
+                    needle.isBlank() ||
+                        it.optString("title").lowercase(Locale.ROOT).contains(needle) ||
+                        it.optString("body").lowercase(Locale.ROOT).contains(needle)
+                }
+                .sortedWith(compareByDescending<JSONObject> { it.optBoolean("pinned", false) }
+                    .thenByDescending { it.optLong("updated", 0L) })
+            if (filtered.isEmpty()) {
+                list.addView(infoCard(if (needle.isBlank()) "Nie masz jeszcze notatek. Dodaj pierwszą, aby mieć ważne informacje pod ręką."
+                    else "Nie znaleziono notatek pasujących do: $query"))
+                return
+            }
+            filtered.forEach { note ->
+                val noteId = note.optString("id")
                 val title = note.optString("title", "Bez tytułu")
                 val body = note.optString("body", "")
-                val card = LinearLayout(this).apply {
+                val pinned = note.optBoolean("pinned", false)
+                val noteCard = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(16, 14, 16, 14)
                     background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
@@ -4516,23 +4541,41 @@ class MainActivity : Activity() {
                         AlertDialog.Builder(this@MainActivity).setTitle("Usuń notatkę?")
                             .setMessage(title).setNegativeButton("Anuluj", null)
                             .setPositiveButton("Usuń") { _, _ ->
+                                val current = readLocalArray("personal_notes")
                                 val updated = JSONArray()
-                                for (i in 0 until notes.length()) {
-                                    val item = notes.optJSONObject(i) ?: continue
-                                    if (item.optString("id") != note.optString("id")) updated.put(item)
+                                for (index in 0 until current.length()) {
+                                    val item = current.optJSONObject(index) ?: continue
+                                    if (item.optString("id") != noteId) updated.put(item)
                                 }
                                 saveLocalArray("personal_notes", updated)
-                                showPersonalNotes()
+                                redraw()
                             }.show()
                         true
                     }
                 }
-                card.addView(label(title, 15f, white, true))
-                if (body.isNotBlank()) card.addView(label(body, 13f, Color.rgb(201, 214, 232)).apply { maxLines = 4 }, params(0, 6, 0, 0))
-                card.addView(label("Dotknij, aby edytować • przytrzymaj, aby usunąć", 10f, muted), params(0, 8, 0, 0))
-                root.addView(card, params(0, 5, 0, 5))
+                noteCard.addView(label((if (pinned) "📌  " else "") + title, 15f, white, true))
+                if (body.isNotBlank()) noteCard.addView(label(body, 13f, Color.rgb(201, 214, 232)).apply { maxLines = 4 }, params(0, 6, 0, 0))
+                noteCard.addView(actionButton(if (pinned) "ODEPNIJ NOTATKĘ" else "PRZYPNIJ NA GÓRZE") {
+                    val current = readLocalArray("personal_notes")
+                    val updated = JSONArray()
+                    for (index in 0 until current.length()) {
+                        val item = current.optJSONObject(index) ?: continue
+                        if (item.optString("id") == noteId) item.put("pinned", !pinned)
+                        updated.put(item)
+                    }
+                    saveLocalArray("personal_notes", updated)
+                    redraw()
+                }, params(0, 8, 0, 0))
+                noteCard.addView(label("Dotknij treści, aby edytować • przytrzymaj, aby usunąć", 10f, muted), params(0, 4, 0, 0))
+                list.addView(noteCard, params(0, 5, 0, 5))
             }
         }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { redraw(s?.toString().orEmpty()) }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        redraw("")
         showPersonalToolPage(root, "WIĘCEJ")
     }
 
