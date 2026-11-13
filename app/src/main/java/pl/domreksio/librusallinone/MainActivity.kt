@@ -5178,7 +5178,7 @@ class MainActivity : Activity() {
             .setSingleChoiceItems(options, selected) { dialog, which ->
                 uiPrefs.edit().putString("accent", keys[which]).apply()
                 dialog.dismiss()
-                if (activeSection == "START") {
+                if (activeSection == "START" || activeSection == "WIĘCEJ") {
                     showHome()
                 } else {
                     loadLibrusSection(activeSection)
