@@ -38,6 +38,17 @@ class AgendaCalendarParserTest {
     }
 
     @Test
+    fun acceptsLegacyDateWithTimeSuffix() {
+        val data = JSONObject().put("agenda", JSONArray().put(
+            JSONObject().put("date", "13.11.2026 08:30").put("title", "Zebranie")
+        ))
+
+        val result = AgendaCalendarParser.parse(data)
+
+        assertEquals("2026-11-13", result.single().date)
+    }
+
+    @Test
     fun ignoresEventsWithoutValidDates() {
         val data = JSONObject().put("agenda", JSONArray()
             .put(JSONObject().put("title", "Bez daty"))
