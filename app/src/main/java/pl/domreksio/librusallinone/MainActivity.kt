@@ -4618,7 +4618,8 @@ class MainActivity : Activity() {
                         if (item.optString("id") != id) updated.put(item)
                     }
                     updated.put(JSONObject().put("id", id).put("title", title.ifBlank { "Bez tytułu" })
-                        .put("body", body).put("updated", System.currentTimeMillis()))
+                        .put("body", body).put("pinned", existing?.optBoolean("pinned", false) ?: false)
+                        .put("updated", System.currentTimeMillis()))
                     saveLocalArray("personal_notes", updated)
                     showPersonalNotes()
                 }
