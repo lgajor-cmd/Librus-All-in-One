@@ -1053,7 +1053,7 @@ class MainActivity : Activity() {
                 }
             }
             "TERMINARZ" -> {
-                renderAgendaCalendar(root)
+                renderAgendaCalendar(root, data)
                 renderFeatureArray(root, data, listOf("agenda", "events"), "Wydarzenia szkolne z Librusa")
             }
             "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
@@ -1502,7 +1502,7 @@ class MainActivity : Activity() {
                             activeLesson != null -> sortedDayLessons.indexOf(activeLesson)
                             nextLesson != null -> sortedDayLessons.indexOf(nextLesson)
                             else -> sortedDayLessons.size
-                        }.coerceIn(0, timelineList.childCount - 1)
+                        }.coerceIn(0, sortedDayLessons.size)
                         timelineList.removeView(timelineMarker)
                         timelineList.addView(timelineMarker, markerTarget)
 
@@ -2769,10 +2769,11 @@ class MainActivity : Activity() {
     // WIADOMOŚCI I OGŁOSZENIA
     // ---------------------------------------------------------
 
-    // Kalendarz miesięczny z prywatnymi wydarzeniami użytkownika.
+    // Kalendarz miesięczny łączący wydarzenia szkolne z Librusa i prywatne wydarzenia.
     // Siatka używa wymiarów dp i pełnej szerokości, aby nie ściskać dni na różnych ekranach.
-    private fun renderAgendaCalendar(parent: LinearLayout) {
+    private fun renderAgendaCalendar(parent: LinearLayout, data: JSONObject) {
         val density = resources.displayMetrics.density
+        val schoolEvents = AgendaCalendarParser.parse(data)
         fun dp(value: Int): Int = (value * density).toInt()
         val month = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
         var selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
@@ -2860,7 +2861,7 @@ class MainActivity : Activity() {
                 repeat(7) { column ->
                     val position = week * 7 + column
                     val dayNumber = position - offset + 1
-                    val cellParams = LinearLayout.LayoutParams(0, dp(62), 1f).apply {
+                    val cellParams = LinearLayout.LayoutParams(0, dp(70), 1f).apply {
                         setMargins(dp(2), dp(2), dp(2), dp(2))
                     }
                     if (dayNumber !in 1..count) {
@@ -2874,7 +2875,8 @@ class MainActivity : Activity() {
                         )
                         val isToday = date == today
                         val isSelected = date == selected
-                        val hasEvent = date in datesWithEvents
+                        val hasPersonalEvent = date in datesWithEvents
+                        val hasSchoolEvent = schoolEvents.any { it.date == date }
                         val weekend = column >= 5
                         val cell = LinearLayout(this).apply {
                             orientation = LinearLayout.VERTICAL
@@ -2906,17 +2908,27 @@ class MainActivity : Activity() {
                                     else -> white
                                 })
                             }, LinearLayout.LayoutParams(-1, dp(28)))
-                            if (hasEvent) {
-                                addView(View(this@MainActivity).apply {
-                                    background = roundedBackground(if (isSelected) Color.WHITE else accentColor, 8)
+                            val markers = LinearLayout(this@MainActivity).apply {
+                                orientation = LinearLayout.HORIZONTAL
+                                gravity = Gravity.CENTER
+                            }
+                            if (hasSchoolEvent) {
+                                markers.addView(View(this@MainActivity).apply {
+                                    background = roundedBackground(
+                                        if (isSelected) Color.WHITE else Color.rgb(83, 190, 255), 8
+                                    )
                                 }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
-                                    topMargin = dp(3)
-                                })
-                            } else {
-                                addView(View(this@MainActivity), LinearLayout.LayoutParams(dp(7), dp(7)).apply {
-                                    topMargin = dp(3)
+                                    marginEnd = if (hasPersonalEvent) dp(4) else 0
                                 })
                             }
+                            if (hasPersonalEvent) {
+                                markers.addView(View(this@MainActivity).apply {
+                                    background = roundedBackground(if (isSelected) Color.WHITE else accentColor, 8)
+                                }, LinearLayout.LayoutParams(dp(7), dp(7)))
+                            }
+                            addView(markers, LinearLayout.LayoutParams(-1, dp(10)).apply {
+                                topMargin = dp(3)
+                            })
                         }
                         row.addView(cell, cellParams)
                     }
@@ -2934,9 +2946,7 @@ class MainActivity : Activity() {
             val events = readLocalArray("personal_events")
             val selectedEvents = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
                 .filter { it.optString("date") == selected }
-            if (selectedEvents.isEmpty()) {
-                host.addView(infoCard("Brak prywatnych wydarzeń w tym dniu. Wydarzenia szkolne znajdziesz poniżej."))
-            } else {
+            if (selectedEvents.isNotEmpty()) {
                 selectedEvents.forEach { event ->
                     val itemCard = card()
                     itemCard.addView(label(event.optString("title"), 15f, white, true))
@@ -2962,6 +2972,30 @@ class MainActivity : Activity() {
                     })
                     host.addView(itemCard, params(0, 0, 0, 8))
                 }
+            }
+
+            val selectedSchoolEvents = schoolEvents.filter { it.date == selected }
+            if (selectedSchoolEvents.isNotEmpty()) {
+                host.addView(label("WYDARZENIA SZKOLNE Z LIBRUSA", 11f, Color.rgb(83, 190, 255), true),
+                    params(0, 10, 0, 6))
+                selectedSchoolEvents.forEach { (_, event, eventDate) ->
+                    val eventCard = card()
+                    val title = firstValue(event, "title", "topic", "name", "subject")
+                        .ifBlank { "Wydarzenie szkolne" }
+                    eventCard.addView(label(title, 15f, white, true))
+                    val time = firstValue(event, "time", "start_time", "hour_from")
+                    if (time.isNotBlank() && time != eventDate) {
+                        eventCard.addView(label(time, 12f, accentColor), params(0, 3, 0, 0))
+                    }
+                    val description = firstValue(event, "description", "content", "details", "comment")
+                    if (description.isNotBlank() && description != title) {
+                        eventCard.addView(label(description, 12f, muted), params(0, 3, 0, 0))
+                    }
+                    host.addView(eventCard, params(0, 0, 0, 8))
+                }
+            }
+            if (selectedEvents.isEmpty() && selectedSchoolEvents.isEmpty()) {
+                host.addView(infoCard("Brak wydarzeń w wybranym dniu."))
             }
         }
         redraw()
@@ -4612,7 +4646,17 @@ class MainActivity : Activity() {
         keys: List<String>,
         heading: String
     ) {
-        val key = keys.firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
+        val key = keys.firstOrNull { candidate ->
+            val raw = data.opt(candidate)
+            when (raw) {
+                is JSONArray -> raw.length() > 0
+                is JSONObject -> {
+                    val nested = raw.optJSONArray("items") ?: raw.optJSONArray("entries")
+                    (nested?.length() ?: raw.length()) > 0
+                }
+                else -> false
+            }
+        } ?: keys.firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
         val value = key?.let { data.opt(it) }
 
         if (value == null) {
@@ -5134,7 +5178,7 @@ class MainActivity : Activity() {
             .setSingleChoiceItems(options, selected) { dialog, which ->
                 uiPrefs.edit().putString("accent", keys[which]).apply()
                 dialog.dismiss()
-                if (activeSection == "START") {
+                if (activeSection == "START" || activeSection == "WIĘCEJ") {
                     showHome()
                 } else {
                     loadLibrusSection(activeSection)
