@@ -903,6 +903,17 @@ class MainActivity : Activity() {
                 label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
 
+            val sortedDayLessons = dayLessons.sortedWith(
+                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
+                    .thenBy { it.number }
+            )
+            val timelineList = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            sortedDayLessons.forEach { lesson ->
+                timelineList.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
+            }
+
             val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
             if (date == todayKey) {
                 val livePanel = LinearLayout(this).apply {
@@ -971,6 +982,26 @@ class MainActivity : Activity() {
                 }
                 livePanel.addView(bellSync)
                 dayCard.addView(livePanel, params(0, 10, 0, 2))
+
+                // Znacznik czasu na osi planu: przemieszcza się nad trwającą
+                // lekcję, nad następną lekcję podczas przerwy albo na koniec dnia.
+                val timelineMarker = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, (7 * resources.displayMetrics.density).toInt(),
+                        0, (3 * resources.displayMetrics.density).toInt())
+                }
+                val timelineMarkerLabel = TextView(this).apply {
+                    textSize = 10f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(accentColor)
+                    setPadding(0, 0, (9 * resources.displayMetrics.density).toInt(), 0)
+                }
+                timelineMarker.addView(timelineMarkerLabel)
+                timelineMarker.addView(View(this).apply {
+                    background = roundedBackground(accentColor, 2)
+                }, LinearLayout.LayoutParams(0, (2 * resources.displayMetrics.density).toInt(), 1f))
+                timelineList.addView(timelineMarker)
 
                 var previousLiveState = ""
                 val handler = android.os.Handler(mainLooper)
@@ -1042,6 +1073,16 @@ class MainActivity : Activity() {
                                 .withEndAction { bellIcon.animate().rotation(0f).setDuration(130).start() }
                                 .start()
                         }
+                        timelineMarkerLabel.text = "TERAZ • " +
+                            SimpleDateFormat("HH:mm", Locale.getDefault()).format(now.time)
+                        val markerTarget = when {
+                            activeLesson != null -> sortedDayLessons.indexOf(activeLesson)
+                            nextLesson != null -> sortedDayLessons.indexOf(nextLesson)
+                            else -> sortedDayLessons.size
+                        }.coerceIn(0, timelineList.childCount - 1)
+                        timelineList.removeView(timelineMarker)
+                        timelineList.addView(timelineMarker, markerTarget)
+
                         previousLiveState = stateKey
                         handler.postDelayed(this, 30_000L)
                     }
@@ -1050,12 +1091,7 @@ class MainActivity : Activity() {
                 ticker.run()
             }
 
-            for (lesson in dayLessons.sortedWith(
-                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
-                    .thenBy { it.number }
-            )) {
-                dayCard.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
-            }
+            dayCard.addView(timelineList, params(0, 4, 0, 0))
             dayContent.addView(dayCard, params(0, 8, 0, 4))
         }
 
@@ -1254,9 +1290,21 @@ class MainActivity : Activity() {
 
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-            val sid = firstValue(item, "subject_id", "subject")
-            val subject = lookupName(subjects, sid)
-                .ifBlank { item.optString("subject_name").ifBlank { "Pozostałe" } }
+            // W zależności od wersji danych Librus zwraca przedmiot jako ID,
+            // tekst albo zagnieżdżony obiekt { id, name }. Obsłuż wszystkie
+            // warianty bez wyświetlania surowego JSON jako nazwy przedmiotu.
+            val subjectObject = item.optJSONObject("subject")
+            val sid = firstValue(item, "subject_id")
+                .ifBlank { subjectObject?.let { firstValue(it, "id", "subject_id") }.orEmpty() }
+            val subject = firstDisplayValue(item, "subject_name")
+                .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(subjects, sid) }
+                .ifBlank {
+                    val rawSubject = item.opt("subject")
+                    if (rawSubject is String) lookupName(subjects, rawSubject).ifBlank { rawSubject }
+                    else ""
+                }
+                .ifBlank { "Pozostałe" }
 
             grouped.getOrPut(subject) { mutableListOf() }.add(item)
         }
@@ -1304,9 +1352,17 @@ class MainActivity : Activity() {
                     "description", "skill_description", "comment",
                     "teacher_comment", "feedback", "note", "details"
                 )
+                val teacherObject = grade.optJSONObject("teacher")
                 val teacherId = firstValue(grade, "teacher_id")
-                val teacher = lookupName(teachers, teacherId)
-                    .ifBlank { firstDisplayValue(grade, "teacher_name", "teacher") }
+                    .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                val teacher = firstDisplayValue(grade, "teacher_name")
+                    .ifBlank { teacherObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                    .ifBlank { lookupName(teachers, teacherId) }
+                    .ifBlank {
+                        val rawTeacher = grade.opt("teacher")
+                        if (rawTeacher is String) lookupName(teachers, rawTeacher).ifBlank { rawTeacher }
+                        else ""
+                    }
 
                 val numericGrade = value.trim().matches(Regex("^[1-6][+-]?$"))
                 val valueColor = gradeColor(value)
