@@ -30,10 +30,7 @@ import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
 import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.handleDeeplinks
-import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
 import kotlinx.coroutines.CoroutineScope
@@ -58,9 +55,6 @@ private const val SUPABASE_URL =
 private const val SUPABASE_PUBLISHABLE_KEY =
     "sb_publishable_gchAnvMxlFgvzdenD0QqWg_YoOtsTPe"
 
-private const val AUTH_REDIRECT =
-    "pl.domreksio.librusallinone://login-callback"
-
 internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
 
@@ -68,11 +62,7 @@ internal val supabase = createSupabaseClient(
     supabaseUrl = SUPABASE_URL,
     supabaseKey = SUPABASE_PUBLISHABLE_KEY
 ) {
-    install(Auth) {
-        host = "login-callback"
-        scheme = "pl.domreksio.librusallinone"
-        flowType = FlowType.PKCE
-    }
+    install(Auth) {}
 }
 
 class MainActivity : Activity() {
@@ -80,9 +70,6 @@ class MainActivity : Activity() {
     private val activityScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private lateinit var emailInput: EditText
-    private lateinit var passwordInput: EditText
-    private lateinit var statusText: TextView
     private lateinit var backendStatusText: TextView
 
     private lateinit var librusLoginInput: EditText
@@ -101,6 +88,7 @@ class MainActivity : Activity() {
     private var timetableTicker: Runnable? = null
     private var autoRestoreStarted = false
     private var pendingNotificationSection: String? = null
+    private var anonymousSignInInProgress = false
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(155, 169, 190)
@@ -125,42 +113,23 @@ class MainActivity : Activity() {
         librusVault = LibrusCredentialVault(applicationContext)
         pendingNotificationSection = intent?.getStringExtra("open_librus_section")
         requestNotificationPermissionIfNeeded()
-        showLogin("Sprawdzam sesję konta…")
-
+        showLogin("Uruchamiam bezpieczną sesję urządzenia…")
         activityScope.launch {
             supabase.auth.sessionStatus.collect { state ->
                 when (state) {
-                    is SessionStatus.Authenticated ->
-                        showHome(state.session.user?.email.orEmpty())
-
-                    SessionStatus.Initializing ->
-                        showLogin("Sprawdzam zapisane konto…")
-
-                    is SessionStatus.NotAuthenticated ->
-                        showLogin("Zaloguj się, aby otworzyć aplikację.")
-
-                    is SessionStatus.RefreshFailure ->
-                        showLogin("Sesja wygasła. Zaloguj się ponownie.")
+                    is SessionStatus.Authenticated -> showHome()
+                    SessionStatus.Initializing -> showLogin("Sprawdzam bezpieczną sesję urządzenia…")
+                    is SessionStatus.NotAuthenticated -> ensureAnonymousSession()
+                    is SessionStatus.RefreshFailure -> ensureAnonymousSession(replaceExisting = true)
                 }
             }
-        }
-
-        try {
-            supabase.handleDeeplinks(intent)
-        } catch (e: Exception) {
-            showLogin("Błąd linku: ${e.message ?: "nieznany błąd"}")
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-
-        try {
-            supabase.handleDeeplinks(intent)
-        } catch (e: Exception) {
-            showLogin("Błąd linku logowania: ${e.message}")
-        }
+        pendingNotificationSection = intent.getStringExtra("open_librus_section")
     }
 
     // ---------------------------------------------------------
@@ -169,67 +138,46 @@ class MainActivity : Activity() {
 
     private fun showLogin(message: String) {
         if (isFinishing) return
-
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 36, 24, 28)
+            gravity = Gravity.CENTER
+            setPadding(28, 40, 28, 40)
             setBackgroundColor(bgColor)
         }
-
         content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
-        content.addView(label("Twoje konto\nw jednym miejscu", 30f, white, true))
-        content.addView(
-            label(
-                "Zaloguj się do konta aplikacji. To konto jest oddzielne od danych Librusa.",
-                15f,
-                muted
-            )
-        )
-
-        emailInput = inputField(
-            "Adres e-mail",
-            InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-        )
-        content.addView(emailInput, params(0, 18, 0, 8))
-
-        passwordInput = inputField(
-            "Hasło do konta aplikacji",
-            InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
-        content.addView(passwordInput, params(0, 0, 0, 12))
-
-        content.addView(actionButton("ZAREJESTRUJ KONTO") {
-            authenticate(true)
-        }, params(0, 4, 0, 6))
-
-        content.addView(actionButton("ZALOGUJ SIĘ") {
-            authenticate(false)
-        }, params(0, 4, 0, 6))
-
-        statusText = label(message, 14f, muted)
-        content.addView(statusText, params(0, 14, 0, 4))
-
-        content.addView(
-            label(
-                "Po rejestracji potwierdź adres e-mail. Po zalogowaniu otworzy się ekran główny.",
-                13f,
-                muted
-            )
-        )
-
+        content.addView(label("Witaj!", 32f, white, true), params(0, 12, 0, 8))
+        content.addView(label("Nie potrzebujesz osobnego konta ani adresu e-mail. Aplikacja tworzy bezpieczną sesję urządzenia, a następnie połączysz ją z Librusem.", 15f, muted))
+        content.addView(label(message, 14f, muted), params(0, 18, 0, 8))
+        content.addView(actionButton("SPRÓBUJ PONOWNIE") {
+            ensureAnonymousSession()
+        }, params(0, 12, 0, 0))
         setContentView(ScrollView(this).apply {
             setBackgroundColor(bgColor)
             addView(content)
         })
     }
 
-    // ---------------------------------------------------------
+    private fun ensureAnonymousSession(replaceExisting: Boolean = false) {
+        if (anonymousSignInInProgress || isFinishing) return
+        anonymousSignInInProgress = true
+        showLogin("Tworzę bezpieczną sesję urządzenia…")
+        activityScope.launch {
+            try {
+                if (replaceExisting) runCatching { supabase.auth.signOut() }
+                supabase.auth.signInAnonymously()
+            } catch (error: Exception) {
+                anonymousSignInInProgress = false
+                showLogin("Nie udało się uruchomić sesji. Sprawdź internet i ustawienie logowania anonimowego w Supabase. ${error.message.orEmpty()}")
+                return@launch
+            }
+            anonymousSignInInProgress = false
+        }
+    }
+
     // EKRAN GŁÓWNY
     // ---------------------------------------------------------
 
-    private fun showHome(email: String) {
+    private fun showHome() {
         stopTimetableTicker()
         if (isFinishing) return
 
@@ -273,7 +221,7 @@ class MainActivity : Activity() {
         brandRow.addView(brandText)
         welcomeCard.addView(brandRow)
         welcomeCard.addView(label("Witaj!", 32f, white, true), params(0, 14, 0, 0))
-        welcomeCard.addView(label("Zalogowano jako: $email", 14f, Color.rgb(210, 220, 237)))
+        welcomeCard.addView(label("Bezpieczna sesja urządzenia aktywna", 14f, Color.rgb(210, 220, 237)))
         welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)))
         content.addView(welcomeCard, params(0, 0, 0, 16))
         welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
@@ -422,8 +370,8 @@ class MainActivity : Activity() {
             showNotificationSettings()
         }, params(0, 12, 0, 8))
 
-        content.addView(actionButton("WYLOGUJ") {
-            signOut()
+        content.addView(actionButton("ODŁĄCZ KONTO LIBRUS") {
+            disconnectLibrus()
         }, params(0, 24, 0, 8))
 
         val homeScroll = ScrollView(this).apply {
@@ -692,7 +640,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val back = actionButton("‹  PULPIT") {
-            showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+            showHome()
         }
         val refresh = actionButton("ODŚWIEŻ  ↻") {
             librusDataMemory = null
@@ -3417,60 +3365,6 @@ class MainActivity : Activity() {
     // LOGOWANIE I WYLOGOWANIE SUPABASE
     // ---------------------------------------------------------
 
-    private fun authenticate(register: Boolean) {
-        val email = emailInput.text.toString().trim()
-        val password = passwordInput.text.toString()
-
-        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-            statusText.text = "Podaj prawidłowy adres e-mail."
-            return
-        }
-
-        if (password.length < 10) {
-            statusText.text = "Hasło musi mieć co najmniej 10 znaków."
-            return
-        }
-
-        statusText.text = if (register) "Tworzę konto…" else "Loguję…"
-
-        thread {
-            val result = try {
-                runBlocking {
-                    if (register) {
-                        supabase.auth.signUpWith(
-                            Email,
-                            redirectUrl = AUTH_REDIRECT
-                        ) {
-                            this.email = email
-                            this.password = password
-                        }
-                        "Konto utworzone. Sprawdź pocztę i potwierdź adres e-mail."
-                    } else {
-                        supabase.auth.signInWith(Email) {
-                            this.email = email
-                            this.password = password
-                        }
-                        "Logowanie przyjęte. Otwieram ekran główny…"
-                    }
-                }
-            } catch (e: Exception) {
-                "Błąd: ${e.message ?: e.javaClass.simpleName}"
-            }
-
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-                statusText.text = result
-
-                if (!register) {
-                    val session = supabase.auth.currentSessionOrNull()
-                    if (session != null) {
-                        showHome(session.user?.email.orEmpty())
-                    }
-                }
-            }
-        }
-    }
-
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -3511,7 +3405,7 @@ class MainActivity : Activity() {
                 uiPrefs.edit().putString("accent", keys[which]).apply()
                 dialog.dismiss()
                 if (activeSection == "START") {
-                    showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                    showHome()
                 } else {
                     loadLibrusSection(activeSection)
                 }
@@ -3524,38 +3418,32 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun signOut() {
-        LibrusNotificationScheduler.cancel(applicationContext)
-        thread {
-            val result = try {
-                runBlocking { supabase.auth.signOut() }
-                null
-            } catch (e: Exception) {
-                e.message ?: "Nie udało się wylogować."
-            }
-
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-
-                if (result == null) {
+    private fun disconnectLibrus() {
+        AlertDialog.Builder(this)
+            .setTitle("Odłączyć konto Librus?")
+            .setMessage("Z urządzenia zostaną usunięte zapisane dane logowania i sesja Librusa. Nie zmieni to danych na koncie szkolnym.")
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Odłącz") { _, _ ->
+                try {
+                    librusVault.clear()
+                    LibrusNotificationScheduler.cancel(applicationContext)
                     librusDataMemory = null
                     librusSessionMemory = null
                     librusLoginMemory = null
                     librusPasswordMemory = null
                     autoRestoreStarted = false
-                    showLogin("Wylogowano z konta aplikacji.")
-                } else {
+                    showHome()
+                } catch (error: Exception) {
                     AlertDialog.Builder(this)
-                        .setTitle("Błąd wylogowania")
-                        .setMessage(result)
+                        .setTitle("Nie udało się odłączyć Librusa")
+                        .setMessage(error.message ?: "Nieznany błąd.")
                         .setPositiveButton("OK", null)
                         .show()
                 }
             }
-        }
+            .show()
     }
 
-    // ---------------------------------------------------------
     // DOLNA NAWIGACJA — układ inspirowany Szkolny.eu
     // ---------------------------------------------------------
 
@@ -3650,7 +3538,7 @@ class MainActivity : Activity() {
                     tile.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
                 }
                 when (item.key) {
-                    "START" -> showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                    "START" -> showHome()
                     "WIĘCEJ" -> showMoreMenu(active)
                     else -> loadLibrusSection(item.key)
                 }
