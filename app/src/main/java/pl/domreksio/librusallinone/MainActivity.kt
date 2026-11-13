@@ -392,13 +392,37 @@ class MainActivity : Activity() {
         brandText.addView(label("SZKOŁA PODSTAWOWA NR 14", 11f, Color.rgb(190, 211, 245), true))
         brandText.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
         brandRow.addView(brandText, LinearLayout.LayoutParams(0, -2, 1f))
-        seasonalDecorationText(30f)?.let { decoration ->
-            brandRow.addView(decoration, LinearLayout.LayoutParams(-2, 48))
-        }
         welcomeCard.addView(brandRow)
-        welcomeCard.addView(label("Witaj!", 32f, white, true), params(0, 14, 0, 0))
-        welcomeCard.addView(label("Bezpieczna sesja urządzenia aktywna", 14f, Color.rgb(210, 220, 237)))
-        welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)))
+
+        // Powitanie i status sesji w jednym wierszu; sezonowa ozdoba jest niżej,
+        // z dala od nazwy szkoły i bez ryzyka przycięcia w górnym pasku.
+        val greetingRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val greetingTexts = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        greetingTexts.addView(label("Witaj!", 30f, white, true))
+        greetingTexts.addView(label("Bezpieczna sesja urządzenia aktywna", 13f, Color.rgb(210, 220, 237)))
+        greetingRow.addView(greetingTexts, LinearLayout.LayoutParams(0, -2, 1f))
+        if (uiPrefs.getString("accent", "blue") in setOf("red", "christmas", "halloween", "pink", "spring")) {
+            val seasonalBadge = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(34, 255, 255, 255))
+                    setStroke((1 * resources.displayMetrics.density).toInt(), Color.argb(75, 220, 235, 255))
+                }
+            }
+            seasonalBadge.addView(SeasonalBannerOverlayView(this),
+                FrameLayout.LayoutParams((58 * resources.displayMetrics.density).toInt(), (58 * resources.displayMetrics.density).toInt(), Gravity.CENTER))
+            greetingRow.addView(seasonalBadge, LinearLayout.LayoutParams(
+                (58 * resources.displayMetrics.density).toInt(), (58 * resources.displayMetrics.density).toInt()
+            ).apply { marginStart = (10 * resources.displayMetrics.density).toInt() })
+        }
+        welcomeCard.addView(greetingRow, params(0, 14, 0, 0))
+        welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)), params(0, 3, 0, 0))
         content.addView(welcomeCard, params(0, 0, 0, 16))
         welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
 
@@ -465,10 +489,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        fun quickTile(title: String, caption: String, emoji: String, tint: Int, section: String) {
+        fun quickTile(title: String, caption: String, tint: Int, section: String) {
             val tile = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(13, 14, 12, 14)
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding((9 * resources.displayMetrics.density).toInt(), (10 * resources.displayMetrics.density).toInt(), (9 * resources.displayMetrics.density).toInt(), (12 * resources.displayMetrics.density).toInt())
+                minimumHeight = (142 * resources.displayMetrics.density).toInt()
                 background = GradientDrawable(
                     GradientDrawable.Orientation.TL_BR,
                     intArrayOf(tint, Color.rgb(25, 36, 55))
@@ -478,19 +504,39 @@ class MainActivity : Activity() {
                 }
                 isClickable = true
                 isFocusable = true
+                clipChildren = false
+                clipToPadding = false
                 setOnClickListener { loadLibrusSection(section) }
             }
-            tile.addView(label(emoji, 22f, white, true))
-            tile.addView(label(title, 13f, white, true), params(0, 8, 0, 1))
-            tile.addView(label(caption, 10f, Color.rgb(187, 201, 222)))
+            val artFrame = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(34, 255, 255, 255))
+                    setStroke((1 * resources.displayMetrics.density).toInt(), Color.argb(60, 220, 235, 255))
+                }
+            }
+            artFrame.addView(ThematicBannerArtView(this@MainActivity, section),
+                FrameLayout.LayoutParams((68 * resources.displayMetrics.density).toInt(), (68 * resources.displayMetrics.density).toInt(), Gravity.CENTER))
+            if (uiPrefs.getString("accent", "blue") in setOf("red", "christmas", "halloween", "pink", "spring")) {
+                artFrame.addView(SeasonalBannerOverlayView(this@MainActivity),
+                    FrameLayout.LayoutParams((68 * resources.displayMetrics.density).toInt(), (68 * resources.displayMetrics.density).toInt(), Gravity.CENTER))
+            }
+            tile.addView(artFrame, LinearLayout.LayoutParams(
+                (68 * resources.displayMetrics.density).toInt(), (68 * resources.displayMetrics.density).toInt()
+            ))
+            tile.addView(label(title, 13f, white, true), params(0, 7, 0, 1))
+            tile.addView(label(caption, 10f, Color.rgb(187, 201, 222)).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+            })
             quickAccess.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply {
-                if (quickAccess.childCount == 0) marginEnd = (6 * resources.displayMetrics.density).toInt()
-                else marginStart = (6 * resources.displayMetrics.density).toInt()
+                if (quickAccess.childCount == 0) marginEnd = (5 * resources.displayMetrics.density).toInt()
+                else marginStart = (5 * resources.displayMetrics.density).toInt()
             })
         }
-        quickTile("Oceny", "Postępy ucznia", "✦", Color.rgb(40, 78, 126), "OCENY")
-        quickTile("Plan", "Lekcje i godziny", "▦", Color.rgb(47, 78, 100), "PLAN LEKCJI")
-        quickTile("Frekwencja", "Obecności", "◷", Color.rgb(67, 66, 112), "FREKWENCJA")
+        quickTile("Oceny", "Postępy ucznia", Color.rgb(40, 78, 126), "OCENY")
+        quickTile("Plan", "Lekcje i godziny", Color.rgb(47, 78, 100), "PLAN LEKCJI")
+        quickTile("Wiadomości", "Ogłoszenia", Color.rgb(83, 62, 112), "WIADOMOŚCI")
         content.addView(quickAccess, params(0, 0, 0, 12))
 
         addHomeSection(content, "PROFILE", "Dane konta, przedmioty, nauczyciele i sale lekcyjne", "🏫")
