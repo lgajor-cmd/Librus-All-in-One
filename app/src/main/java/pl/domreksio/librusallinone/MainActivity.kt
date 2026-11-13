@@ -1,5 +1,6 @@
 package pl.domreksio.librusallinone
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -7,6 +8,10 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -100,6 +105,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         librusVault = LibrusCredentialVault(applicationContext)
+        requestNotificationPermissionIfNeeded()
         showLogin("Sprawdzam sesję konta…")
 
         activityScope.launch {
@@ -331,6 +337,10 @@ class MainActivity : Activity() {
         addHomeSection(content, "UWAGI", "Uwagi pozytywne, neutralne i negatywne", "📝")
         addHomeSection(content, "SZCZĘŚLIWY NUMEREK", "Numer obowiązujący danego dnia", "🍀")
 
+        content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
+            showNotificationSettings()
+        }, params(0, 12, 0, 8))
+
         content.addView(actionButton("WYLOGUJ") {
             signOut()
         }, params(0, 24, 0, 8))
@@ -339,6 +349,8 @@ class MainActivity : Activity() {
             setBackgroundColor(bgColor)
             addView(content)
         })
+
+        if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext)
 
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
@@ -413,6 +425,7 @@ class MainActivity : Activity() {
                         librusDataMemory = null
 
                         librusVault.save(login, password, librusSessionMemory?.toString())
+                        LibrusNotificationScheduler.schedule(applicationContext)
 
                         "SUCCESS|Połączono z Librusem. Dane można teraz pobrać."
                     } else {
@@ -1584,6 +1597,7 @@ class MainActivity : Activity() {
     }
 
     private fun signOut() {
+        LibrusNotificationScheduler.cancel(applicationContext)
         thread {
             val result = try {
                 runBlocking { supabase.auth.signOut() }
