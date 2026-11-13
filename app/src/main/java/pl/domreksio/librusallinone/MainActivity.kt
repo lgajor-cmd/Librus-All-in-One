@@ -238,6 +238,35 @@ class MainActivity : Activity() {
         }
     }
 
+    // Subtelne dekoracje sezonowe w nagłówkach — bez zewnętrznych grafik ani pobierania zasobów.
+    // Emoji są lekkimi wektorowymi glifami systemowymi i nie wpływają na działanie modułów.
+    private fun seasonalDecorationText(sizeSp: Float): TextView? {
+        val decoration = when (uiPrefs.getString("accent", "blue")) {
+            "red" -> "🎅🏻  ❄️  ✨"          // Mikołajki
+            "christmas" -> "🎄  🎁  ✨"    // Boże Narodzenie
+            "halloween" -> "🎃  👻  🦇"
+            "pink" -> "💕  💗  💞"
+            "spring" -> "🌸  🦋  🌼"
+            else -> ""
+        }
+        if (decoration.isBlank()) return null
+        return TextView(this).apply {
+            text = decoration
+            textSize = sizeSp
+            gravity = Gravity.CENTER
+            alpha = 0.88f
+            setPadding(4, 0, 0, 0)
+            contentDescription = when (uiPrefs.getString("accent", "blue")) {
+                "red" -> "Dekoracja motywu Mikołajki"
+                "christmas" -> "Dekoracja motywu Boże Narodzenie"
+                "halloween" -> "Dekoracja motywu Halloween"
+                "pink" -> "Dekoracja motywu Walentynki"
+                "spring" -> "Dekoracja motywu Wiosna"
+                else -> "Dekoracja sezonowa"
+            }
+        }
+    }
+
     private fun showLibrusLogin() {
         if (isFinishing) return
         val saved = librusVault.load()
@@ -268,7 +297,10 @@ class MainActivity : Activity() {
         }
         school.addView(label("SZKOŁA PODSTAWOWA NR 14", 12f, Color.rgb(190, 211, 245), true))
         school.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
-        brand.addView(school)
+        brand.addView(school, LinearLayout.LayoutParams(0, -2, 1f))
+        seasonalDecorationText(27f)?.let { decoration ->
+            brand.addView(decoration, LinearLayout.LayoutParams(-2, 56))
+        }
         root.addView(brand, LinearLayout.LayoutParams(-1, -2))
 
         val card = LinearLayout(this).apply {
@@ -358,7 +390,10 @@ class MainActivity : Activity() {
         }
         brandText.addView(label("SZKOŁA PODSTAWOWA NR 14", 11f, Color.rgb(190, 211, 245), true))
         brandText.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
-        brandRow.addView(brandText)
+        brandRow.addView(brandText, LinearLayout.LayoutParams(0, -2, 1f))
+        seasonalDecorationText(30f)?.let { decoration ->
+            brandRow.addView(decoration, LinearLayout.LayoutParams(-2, 48))
+        }
         welcomeCard.addView(brandRow)
         welcomeCard.addView(label("Witaj!", 32f, white, true), params(0, 14, 0, 0))
         welcomeCard.addView(label("Bezpieczna sesja urządzenia aktywna", 14f, Color.rgb(210, 220, 237)))
