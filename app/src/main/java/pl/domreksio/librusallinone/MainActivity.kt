@@ -99,7 +99,14 @@ class MainActivity : Activity() {
     private val bgColor = Color.rgb(13, 18, 30)
     private val successColor = Color.rgb(100, 210, 140)
     private val errorColor = Color.rgb(255, 125, 125)
-    private val accentColor = Color.rgb(105, 165, 255)
+    private val uiPrefs by lazy { getSharedPreferences("librus_ui_settings", MODE_PRIVATE) }
+    private val accentColor: Int
+        get() = when (uiPrefs.getString("accent", "blue")) {
+            "teal" -> Color.rgb(32, 174, 160)
+            "violet" -> Color.rgb(145, 112, 220)
+            "amber" -> Color.rgb(224, 156, 58)
+            else -> Color.rgb(105, 165, 255)
+        }
     private val warningColor = Color.rgb(255, 190, 95)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1695,9 +1702,12 @@ class MainActivity : Activity() {
             .setTitle("Powiadomienia Librus")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
-                prefs.edit().putBoolean(keys[which], isChecked).apply()
             }
-            .setPositiveButton("Zapisz", null)
+            .setPositiveButton("Zapisz") { _, _ ->
+                prefs.edit().apply {
+                    keys.forEachIndexed { index, key -> putBoolean(key, checked[index]) }
+                }.apply()
+            }
             .setNegativeButton("Anuluj", null)
             .setNeutralButton("Uprawnienia") { _, _ -> requestNotificationPermissionIfNeeded() }
             .show()
