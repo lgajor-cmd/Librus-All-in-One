@@ -870,16 +870,42 @@ class MainActivity : Activity() {
         )
 
         val grouped = lessons.groupBy { it.date }.toSortedMap()
+        val dates = grouped.keys.toList()
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .format(java.util.Date())
+        var selectedDate = dates.firstOrNull { it == today } ?: dates.first()
 
         parent.addView(
-            infoCard("Znaleziono ${lessons.size} lekcji w ${grouped.size} dniach.")
+            infoCard("Znaleziono ${lessons.size} lekcji w ${grouped.size} dniach. Wybierz dzień, aby zobaczyć szczegóły planu.")
         )
+        parent.addView(sectionHeader("PLAN TYGODNIA"), params(0, 14, 0, 8))
 
-        for ((date, dayLessons) in grouped) {
+        val daySelector = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        val dayButtons = linkedMapOf<String, TextView>()
+
+        fun refreshDaySelection() {
+            dayButtons.forEach { (date, button) ->
+                val selected = date == selectedDate
+                button.background = roundedBackground(
+                    if (selected) Color.rgb(47, 91, 148) else panelLight,
+                    12
+                )
+                button.setTextColor(if (selected) white else muted)
+            }
+        }
+
+        val dayContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        fun renderSelectedDay(date: String) {
+            dayContent.removeAllViews()
+            val dayLessons = grouped[date] ?: return
             val dayCard = card()
-
-            val dayTitle = dateLabel(date)
-            dayCard.addView(label(dayTitle, 18f, white, true))
+            dayCard.addView(label(dateLabel(date), 18f, white, true))
             dayCard.addView(
                 label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
@@ -890,9 +916,37 @@ class MainActivity : Activity() {
             )) {
                 dayCard.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
             }
-
-            parent.addView(dayCard, params(0, 10, 0, 4))
+            dayContent.addView(dayCard, params(0, 8, 0, 4))
         }
+
+        for (date in dates) {
+            val button = TextView(this).apply {
+                text = dateLabel(date).substringBefore(",") + "\\n" + date.takeLast(5)
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTypeface(null, Typeface.BOLD)
+                setPadding(5, 9, 5, 9)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    selectedDate = date
+                    refreshDaySelection()
+                    renderSelectedDay(date)
+                }
+            }
+            dayButtons[date] = button
+            daySelector.addView(
+                button,
+                LinearLayout.LayoutParams(0, (58 * resources.displayMetrics.density).toInt(), 1f).apply {
+                    marginEnd = (4 * resources.displayMetrics.density).toInt()
+                }
+            )
+        }
+
+        parent.addView(daySelector, params(0, 0, 0, 4))
+        parent.addView(dayContent, params(0, 0, 0, 4))
+        refreshDaySelection()
+        renderSelectedDay(selectedDate)
     }
 
     private fun renderLessonCard(lesson: TimetableLesson): LinearLayout {
