@@ -15,12 +15,14 @@ import json
 
 from collections import defaultdict, deque
 from dataclasses import asdict
+from datetime import date
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from librus_synergia.const import USER_AGENT
 from librus_synergia import (
     Librus,
     LibrusAccountActionRequiredError,
@@ -308,6 +310,14 @@ class HomeworkAttachmentRequest(Credentials):
     attachment_id: str = Field(min_length=1, max_length=128)
 
 
+class JustificationSubmitRequest(Credentials):
+    date_from: str = Field(min_length=10, max_length=10, pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+    date_to: str = Field(min_length=10, max_length=10, pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+    lessons: list[int] = Field(min_length=1, max_length=20)
+    message_from_parent: str = Field(min_length=1, max_length=2000)
+    send_notify: bool = True
+
+
 class MessageSendRequest(Credentials):
     recipient_ids: list[str] = Field(min_length=1, max_length=10)
     topic: str = Field(min_length=1, max_length=200)
@@ -416,6 +426,122 @@ async def send_message(
         raise HTTPException(422, str(error)) from None
     except Exception as error:
         raise _safe_error(error) from None
+
+
+@app.post("/v1/justification/submit")
+async def submit_justification(
+    payload: JustificationSubmitRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Składanie e-Usprawiedliwień jest dostępne wyłącznie z konta rodzica.")
+
+    try:
+        date_from = date.fromisoformat(payload.date_from)
+        date_to = date.fromisoformat(payload.date_to)
+    except ValueError:
+        raise HTTPException(422, "Nieprawidłowy zakres dat.") from None
+    if date_to < date_from or (date_to - date_from).days > 31:
+        raise HTTPException(422, "Zakres e-Usprawiedliwienia musi mieścić się w 31 dniach.")
+    if any(lesson < 1 or lesson > 20 for lesson in payload.lessons):
+        raise HTTPException(422, "Numer lekcji musi mieścić się w zakresie 1–20.")
+    if not payload.message_from_parent.strip():
+        raise HTTPException(422, "Wpisz powód nieobecności.")
+
+    user = await require_user(authorization)
+    check_rate_limit(request)
+
+    async with Librus(
+        payload.login,
+        payload.password.get_secret_value(),
+        session_data=_session_data(payload.session),
+        cache_reference_data=True,
+    ) as librus:
+        # Ensure the authenticated cookie session is ready before the write.
+        await librus.me()
+        client = librus.client
+        endpoint = "https://synergia.librus.pl/gateway/api/2.0/Justifications"
+        body = {
+            "dateFrom": payload.date_from,
+            "dateTo": payload.date_to,
+            "messageFromParent": payload.message_from_parent.strip(),
+            "lessons": payload.lessons,
+            "sendNotify": payload.send_notify,
+        }
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Referer": "https://synergia.librus.pl/gateway/ms/studentdatapanel/ui/",
+            "Origin": "https://synergia.librus.pl",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+        }
+
+        async def post_once() -> tuple[int, str]:
+            async with client._session.post(
+                endpoint,
+                json=body,
+                headers=headers,
+                **client._timeout,
+            ) as response:
+                return response.status, await response.text()
+
+        try:
+            status, raw = await post_once()
+        except Exception:
+            # A timeout after POST is ambiguous: never retry a possibly-sent excuse.
+            raise HTTPException(
+                502,
+                {
+                    "message": "Librus nie potwierdził wyniku wysyłki. Sprawdź moduł e-Usprawiedliwienia przed ponowną próbą.",
+                    "outcome_unknown": True,
+                },
+            ) from None
+
+        if status == 401:
+            # A definite 401 means the first request was rejected before submission.
+            try:
+                await librus.login(force=True)
+                status, raw = await post_once()
+            except Exception:
+                raise HTTPException(
+                    502,
+                    {
+                        "message": "Nie udało się odświeżyć sesji i potwierdzić wysyłki. Sprawdź e-Usprawiedliwienia.",
+                        "outcome_unknown": True,
+                    },
+                ) from None
+
+        try:
+            result_data = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            result_data = {}
+
+        status_field = str(result_data.get("Status") or result_data.get("status") or "").lower()
+        success = status < 400 and status_field != "error" and result_data.get("successful") is not False
+        if not success:
+            detail = (
+                result_data.get("Message")
+                or result_data.get("message")
+                or (raw[:500] if raw else f"Librus zwrócił HTTP {status}.")
+            )
+            module_unavailable = status in (403, 404) or any(
+                marker in str(detail).lower()
+                for marker in ("brak dostępu", "brak dostepu", "niedostęp", "niedostep", "module disabled")
+            )
+            raise HTTPException(
+                status if status in (401, 403, 404) else 400,
+                {"message": str(detail), "module_available": not module_unavailable},
+            )
+
+        return jsonable_encoder({
+            "ok": True,
+            "submitted": True,
+            "result": result_data,
+            "user_id": user["id"],
+            "profile": payload.profile,
+            "session": asdict(librus.session_data),
+        })
 
 
 @app.post("/v1/homework/attachment")
