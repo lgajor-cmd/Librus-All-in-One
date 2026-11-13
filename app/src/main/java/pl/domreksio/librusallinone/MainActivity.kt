@@ -3060,9 +3060,20 @@ class MainActivity : Activity() {
     )
 
     private fun renderTeachersDirectory(parent: LinearLayout, data: JSONObject) {
-        val teachers = data.optJSONObject("teachers")
+        val rawTeachers = data.opt("teachers")
+        val teachers = rawTeachers as? JSONObject
         val subjects = data.optJSONObject("subjects")
         val byId = linkedMapOf<String, MutableMap<String, Any>>()
+
+        fun scalarField(obj: JSONObject, vararg keys: String): String {
+            for (key in keys) {
+                val raw = obj.opt(key)
+                if (raw == null || raw == JSONObject.NULL || raw is JSONObject || raw is JSONArray) continue
+                val value = raw.toString().trim()
+                if (value.isNotBlank() && value != "null") return value
+            }
+            return ""
+        }
 
         fun addTeacher(
             id: String,
@@ -3083,7 +3094,11 @@ class MainActivity : Activity() {
                     "room" to room
                 )
             }
-            if (name.isNotBlank() && (entry["name"] as? String).isNullOrBlank()) {
+            if (name.isNotBlank() && (
+                    (entry["name"] as? String).isNullOrBlank() ||
+                        entry["name"] == "Nauczyciel"
+                    )
+            ) {
                 entry["name"] = name
             }
             if (subject.isNotBlank()) (entry["subjects"] as MutableSet<String>).add(subject)
@@ -3122,11 +3137,18 @@ class MainActivity : Activity() {
             }
         }
 
-        if (teachers != null) {
-            val keys = teachers.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                readTeacher(key, teachers.opt(key))
+        when (rawTeachers) {
+            is JSONObject -> {
+                val keys = rawTeachers.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    readTeacher(key, rawTeachers.opt(key))
+                }
+            }
+            is JSONArray -> {
+                for (index in 0 until rawTeachers.length()) {
+                    readTeacher(index.toString(), rawTeachers.opt(index))
+                }
             }
         }
 
@@ -3139,13 +3161,25 @@ class MainActivity : Activity() {
                     for (index in 0 until value.length()) collectLesson(value.opt(index))
                 }
                 is JSONObject -> {
-                    val teacherId = firstValue(value, "teacher_id", "teacher")
-                    val subjectId = firstValue(value, "subject_id", "subject")
+                    val teacherId = scalarField(value, "teacher_id", "teacher")
+                    val subjectId = scalarField(value, "subject_id", "subject")
                     val teacherName = firstDisplayValue(value, "teacher_name")
                     val subjectName = lookupName(subjects, subjectId)
                         .ifBlank { firstDisplayValue(value, "subject_name") }
                     if (teacherId.isNotBlank() || teacherName.isNotBlank()) {
-                        val resolvedName = lookupName(teachers, teacherId)
+                        val teacherObject = teachers?.optJSONObject(teacherId)
+                        val dictionaryName = teacherObject?.let { teacher ->
+                            firstDisplayValue(
+                                teacher, "name", "full_name", "teacher_name", "display_name"
+                            ).ifBlank {
+                                listOf(
+                                    firstValue(teacher, "first_name", "firstname"),
+                                    firstValue(teacher, "last_name", "surname", "lastname")
+                                ).filter { it.isNotBlank() }.joinToString(" ")
+                            }
+                        }.orEmpty()
+                        val resolvedName = dictionaryName
+                            .ifBlank { lookupName(teachers, teacherId) }
                             .ifBlank { teacherName }
                         addTeacher(teacherId, resolvedName, subjectName)
                     }
