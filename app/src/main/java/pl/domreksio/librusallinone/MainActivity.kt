@@ -4298,7 +4298,13 @@ class MainActivity : Activity() {
                     val targetKey = if (section == "WIADOMOŚCI") {
                         val messageCategory = if (key == "announcements") "Ogłoszenia" else "Wiadomości"
                         val identity = firstValue(item, "id", "message_id", "messageId", "announcement_id")
-                            .ifBlank { listOf(title, firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"), date).joinToString("|") }
+                            .ifBlank {
+                                listOf(
+                                    firstValue(item, "title", "subject", "topic"),
+                                    firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
+                                    firstValue(item, "send_date", "date", "created_at", "sent_at")
+                                ).joinToString("|")
+                            }
                         "$messageCategory:$identity"
                     } else featureFocusKey(key, item)
                     entries.add(TimelineEntry(section, category, title, detail, date, icon, targetKey))
@@ -4347,12 +4353,8 @@ class MainActivity : Activity() {
             arrayOf("title", "subject", "topic", "name"),
             arrayOf("sender_name", "sender", "author", "teacher_name", "from")
         )
-        val homeworkSource = if ((data.optJSONArray("homework_assignments")?.length() ?: 0) > 0) {
-            "homework_assignments"
-        } else {
-            listOf("homework", "homeworks").firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
-                ?: "homework"
-        }
+        val homeworkSource = listOf("homework_assignments", "homework", "homeworks")
+            .firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL } ?: "homework"
         collect(
             listOf(homeworkSource),
             "ZADANIA DOMOWE", "Zadanie domowe", "▤",
@@ -4360,7 +4362,7 @@ class MainActivity : Activity() {
             arrayOf("title", "topic", "name", "subject_name"),
             arrayOf("description", "content", "teacher_name", "subject_name", "status")
         )
-        val agendaSource = listOf("agenda", "events").firstOrNull {
+        val agendaSource = listOf("agenda", "events", "calendar_events").firstOrNull {
             data.has(it) && data.opt(it) != JSONObject.NULL
         } ?: "agenda"
         collect(
