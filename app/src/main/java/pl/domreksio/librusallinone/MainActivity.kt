@@ -1893,10 +1893,7 @@ class MainActivity : Activity() {
                 }
                 subjectCard.addView(row)
 
-                appendGradeExtraDetails(
-                    subjectCard, grade,
-                    listOf(cleanCategory, cleanDescription, cleanComments)
-                )
+                appendGradeExtraDetails(subjectCard, grade)
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
@@ -4373,7 +4370,9 @@ class MainActivity : Activity() {
                 val seenDetails = mutableSetOf<String>()
                 fun addGradeDetail(heading: String, rawValue: String) {
                     val value = cleanGradeDetail(rawValue, heading, "Za co")
-                    val identity = value.lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
+                    if (heading == "Komentarz" && sameGradeDetail(value, description)) return
+                    val identity = heading.lowercase(Locale("pl", "PL")) + "|" +
+                        value.lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
                     if (value.isBlank() || !seenDetails.add(identity)) return
                     detailParts.add(if (heading.isBlank()) value else "$heading: $value")
                 }
@@ -4385,8 +4384,7 @@ class MainActivity : Activity() {
                     "requirements" to "Wymaganie",
                     "criteria" to "Kryterium",
                     "skills" to "Umiejętność",
-                    "skill" to "Umiejętność",
-                    "category" to "Kategoria"
+                    "skill" to "Umiejętność"
                 ).forEach { (field, heading) ->
                     val raw = grade.opt(field)
                     if (raw != null && raw != JSONObject.NULL) {
@@ -6506,13 +6504,9 @@ class MainActivity : Activity() {
 
     private fun appendGradeExtraDetails(
         parent: LinearLayout,
-        grade: JSONObject,
-        alreadyShown: List<String>
+        grade: JSONObject
     ) {
-        val seen = alreadyShown.filter { it.isNotBlank() }.map {
-            cleanGradeDetail(it, "Za co", "Komentarz", "Opis")
-                .lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
-        }.toMutableSet()
+        val seen = mutableSetOf<String>()
         listOf(
             "requirements" to "Wymaganie",
             "criteria" to "Kryterium",
@@ -6527,8 +6521,8 @@ class MainActivity : Activity() {
             }
             values.forEach { rawValue ->
                 val value = cleanGradeDetail(rawValue, heading)
-                val identity = value.lowercase(Locale("pl", "PL"))
-                    .replace(Regex("\\s+"), " ").trim()
+                val identity = heading.lowercase(Locale("pl", "PL")) + "|" +
+                    value.lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
                 if (value.isNotBlank() && seen.add(identity)) {
                     parent.addView(label("$heading: $value", 12f, muted))
                 }
