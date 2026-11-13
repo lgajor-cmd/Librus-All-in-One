@@ -4193,7 +4193,7 @@ class MainActivity : Activity() {
                     val title = firstValue(item, *titleKeys).ifBlank { category }
                     val detail = firstValue(item, *detailKeys)
                     val targetKey = if (section == "WIADOMOŚCI") {
-                        val messageCategory = if (keys.first() == "announcements") "Ogłoszenia" else "Wiadomości"
+                        val messageCategory = if (key == "announcements") "Ogłoszenia" else "Wiadomości"
                         val identity = firstValue(item, "id", "message_id", "messageId", "announcement_id")
                             .ifBlank { listOf(title, firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"), date).joinToString("|") }
                         "$messageCategory:$identity"
