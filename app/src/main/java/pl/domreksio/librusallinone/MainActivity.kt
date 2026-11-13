@@ -1151,18 +1151,25 @@ class MainActivity : Activity() {
                 // Librus może zwracać oceny liczbowe i opisowe w różnych polach.
                 // Rozszerzona lista pozwala wyświetlić także tekstowe wpisy spotykane
                 // w edukacji wczesnoszkolnej (klasy 1–3), bez wymuszania symbolu liczbowego.
-                val value = firstValue(
+                // Wartość może być liczbą, tekstem albo obiektem/strukturą
+                // zwracaną przez różne warianty API Librusa.
+                val value = firstDisplayValue(
                     grade,
-                    "value", "grade", "symbol", "text", "result",
-                    "assessment", "grade_description", "description", "skill", "name"
-                ).ifBlank { "—" }
-                val date = firstValue(grade, "date", "add_date", "created_at").take(10)
-                val description = firstValue(
-                    grade, "skill", "description", "comment", "teacher_comment"
+                    "value", "grade", "symbol", "text", "result", "assessment",
+                    "grade_value", "grade_text", "mark", "grade_description",
+                    "skill", "name"
+                ).ifBlank { "Ocena opisowa" }
+                val date = firstValue(
+                    grade, "date", "add_date", "created_at", "modified_at"
+                ).take(10)
+                val description = firstDisplayValue(
+                    grade,
+                    "description", "skill_description", "comment",
+                    "teacher_comment", "feedback", "note", "details"
                 )
                 val teacherId = firstValue(grade, "teacher_id")
                 val teacher = lookupName(teachers, teacherId)
-                    .ifBlank { grade.optString("teacher_name") }
+                    .ifBlank { firstDisplayValue(grade, "teacher_name", "teacher") }
 
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -1190,8 +1197,10 @@ class MainActivity : Activity() {
                 row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
                 subjectCard.addView(row)
 
-                appendStringArray(subjectCard, grade.optJSONArray("comments"), "Komentarz")
-                appendStringArray(subjectCard, grade.optJSONArray("requirements"), "Wymaganie")
+                appendJsonDetails(subjectCard, grade, "comments", "Komentarz")
+                appendJsonDetails(subjectCard, grade, "requirements", "Wymaganie")
+                appendJsonDetails(subjectCard, grade, "criteria", "Kryterium")
+                appendJsonDetails(subjectCard, grade, "skills", "Umiejętność")
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
@@ -2198,27 +2207,77 @@ class MainActivity : Activity() {
     }
 
     private fun gradeColor(value: String): Int {
+        // Koloruj wyłącznie jednoznaczne oceny liczbowe. Opisów typu
+        // "5 umiejętności opanowanych" nie klasyfikuj jak stopnia 5.
         val normalized = value.trim()
-        return when {
-            normalized.startsWith("6") || normalized.startsWith("5") ||
-                normalized.startsWith("+5") -> successColor
-            normalized.startsWith("1") || normalized.startsWith("2") ->
-                errorColor
+        if (!normalized.matches(Regex("^[1-6][+-]?$"))) return white
+        return when (normalized.first()) {
+            '5', '6' -> successColor
+            '1', '2' -> errorColor
             else -> white
         }
     }
 
-    private fun appendStringArray(
+    private fun firstDisplayValue(obj: JSONObject, vararg keys: String): String {
+        for (key in keys) {
+            if (!obj.has(key) || obj.isNull(key)) continue
+            val rendered = displayJsonValue(obj.opt(key))
+            if (rendered.isNotBlank()) return rendered
+        }
+        return ""
+    }
+
+    private fun displayJsonValue(value: Any?): String {
+        return when (value) {
+            null, JSONObject.NULL -> ""
+            is JSONObject -> {
+                val preferred = arrayOf(
+                    "value", "text", "name", "title", "description",
+                    "content", "label", "skill", "comment", "result"
+                )
+                for (key in preferred) {
+                    if (value.has(key) && !value.isNull(key)) {
+                        val rendered = displayJsonValue(value.opt(key))
+                        if (rendered.isNotBlank()) return rendered
+                    }
+                }
+                val parts = mutableListOf<String>()
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val rendered = displayJsonValue(value.opt(key))
+                    if (rendered.isNotBlank()) parts.add(rendered)
+                }
+                parts.distinct().joinToString(" · ")
+            }
+            is JSONArray -> {
+                val parts = mutableListOf<String>()
+                for (i in 0 until value.length()) {
+                    val rendered = displayJsonValue(value.opt(i))
+                    if (rendered.isNotBlank()) parts.add(rendered)
+                }
+                parts.distinct().joinToString(" · ")
+            }
+            else -> value.toString().trim().takeUnless {
+                it.isBlank() || it == "null"
+            }.orEmpty()
+        }
+    }
+
+    private fun appendJsonDetails(
         parent: LinearLayout,
-        array: JSONArray?,
+        grade: JSONObject,
+        key: String,
         heading: String
     ) {
-        if (array == null) return
-        for (i in 0 until array.length()) {
-            val value = array.optString(i)
-            if (value.isNotBlank() && value != "null") {
-                parent.addView(label("$heading: $value", 12f, muted))
-            }
+        if (!grade.has(key) || grade.isNull(key)) return
+        val raw = grade.opt(key)
+        val values = when (raw) {
+            is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
+            else -> listOf(displayJsonValue(raw))
+        }
+        values.filter { it.isNotBlank() }.distinct().forEach { value ->
+            parent.addView(label("$heading: $value", 12f, muted))
         }
     }
 
