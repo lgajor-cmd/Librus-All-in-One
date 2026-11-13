@@ -1435,11 +1435,8 @@ class MainActivity : Activity() {
             }
             .sortedByDescending { it.second }
 
-        if (entries.isEmpty()) {
-            parent.addView(infoCard("Brak wpisów frekwencji."))
-            renderJustifications(parent, data.optJSONArray("justifications"))
-            return
-        }
+        // Nie ukrywaj kalendarza, gdy Librus nie zwrócił jeszcze wpisów.
+        // Dzięki temu użytkownik nadal widzi bieżący miesiąc i dzisiejszą datę.
 
         fun typeOf(item: JSONObject): String {
             val id = firstValue(item, "type_id", "attendance_type_id", "type")
