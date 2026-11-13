@@ -1,11 +1,12 @@
-
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
-        android:label="SP14 • Librus"\n        android:icon="@drawable/ic_launcher"\n        android:roundIcon="@drawable/ic_launcher"
+        android:label="SP14 • Librus"
+        android:icon="@drawable/ic_launcher"
+        android:roundIcon="@drawable/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
 
@@ -23,7 +24,6 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-
                 <data
                     android:scheme="pl.domreksio.librusallinone"
                     android:host="login-callback" />
