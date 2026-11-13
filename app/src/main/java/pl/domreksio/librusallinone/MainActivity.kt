@@ -1495,6 +1495,46 @@ class MainActivity : Activity() {
         if (total == 0) parent.addView(infoCard("Brak ocen do wyświetlenia."))
     }
 
+    private fun showGradeSimulator(subject: String, currentGrades: List<Int>) {
+        val currentAverage = currentGrades.average()
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(8, 8, 8, 0)
+        }
+        fields.addView(label("Przedmiot: " + subject, 13f, muted))
+        fields.addView(label("Uwzględnione oceny liczbowe: " + currentGrades.joinToString(", "), 13f, white))
+        fields.addView(label("Obecna średnia arytmetyczna: " + String.format(Locale.US, "%.2f", currentAverage), 18f, accentColor, true))
+        val proposed = EditText(this).apply {
+            hint = "Wpisz proponowaną ocenę 1–6"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setSingleLine(true)
+            setTextColor(white)
+            setHintTextColor(muted)
+        }
+        val result = label("Wpisz ocenę i wybierz „Oblicz”. Symulacja nie zmienia ocen w Librusie.", 13f, muted)
+        fields.addView(proposed, params(0, 10, 0, 6))
+        fields.addView(result, params(0, 6, 0, 0))
+        val dialog = AlertDialog.Builder(this).setTitle("Kalkulator ocen")
+            .setView(fields).setNegativeButton("Zamknij", null)
+            .setPositiveButton("Oblicz", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val value = proposed.text.toString().toIntOrNull()
+                if (value == null || value !in 1..6) {
+                    result.text = "Wpisz ocenę całkowitą od 1 do 6."
+                    result.setTextColor(errorColor)
+                } else {
+                    val projected = (currentGrades.sum() + value).toDouble() / (currentGrades.size + 1)
+                    result.text = "Po dodaniu oceny $value średnia wyniosłaby " +
+                        String.format(Locale("pl", "PL"), "%.2f", projected) +
+                        " (z " + (currentGrades.size + 1) + " ocen)."
+                    result.setTextColor(successColor)
+                }
+            }
+        }
+        dialog.show()
+    }
+
     /*
      * Grupowanie ocen według przedmiotów.
      * Własna implementacja widoku inspirowana układem aplikacji Szkolny.eu.
@@ -1551,6 +1591,16 @@ class MainActivity : Activity() {
             )
             header.addView(label("${grades.size} wpisów", 12f, successColor))
             subjectCard.addView(header)
+            val simulatorGrades = grades.mapNotNull { grade ->
+                val raw = firstDisplayValue(grade, "value", "grade", "symbol", "text", "result", "assessment",
+                    "grade_value", "grade_text", "mark", "grade_description", "skill", "name").trim()
+                raw.toIntOrNull()?.takeIf { it in 1..6 }
+            }
+            if (simulatorGrades.isNotEmpty()) {
+                subjectCard.addView(actionButton("SYMULUJ ŚREDNIĄ (bez wag)") {
+                    showGradeSimulator(subject, simulatorGrades)
+                }, params(0, 8, 0, 4))
+            }
 
             for (grade in grades) {
                 // Librus może zwracać oceny liczbowe i opisowe w różnych polach.
