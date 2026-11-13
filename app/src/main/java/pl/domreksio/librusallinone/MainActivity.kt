@@ -2850,17 +2850,83 @@ class MainActivity : Activity() {
             setPadding(16, 12, 16, 12)
             background = roundedBackground(panelLight, 14)
         }
-        parent.addView(search, params(0, 0, 0, 12))
+        parent.addView(search, params(0, 0, 0, 10))
+        var selectedFilter = "all"
+        var currentQuery = ""
+        val filters = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        parent.addView(filters, params(0, 0, 0, 10))
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         parent.addView(results)
-        fun renderFiltered(query: String) {
+
+        fun savedKeys(key: String): Set<String> {
+            val array = readLocalArray(key)
+            return (0 until array.length()).map { array.optString(it) }.toSet()
+        }
+        fun messageKey(item: JSONObject, category: String): String {
+            val id = firstValue(item, "id", "message_id", "messageId", "announcement_id")
+            val identity = id.ifBlank {
+                listOf(
+                    firstValue(item, "title", "subject", "topic"),
+                    firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
+                    firstValue(item, "send_date", "date", "created_at", "sent_at")
+                ).joinToString("|")
+            }
+            return "$category:${identity.hashCode()}"
+        }
+        fun toggleSaved(key: String, storageKey: String, value: Boolean) {
+            val old = readLocalArray(storageKey)
+            val updated = JSONArray()
+            for (index in 0 until old.length()) {
+                val saved = old.optString(index)
+                if (saved != key) updated.put(saved)
+            }
+            if (value) updated.put(key)
+            saveLocalArray(storageKey, updated)
+        }
+        fun renderFiltered() {
             results.removeAllViews()
-            val needle = query.trim().lowercase(Locale.ROOT)
-            fun filtered(source: JSONArray?): JSONArray {
+            filters.removeAllViews()
+            val choices = listOf(
+                "all" to "WSZYSTKIE", "unread" to "NIEPRZECZYTANE",
+                "pinned" to "PRZYPINANE", "archived" to "ARCHIWUM"
+            )
+            choices.forEach { (filter, caption) ->
+                val chip = TextView(this).apply {
+                    text = caption
+                    textSize = 9f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setPadding(7, 11, 7, 11)
+                    setTextColor(if (selectedFilter == filter) Color.WHITE else muted)
+                    background = roundedBackground(if (selectedFilter == filter) accentColor else panelLight, 9)
+                    setOnClickListener {
+                        selectedFilter = filter
+                        renderFiltered()
+                    }
+                }
+                filters.addView(chip, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginEnd = (3 * resources.displayMetrics.density).toInt()
+                })
+            }
+            val needle = currentQuery.trim().lowercase(Locale.ROOT)
+            val pinned = savedKeys("message_pinned")
+            val archived = savedKeys("message_archived")
+            fun filtered(source: JSONArray?, category: String): JSONArray {
                 val output = JSONArray()
                 if (source == null) return output
                 for (i in 0 until source.length()) {
                     val item = source.optJSONObject(i) ?: continue
+                    val key = messageKey(item, category)
+                    val isPinned = key in pinned
+                    val isArchived = key in archived
+                    val isUnread = firstValue(item, "read_date", "readDate").isBlank()
+                    if (selectedFilter == "pinned" && !isPinned) continue
+                    if (selectedFilter == "archived" && !isArchived) continue
+                    if (selectedFilter == "unread" && (!isUnread || isArchived)) continue
+                    if (selectedFilter != "archived" && isArchived) continue
                     val searchable = listOf(
                         firstValue(item, "title", "subject", "topic"),
                         firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
@@ -2871,21 +2937,29 @@ class MainActivity : Activity() {
                 }
                 return output
             }
-            val messages = filtered(data.optJSONArray("messages"))
-            val announcements = filtered(data.optJSONArray("announcements"))
-            if (needle.isNotBlank() && messages.length() + announcements.length() == 0) {
-                results.addView(infoCard("Nie znaleziono wiadomości pasujących do: $query"))
+            val messages = filtered(data.optJSONArray("messages"), "Wiadomości")
+            val announcements = filtered(data.optJSONArray("announcements"), "Ogłoszenia")
+            if (messages.length() + announcements.length() == 0) {
+                results.addView(infoCard(when (selectedFilter) {
+                    "pinned" -> "Nie masz przypiętych wiadomości."
+                    "archived" -> "Archiwum jest puste."
+                    "unread" -> "Nie ma nieprzeczytanych wiadomości."
+                    else -> if (needle.isNotBlank()) "Nie znaleziono wiadomości pasujących do: $currentQuery" else "Brak wiadomości."
+                }))
             } else {
-                renderMessageArray(results, messages, "Wiadomości")
-                renderMessageArray(results, announcements, "Ogłoszenia")
+                renderMessageArray(results, messages, "Wiadomości", ::messageKey, ::savedKeys, ::toggleSaved, ::renderFiltered)
+                renderMessageArray(results, announcements, "Ogłoszenia", ::messageKey, ::savedKeys, ::toggleSaved, ::renderFiltered)
             }
         }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderFiltered(s?.toString().orEmpty()) }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                currentQuery = s?.toString().orEmpty()
+                renderFiltered()
+            }
             override fun afterTextChanged(s: Editable?) {}
         })
-        renderFiltered("")
+        renderFiltered()
     }
 
     private fun openNewMessageComposer() {
@@ -3148,77 +3222,69 @@ class MainActivity : Activity() {
     private fun renderMessageArray(
         parent: LinearLayout,
         array: JSONArray?,
-        heading: String
+        heading: String,
+        messageKey: (JSONObject, String) -> String,
+        savedKeys: (String) -> Set<String>,
+        toggleSaved: (String, String, Boolean) -> Unit,
+        onChanged: () -> Unit
     ) {
-        if (array == null || array.length() == 0) {
-            parent.addView(infoCard("Brak wiadomości do wyświetlenia: $heading."))
-            return
-        }
-
+        if (array == null || array.length() == 0) return
         parent.addView(sectionHeader(heading), params(0, 18, 0, 8))
-
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
-            val title = firstValue(item, "title", "subject", "topic")
-                .ifBlank { heading.removeSuffix("i") }
+            val title = firstValue(item, "title", "subject", "topic").ifBlank { heading.removeSuffix("i") }
             val sender = firstValue(item, "sender_name", "sender", "author", "teacher_name", "from")
             val date = firstValue(item, "send_date", "date", "created_at", "sent_at")
-            val body = firstValue(
-                item,
-                "content", "message", "body", "text",
-                "content_html", "message_content", "description"
-            )
-
+            val body = firstValue(item, "content", "message", "body", "text", "content_html", "message_content", "description")
+            val key = messageKey(item, heading)
+            val pinned = key in savedKeys("message_pinned")
+            val archived = key in savedKeys("message_archived")
             val card = card()
             card.addView(label(title, 15f, white, true))
             if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
             if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
-
-            val messageReadDate = if (heading == "Wiadomości") {
-                firstValue(item, "read_date", "readDate")
-            } else {
-                "not-a-message"
-            }
-            val readChip = if (heading == "Wiadomości") {
-                statusChip(
+            if (heading == "Wiadomości") {
+                val messageReadDate = firstValue(item, "read_date", "readDate")
+                val readChip = statusChip(
                     if (messageReadDate.isBlank()) "NIEPRZECZYTANA" else "PRZECZYTANA",
                     if (messageReadDate.isBlank()) warningColor else successColor
-                ).also { card.addView(it, params(0, 5, 0, 0)) }
-            } else null
-
-            if (heading == "Ogłoszenia") {
-                if (body.isNotBlank()) {
-                    card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
-                    card.addView(actionButton("OTWÓRZ OGŁOSZENIE") {
-                        showMessageDetails(title, sender, date, body)
-                    })
-                } else {
-                    card.addView(label("Brak treści ogłoszenia.", 12f, muted))
-                }
-            } else {
+                )
+                card.addView(readChip, params(0, 5, 0, 0))
+                if (body.isNotBlank()) card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
+                else card.addView(label("Podgląd wiadomości niedostępny.", 12f, muted))
                 val messageId = firstValue(item, "id", "message_id", "messageId")
-                if (body.isNotBlank()) {
-                    card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
-                } else {
-                    card.addView(label("Podgląd wiadomości niedostępny.", 12f, muted))
-                }
-
                 if (messageId.isNotBlank()) {
                     card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
                         fetchFullMessage(messageId, title, sender, date) {
                             item.put("read_date", "read")
-                            readChip?.apply {
-                                text = "PRZECZYTANA"
-                                setTextColor(successColor)
-                                background = statusChip("PRZECZYTANA", successColor).background
-                            }
+                            readChip.text = "PRZECZYTANA"
+                            readChip.setTextColor(successColor)
                         }
                     })
                 } else {
                     card.addView(label("Brak identyfikatora wiadomości — nie można pobrać pełnej treści.", 12f, warningColor))
                 }
+            } else if (body.isNotBlank()) {
+                card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
+                card.addView(actionButton("OTWÓRZ OGŁOSZENIE") { showMessageDetails(title, sender, date, body) })
+            } else {
+                card.addView(label("Brak treści ogłoszenia.", 12f, muted))
             }
-
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            actions.addView(actionButton(if (pinned) "ODPINAJ" else "PRZYPNIJ") {
+                toggleSaved(key, "message_pinned", !pinned)
+                onChanged()
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                marginEnd = (5 * resources.displayMetrics.density).toInt()
+            })
+            actions.addView(actionButton(if (archived) "PRZYWRÓĆ" else "ARCHIWIZUJ") {
+                toggleSaved(key, "message_archived", !archived)
+                onChanged()
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(actions, params(0, 8, 0, 0))
             parent.addView(card, params(0, 0, 0, 8))
         }
     }
