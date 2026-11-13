@@ -42,7 +42,7 @@ internal object LibrusNotificationDiagnostics {
             edit.putLong("last_success", System.currentTimeMillis())
                 .putLong("success_count", prefs.getLong("success_count", 0L) + 1L)
         }
-        if (status == "error" || status == "auth_required" || status == "blocked") {
+        if (status == "error" || status == "auth_required" || status == "blocked" || status == "partial_success") {
             edit.putLong("error_count", prefs.getLong("error_count", 0L) + 1L)
         }
         edit.commit()
@@ -185,13 +185,40 @@ class LibrusNotificationWorker(
                 else activeConnection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
 
             if (code == 401 || code == 428 || code == 409) {
+                val errorCode = activeConnection.getHeaderField("X-Librus-Error-Code").orEmpty()
                 val detail = body.take(300).ifBlank { "HTTP $code" }
-                LibrusNotificationDiagnostics.record(applicationContext, "auth_required", detail)
-                postNotification(
-                    "Wymagane działanie w Librusie",
-                    "Otwórz aplikację i sprawdź połączenie z Librusem. $detail",
-                    "START"
-                )
+                when {
+                    errorCode.startsWith("SUPABASE_") || errorCode.startsWith("AUTH_TOKEN_") -> {
+                        LibrusNotificationDiagnostics.record(
+                            applicationContext,
+                            "auth_required",
+                            "Wymagana sesja aplikacji: $detail"
+                        )
+                        postNotification(
+                            "Wymagana sesja aplikacji",
+                            "Otwórz Librus All-in-One, aby odnowić sesję aplikacji. Dane Librusa nie zostały zmienione.",
+                            "START"
+                        )
+                    }
+                    errorCode.startsWith("LIBRUS_") || code == 428 || code == 409 -> {
+                        LibrusNotificationDiagnostics.record(applicationContext, "auth_required", detail)
+                        postNotification(
+                            "Wymagane działanie w Librusie",
+                            "Otwórz aplikację i sprawdź połączenie z Librusem. $detail",
+                            "START"
+                        )
+                    }
+                    else -> {
+                        // An unclassified 401 must not be reported as a Librus
+                        // password problem. Retry and leave a diagnostic trail.
+                        LibrusNotificationDiagnostics.record(
+                            applicationContext,
+                            "error",
+                            "Nierozpoznany błąd autoryzacji HTTP $code: $detail"
+                        )
+                        return Result.retry()
+                    }
+                }
                 return Result.success()
             }
             if (code !in 200..299) {
@@ -221,12 +248,25 @@ class LibrusNotificationWorker(
             detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość")
             detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga")
             detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga")
-            val notificationStatus = applicationContext.getSharedPreferences(
-                "librus_notification_diagnostics",
-                Context.MODE_PRIVATE
-            ).getString("last_status", "")
-            if (notificationStatus != "blocked") {
-                LibrusNotificationDiagnostics.record(applicationContext, "success")
+            val failedSections = data.optJSONArray("failed_sections")
+            if (failedSections != null && failedSections.length() > 0) {
+                val names = (0 until failedSections.length())
+                    .map { failedSections.optString(it) }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                LibrusNotificationDiagnostics.record(
+                    applicationContext,
+                    "partial_success",
+                    "Synchronizacja częściowa. Niedostępne kategorie: ${names.joinToString(", ")}"
+                )
+            } else {
+                val notificationStatus = applicationContext.getSharedPreferences(
+                    "librus_notification_diagnostics",
+                    Context.MODE_PRIVATE
+                ).getString("last_status", "")
+                if (notificationStatus != "blocked") {
+                    LibrusNotificationDiagnostics.record(applicationContext, "success")
+                }
             }
             Result.success()
         } catch (error: Exception) {
