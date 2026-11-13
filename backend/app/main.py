@@ -311,8 +311,8 @@ class HomeworkAttachmentRequest(Credentials):
 
 
 class JustificationSubmitRequest(Credentials):
-    date_from: str = Field(min_length=10, max_length=10, pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
-    date_to: str = Field(min_length=10, max_length=10, pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+    date_from: str = Field(min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    date_to: str = Field(min_length=10, max_length=10, pattern=r"^\d{4}-\d{2}-\d{2}$")
     lessons: list[int] = Field(min_length=1, max_length=20)
     message_from_parent: str = Field(min_length=1, max_length=2000)
     send_notify: bool = True
@@ -459,7 +459,10 @@ async def submit_justification(
         cache_reference_data=True,
     ) as librus:
         # Ensure the authenticated cookie session is ready before the write.
-        await librus.me()
+        try:
+            await librus.me()
+        except Exception as error:
+            raise _safe_error(error) from None
         client = librus.client
         endpoint = "https://synergia.librus.pl/gateway/api/2.0/Justifications"
         body = {
@@ -513,7 +516,8 @@ async def submit_justification(
                 ) from None
 
         try:
-            result_data = json.loads(raw) if raw.strip() else {}
+            parsed = json.loads(raw) if raw.strip() else {}
+            result_data = parsed if isinstance(parsed, dict) else {}
         except ValueError:
             result_data = {}
 
