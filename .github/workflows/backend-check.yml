@@ -36,6 +36,11 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q backend
 
+      - name: Run backend regression tests
+        env:
+          PYTHONPATH: backend
+        run: python -m unittest discover -s backend/tests -v
+
       - name: Import API and verify message routes
         env:
           PYTHONPATH: backend
@@ -43,6 +48,9 @@ jobs:
           python - <<'PY'
           from app.main import JustificationSubmitRequest, app
           paths = {route.path for route in app.routes}
+          assert '/health' in paths
+          assert '/ready' in paths
+          assert '/v1/sync' in paths
           assert '/v1/message/recipients' in paths
           assert '/v1/message/send' in paths
           assert '/v1/message/reply' in paths
