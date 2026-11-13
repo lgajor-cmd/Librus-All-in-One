@@ -22,6 +22,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.auth.auth
@@ -1636,8 +1637,269 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun renderMessagesSection(parent: LinearLayout, data: JSONObject) {
+        parent.addView(
+            actionButton("NAPISZ WIADOMOŚĆ") { openNewMessageComposer() },
+            params(0, 0, 0, 10)
+        )
         renderMessageArray(parent, data.optJSONArray("messages"), "Wiadomości")
         renderMessageArray(parent, data.optJSONArray("announcements"), "Ogłoszenia")
+    }
+
+    private fun openNewMessageComposer() {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Pobieram listę odbiorców…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/message/recipients").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nie udało się pobrać odbiorców: ${result.substringAfter("|")}", false)
+                    return@runOnUiThread
+                }
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status !in 200..299) {
+                    setLibrusStatus(errorDetail(responseBody, "HTTP $status"), false)
+                    return@runOnUiThread
+                }
+                try {
+                    val json = JSONObject(responseBody)
+                    librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                    librusVault.updateSession(librusSessionMemory?.toString())
+                    val array = json.optJSONArray("recipients") ?: JSONArray()
+                    val recipients = (0 until array.length())
+                        .mapNotNull { array.optJSONObject(it) }
+                        .filter { firstValue(it, "account_id", "accountId").isNotBlank() }
+                        .sortedWith(compareBy<JSONObject> {
+                            when (firstValue(it, "group").lowercase(Locale.ROOT)) {
+                                "tutors" -> 0
+                                "teachers" -> 1
+                                else -> 2
+                            }
+                        }.thenBy { firstValue(it, "name") })
+                    if (recipients.isEmpty()) {
+                        setLibrusStatus("Librus nie zwrócił dostępnych odbiorców.", false)
+                        AlertDialog.Builder(this).setTitle("Brak odbiorców")
+                            .setMessage("Nie ma odbiorców, do których można teraz wysłać wiadomość.")
+                            .setPositiveButton("OK", null).show()
+                        return@runOnUiThread
+                    }
+                    showMessageRecipientPicker(recipients)
+                } catch (e: Exception) {
+                    setLibrusStatus("Nieprawidłowa lista odbiorców: ${e.message}", false)
+                }
+            }
+        }
+    }
+
+    private fun showMessageRecipientPicker(recipients: List<JSONObject>) {
+        val labels = recipients.map { recipient ->
+            val name = firstValue(recipient, "name").ifBlank { "Odbiorca" }
+            val group = firstValue(recipient, "group_name", "groupName")
+            val away = if (recipient.has("available") && !recipient.isNull("available") &&
+                !recipient.optBoolean("available")) " • nieobecny" else ""
+            if (group.isNotBlank()) "$name — $group$away" else "$name$away"
+        }.toTypedArray()
+        val selected = BooleanArray(recipients.size)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Wybierz odbiorców")
+            .setMultiChoiceItems(labels, selected) { dialogInterface, which, checked ->
+                if (checked && selected.count { it } >= 10) {
+                    (dialogInterface as? AlertDialog)?.listView?.setItemChecked(which, false)
+                    Toast.makeText(this, "Możesz wybrać maksymalnie 10 odbiorców.", Toast.LENGTH_SHORT).show()
+                } else {
+                    selected[which] = checked
+                }
+            }
+            .setNegativeButton("ANULUJ", null)
+            .setPositiveButton("DALEJ", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val chosen = recipients.filterIndexed { index, _ -> selected[index] }
+                if (chosen.isEmpty()) {
+                    Toast.makeText(this, "Wybierz przynajmniej jednego odbiorcę.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val ids = chosen.map { firstValue(it, "account_id", "accountId") }
+                val names = chosen.map { firstValue(it, "name").ifBlank { "Odbiorca" } }
+                dialog.dismiss()
+                showNewMessageComposer(ids, names)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showNewMessageComposer(recipientIds: List<String>, recipientNames: List<String>) {
+        val density = resources.displayMetrics.density
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (8 * density).toInt(),
+                (18 * density).toInt(), (12 * density).toInt())
+        }
+        form.addView(label("Do: ${recipientNames.joinToString(", ")}", 12f, muted))
+        val topicInput = inputField(
+            "Temat wiadomości",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        )
+        form.addView(topicInput, params(0, 8, 0, 8))
+        val bodyInput = EditText(this).apply {
+            hint = "Treść wiadomości"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 5
+            maxLines = 9
+            gravity = Gravity.TOP or Gravity.START
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding((14 * density).toInt(), (12 * density).toInt(),
+                (14 * density).toInt(), (12 * density).toInt())
+            background = roundedBackground(panel, 10)
+        }
+        form.addView(bodyInput, params(0, 0, 0, 0))
+        val dialog = AlertDialog.Builder(this).setTitle("Nowa wiadomość")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("ANULUJ", null).setPositiveButton("DALEJ", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val topic = topicInput.text.toString().trim()
+                val body = bodyInput.text.toString().trim()
+                if (topic.isBlank()) {
+                    topicInput.error = "Wpisz temat wiadomości."
+                    return@setOnClickListener
+                }
+                if (body.isBlank()) {
+                    bodyInput.error = "Wpisz treść wiadomości."
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                val confirmation = AlertDialog.Builder(this).setTitle("Potwierdź wysłanie")
+                    .setMessage("Do: ${recipientNames.joinToString(", ")}\n\nTemat: $topic\n\n$body")
+                    .setNegativeButton("WRÓĆ", null).setPositiveButton("WYŚLIJ", null).create()
+                confirmation.setOnShowListener {
+                    confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        confirmation.dismiss()
+                        sendNewMessage(recipientIds, recipientNames, topic, body)
+                    }
+                }
+                confirmation.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun sendNewMessage(
+        recipientIds: List<String>, recipientNames: List<String>, topic: String, body: String
+    ) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Wysyłam wiadomość…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/message/send").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    put("recipient_ids", JSONArray().apply { recipientIds.forEach { put(it) } })
+                    put("topic", topic)
+                    put("text", body)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nie udało się potwierdzić wysyłki: ${result.substringAfter("|")}", false)
+                    AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
+                        .setMessage("Nie ponawiaj teraz wysyłania. Sprawdź folder Wysłane w Librusie.")
+                        .setPositiveButton("OK", null).show()
+                    return@runOnUiThread
+                }
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status in 200..299) {
+                    try {
+                        val json = JSONObject(responseBody)
+                        librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                        librusVault.updateSession(librusSessionMemory?.toString())
+                    } catch (_: Exception) { }
+                    setLibrusStatus("Wiadomość wysłana.", true)
+                    AlertDialog.Builder(this).setTitle("Wiadomość wysłana")
+                        .setMessage("Librus przyjął wiadomość do: ${recipientNames.joinToString(", ")}.")
+                        .setPositiveButton("OK", null).show()
+                } else {
+                    val detail = try {
+                        val raw = JSONObject(responseBody).opt("detail")
+                        if (raw is JSONObject) raw.optString("message", raw.toString())
+                        else raw?.toString() ?: "HTTP $status"
+                    } catch (_: Exception) { "HTTP $status" }
+                    setLibrusStatus(detail, false)
+                    AlertDialog.Builder(this)
+                        .setTitle(if (status == 502) "Sprawdź folder Wysłane" else "Nie wysłano wiadomości")
+                        .setMessage(detail).setPositiveButton("OK", null).show()
+                }
+            }
+        }
     }
 
     private fun renderMessageArray(
