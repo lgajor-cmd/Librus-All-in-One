@@ -1321,8 +1321,8 @@ class MainActivity : Activity() {
             val isUnexcusedAbsence = category == "Nieobecności" && !isExcusedAbsence
             if (isUnexcusedAbsence && date.isNotBlank()) {
                 attendanceCard.addView(
-                    actionButton("NAPISZ PROŚBĘ O USPRAWIEDLIWIENIE") {
-                        requestJustificationToTutor(date, subject, lesson)
+                    actionButton("ZŁÓŻ E-USPRAWIEDLIWIENIE") {
+                        showFormalJustificationComposer(date, subject, lesson)
                     },
                     params(0, 8, 0, 0)
                 )
@@ -1349,6 +1349,191 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------
+    private fun normalizeLibrusDate(value: String): String {
+        val trimmed = value.trim()
+        if (Regex("^\\\\d{4}-\\\\d{2}-\\\\d{2}$").matches(trimmed)) return trimmed
+        val parsed = parseFeatureDate(trimmed) ?: return ""
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(parsed)
+    }
+
+    private fun showFormalJustificationComposer(date: String, subject: String, lesson: String) {
+        val isoDate = normalizeLibrusDate(date)
+        val lessonNumber = lesson.trim().toIntOrNull()
+        if (isoDate.isBlank() || lessonNumber == null || lessonNumber !in 1..20) {
+            AlertDialog.Builder(this)
+                .setTitle("Nie można wskazać lekcji")
+                .setMessage("Nie udało się jednoznacznie rozpoznać daty lub numeru lekcji. Możesz zamiast tego wysłać prośbę do wychowawcy.")
+                .setNegativeButton("ANULUJ", null)
+                .setPositiveButton("WIADOMOŚĆ") { _, _ ->
+                    requestJustificationToTutor(date, subject, lesson)
+                }
+                .show()
+            return
+        }
+
+        val density = resources.displayMetrics.density
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (8 * density).toInt(),
+                (18 * density).toInt(), (12 * density).toInt())
+        }
+        form.addView(label("Data: $date", 13f, warningColor, true))
+        if (subject.isNotBlank()) form.addView(label("Przedmiot: $subject", 12f, muted))
+        form.addView(label("Lekcja: $lessonNumber", 12f, muted))
+        form.addView(label("Zgłoszenie zostanie wysłane do oficjalnego modułu e-Usprawiedliwienia Librusa.", 12f, accentColor))
+
+        val reasonInput = EditText(this).apply {
+            hint = "Powód nieobecności"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 4
+            maxLines = 8
+            gravity = Gravity.TOP or Gravity.START
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding((14 * density).toInt(), (12 * density).toInt(),
+                (14 * density).toInt(), (12 * density).toInt())
+            background = roundedBackground(panel, 10)
+        }
+        form.addView(reasonInput, params(0, 10, 0, 0))
+
+        val dialog = AlertDialog.Builder(this).setTitle("E-Usprawiedliwienie")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("ANULUJ", null).setPositiveButton("DALEJ", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val reason = reasonInput.text.toString().trim()
+                if (reason.isBlank()) {
+                    reasonInput.error = "Wpisz powód nieobecności."
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                val confirmation = AlertDialog.Builder(this).setTitle("Potwierdź e-Usprawiedliwienie")
+                    .setMessage(
+                        "Librus otrzyma formalne usprawiedliwienie dla dnia $date, lekcja $lessonNumber.\n\n" +
+                            "Powód: $reason\n\nWychowawca będzie mógł je zaakceptować lub odrzucić."
+                    )
+                    .setNegativeButton("WRÓĆ", null).setPositiveButton("WYŚLIJ", null).create()
+                confirmation.setOnShowListener {
+                    confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        confirmation.dismiss()
+                        submitFormalJustification(isoDate, lessonNumber, reason, date, subject, lesson)
+                    }
+                }
+                confirmation.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun submitFormalJustification(
+        isoDate: String,
+        lessonNumber: Int,
+        reason: String,
+        displayDate: String,
+        subject: String,
+        lesson: String
+    ) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Składam e-Usprawiedliwienie w Librusie…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/justification/submit").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    put("date_from", isoDate)
+                    put("date_to", isoDate)
+                    put("lessons", JSONArray().put(lessonNumber))
+                    put("message_from_parent", reason)
+                    put("send_notify", true)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nieznany wynik wysyłki e-Usprawiedliwienia.", false)
+                    AlertDialog.Builder(this).setTitle("Sprawdź status zgłoszenia")
+                        .setMessage("Połączenie zostało przerwane. Nie wysyłaj ponownie, dopóki nie sprawdzisz modułu e-Usprawiedliwienia w Librusie.")
+                        .setPositiveButton("OK", null).show()
+                    return@runOnUiThread
+                }
+
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status in 200..299) {
+                    try {
+                        val json = JSONObject(responseBody)
+                        librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                        librusVault.updateSession(librusSessionMemory?.toString())
+                    } catch (_: Exception) { }
+                    setLibrusStatus("E-Usprawiedliwienie wysłane.", true)
+                    AlertDialog.Builder(this).setTitle("Zgłoszenie wysłane")
+                        .setMessage("Librus przyjął e-Usprawiedliwienie dla $displayDate, lekcja $lessonNumber. Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.")
+                        .setPositiveButton("OK", null).show()
+                    return@runOnUiThread
+                }
+
+                val detailObject = try { JSONObject(responseBody).opt("detail") } catch (_: Exception) { null }
+                val detail = when (detailObject) {
+                    is JSONObject -> detailObject.optString("message", detailObject.toString())
+                    null -> "HTTP $status"
+                    else -> detailObject.toString()
+                }
+                val moduleUnavailable = status == 403 || status == 404 ||
+                    (detailObject is JSONObject && detailObject.has("module_available") &&
+                        !detailObject.optBoolean("module_available", true))
+                if (moduleUnavailable) {
+                    AlertDialog.Builder(this).setTitle("Moduł e-Usprawiedliwienia niedostępny")
+                        .setMessage("Ta szkoła lub konto nie udostępnia formalnego modułu e-Usprawiedliwienia. Czy chcesz zamiast tego wysłać zwykłą prośbę do wychowawcy?")
+                        .setNegativeButton("ANULUJ", null)
+                        .setPositiveButton("WYŚLIJ WIADOMOŚĆ") { _, _ ->
+                            requestJustificationToTutor(displayDate, subject, lesson)
+                        }
+                        .show()
+                } else {
+                    setLibrusStatus(detail, false)
+                    val unknownOutcome = status >= 500
+                    AlertDialog.Builder(this)
+                        .setTitle(if (unknownOutcome) "Sprawdź status zgłoszenia" else "Nie wysłano e-Usprawiedliwienia")
+                        .setMessage(
+                            if (unknownOutcome) "$detail\n\nNie ponawiaj wysyłki, dopóki nie sprawdzisz modułu e-Usprawiedliwienia."
+                            else detail
+                        )
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        }
+    }
+
     private fun renderJustifications(parent: LinearLayout, array: JSONArray?) {
         if (array == null || array.length() == 0) return
 
