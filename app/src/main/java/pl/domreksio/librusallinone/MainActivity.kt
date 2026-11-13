@@ -555,6 +555,7 @@ class MainActivity : Activity() {
         content.addView(label("Przydatne rzeczy poza dziennikiem szkolnym.", 13f, muted), params(0, 0, 0, 8))
         addPersonalToolCard(content, "NOTATKI", "Szybkie zapiski, pomysły i ważne informacje", "📝") { showPersonalNotes() }
         addPersonalToolCard(content, "LISTA ZAKUPÓW", "Dodawaj produkty i odhaczaj je w sklepie", "🛒") { showShoppingList() }
+        addPersonalToolCard(content, "O AUTORZE", "Poznaj twórcę aplikacji Librus All-in-One", "⌘") { showAbout() }
 
         content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
             showNotificationSettings()
@@ -4586,6 +4587,175 @@ class MainActivity : Activity() {
         return nav
     }
 
+    // ---------------------------------------------------------
+    // O AUTORZE — niezależna karta informacyjna aplikacji
+    // ---------------------------------------------------------
+
+    private fun showAbout() {
+        stopTimetableTicker()
+        val density = resources.displayMetrics.density
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (18 * density).toInt(), (18 * density).toInt(), (26 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
+        }
+
+        val hero = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(12, 35, 65), Color.rgb(20, 29, 54), Color.rgb(34, 25, 62))).apply {
+                cornerRadius = 26f * density
+                setStroke((1 * density).toInt(), Color.argb(150, 87, 142, 205))
+            }
+            clipChildren = false
+            clipToPadding = false
+            elevation = 5f * density
+        }
+        hero.addView(TechAboutArtView(this),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (190 * density).toInt(), Gravity.TOP))
+        val heroText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.BOTTOM
+            setPadding((20 * density).toInt(), (95 * density).toInt(), (20 * density).toInt(), (18 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.TRANSPARENT, Color.argb(220, 10, 18, 34)))
+        }
+        heroText.addView(label("POZNAJ TWÓRCĘ", 10f, Color.rgb(133, 205, 255), true))
+        heroText.addView(label("Librus All-in-One", 25f, Color.WHITE, true), params(0, 3, 0, 0))
+        heroText.addView(label("Technologia, edukacja i wygoda w jednym miejscu", 12f, Color.rgb(205, 220, 240)))
+        hero.addView(heroText, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM))
+        content.addView(hero, params(0, 0, 0, 18))
+
+        val authorCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (18 * density).toInt(), (20 * density).toInt(), (18 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, surfaceGradient).apply {
+                cornerRadius = 22f * density
+                setStroke((1 * density).toInt(), Color.rgb(59, 83, 116))
+            }
+            elevation = 3f * density
+        }
+        authorCard.addView(label("AUTOR APLIKACJI", 10f, muted, true))
+        authorCard.addView(label("Łukasz Gajor", 26f, white, true), params(0, 5, 0, 0))
+        authorCard.addView(label("Niezależny projekt tworzony z myślą o wygodnym dostępie do szkolnych informacji.", 13f, Color.rgb(197, 211, 232)), params(0, 3, 0, 12))
+
+        val emailRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((13 * density).toInt(), (12 * density).toInt(), (13 * density).toInt(), (12 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.argb(55, 70, 145, 220), Color.argb(28, 70, 145, 220))).apply {
+                cornerRadius = 15f * density
+                setStroke((1 * density).toInt(), Color.argb(105, 105, 175, 235))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        emailRow.addView(label("✉", 21f, Color.rgb(133, 205, 255), true),
+            LinearLayout.LayoutParams((38 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+        val emailText = TextView(this).apply {
+            text = "LGajor@gmail.com"
+            textSize = 15f
+            setTextColor(Color.rgb(145, 205, 255))
+            paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            setTypeface(null, Typeface.BOLD)
+        }
+        emailRow.addView(emailText, LinearLayout.LayoutParams(0, -2, 1f))
+        emailRow.setOnClickListener {
+            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                data = android.net.Uri.parse("mailto:LGajor@gmail.com")
+                putExtra(Intent.EXTRA_SUBJECT, "Kontakt — Librus All-in-One")
+            }
+            try {
+                startActivity(intent)
+            } catch (_: Exception) {
+                Toast.makeText(this, "Brak aplikacji pocztowej na urządzeniu.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        authorCard.addView(emailRow)
+        authorCard.addView(label("Dotknij adresu, aby napisać wiadomość e-mail.", 11f, muted), params(0, 5, 0, 0))
+        content.addView(authorCard, params(0, 0, 0, 14))
+
+        val infoCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (16 * density).toInt(), (18 * density).toInt(), (16 * density).toInt())
+            background = roundedBackground(panel, 18)
+        }
+        infoCard.addView(label("O PROJEKCIE", 10f, accentColor, true))
+        infoCard.addView(label("Librus All-in-One to niezależna aplikacja pomocnicza. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
+        content.addView(infoCard, params(0, 0, 0, 12))
+        content.addView(actionButton("‹  WRÓĆ DO PULPITU") { showHome() }, params(0, 4, 0, 0))
+
+        val scroll = ScrollView(this).apply { addView(content) }
+        page.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        page.addView(buildBottomNavigation("WIĘCEJ"))
+        setContentView(page)
+    }
+
+    private inner class TechAboutArtView(context: android.content.Context) : View(context) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val sx = width / 360f
+            val sy = height / 190f
+            canvas.save()
+            canvas.scale(sx, sy)
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = 1.8f
+            p.strokeCap = android.graphics.Paint.Cap.ROUND
+            p.color = Color.argb(100, 83, 174, 255)
+            val traces = listOf(
+                listOf(8f, 34f, 65f, 34f, 65f, 52f, 108f, 52f),
+                listOf(16f, 112f, 72f, 112f, 72f, 94f, 116f, 94f),
+                listOf(245f, 38f, 300f, 38f, 300f, 58f, 350f, 58f),
+                listOf(235f, 126f, 292f, 126f, 292f, 105f, 352f, 105f),
+                listOf(130f, 12f, 130f, 30f, 158f, 30f),
+                listOf(208f, 12f, 208f, 29f, 184f, 29f)
+            )
+            traces.forEach { pts ->
+                val path = android.graphics.Path().apply {
+                    moveTo(pts[0], pts[1])
+                    var n = 2
+                    while (n < pts.size) { lineTo(pts[n], pts[n + 1]); n += 2 }
+                }
+                canvas.drawPath(path, p)
+            }
+            p.style = android.graphics.Paint.Style.FILL
+            p.color = Color.rgb(95, 185, 255)
+            listOf(65f to 34f, 108f to 52f, 72f to 112f, 116f to 94f,
+                300f to 38f, 350f to 58f, 292f to 126f, 352f to 105f).forEach {
+                canvas.drawCircle(it.first, it.second, 3.2f, p)
+            }
+
+            // Centralny układ scalony z delikatnym neonowym obrysem.
+            p.color = Color.argb(40, 91, 173, 255)
+            canvas.drawRoundRect(128f, 49f, 232f, 135f, 15f, 15f, p)
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = 2.4f
+            p.color = Color.argb(225, 116, 201, 255)
+            canvas.drawRoundRect(128f, 49f, 232f, 135f, 15f, 15f, p)
+            p.style = android.graphics.Paint.Style.FILL
+            p.color = Color.rgb(220, 240, 255)
+            p.textSize = 18f
+            p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            canvas.drawText("ALL", 158f, 84f, p)
+            p.textSize = 11f
+            p.color = Color.rgb(119, 198, 255)
+            canvas.drawText("IN ONE", 155f, 102f, p)
+            p.color = Color.argb(180, 160, 215, 255)
+            p.textSize = 8f
+            p.typeface = Typeface.MONOSPACE
+            canvas.drawText("0101 1010", 148f, 119f, p)
+            p.typeface = Typeface.DEFAULT
+            canvas.restore()
+        }
+    }
+
     private fun showMoreMenu(activeSection: String) {
         val labels = arrayOf(
             "Dane konta i szkoły",
@@ -4598,7 +4768,8 @@ class MainActivity : Activity() {
             "Ustawienia powiadomień",
             "Wygląd aplikacji",
             "Notatki",
-            "Lista zakupów"
+            "Lista zakupów",
+            "O autorze"
         )
         val sections = arrayOf(
             "PROFILE",
@@ -4617,6 +4788,7 @@ class MainActivity : Activity() {
                     8 -> showAppearanceSettings(activeSection)
                     9 -> showPersonalNotes()
                     10 -> showShoppingList()
+                    11 -> showAbout()
                     else -> loadLibrusSection(sections[which])
                 }
             }
