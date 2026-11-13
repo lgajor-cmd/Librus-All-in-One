@@ -19,6 +19,7 @@ To jest lekki, bezstanowy adapter HTTPS oparty na nieoficjalnej bibliotece `libr
 - `POST /v1/message/send` — wysyła wiadomość do wskazanych odbiorców. Wysyłka jest wykonywana tylko raz; przy niejednoznacznej odpowiedzi Librusa aplikacja nie może ponawiać jej automatycznie.
 - `POST /v1/message/reply` — odpowiada w istniejącym wątku, tylko jeśli Librus dopuszcza odpowiedź; również bez automatycznych ponowień.
 - `POST /v1/message/attachment` — pobiera załącznik wiadomości i zwraca go w Base64, bez zapisywania pliku na serwerze.
+- `POST /v1/homework/attachment` — pobiera załącznik zadania domowego; limit 20 MB, bez zapisywania pliku na serwerze.
 
 Przykładowe żądanie:
 
