@@ -490,6 +490,14 @@ class MainActivity : Activity() {
                 setLibrusStatus(result.substringAfter("|"), ok)
                 librusConnectButton.isEnabled = true
                 librusPasswordInput.text.clear()
+
+                if (ok) {
+                    // Po pierwszym poprawnym połączeniu pobierz dane od razu,
+                    // tak samo jak przy automatycznym przywracaniu zapisanej sesji.
+                    val requestedSection = pendingNotificationSection ?: "PROFILE"
+                    pendingNotificationSection = null
+                    loadLibrusSection(requestedSection)
+                }
             }
         }
     }
