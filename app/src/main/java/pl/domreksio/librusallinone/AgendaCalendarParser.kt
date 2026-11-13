@@ -5,6 +5,7 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
 
 internal data class SchoolAgendaEvent(
     val sourceKey: String,
@@ -93,9 +94,9 @@ internal object AgendaCalendarParser {
             ?: Regex("^(\\d{2}-\\d{2}-\\d{4})").find(value)?.groupValues?.get(1)
             ?: return null
         val format = if (legacyDate.contains(".")) {
-            DateTimeFormatter.ofPattern("dd.MM.uuuu")
+            DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT)
         } else {
-            DateTimeFormatter.ofPattern("dd-MM-uuuu")
+            DateTimeFormatter.ofPattern("dd-MM-uuuu").withResolverStyle(ResolverStyle.STRICT)
         }
         return try {
             LocalDate.parse(legacyDate, format).toString()
