@@ -862,6 +862,10 @@ class MainActivity : Activity() {
 
                     if (data != null) {
                         librusDataMemory = data
+                        extractSchoolName(data).takeIf { it.isNotBlank() }?.let { schoolName ->
+                            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                                .putString("school_name", schoolName).apply()
+                        }
                         librusSessionMemory =
                             json.optJSONObject("session") ?: librusSessionMemory
                         librusVault.updateSession(librusSessionMemory?.toString())
