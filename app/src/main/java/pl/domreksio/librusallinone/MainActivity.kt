@@ -1600,6 +1600,31 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4101)
+        }
+    }
+
+    private fun showNotificationSettings() {
+        val keys = arrayOf("grades", "messages", "notes", "behaviour_notes")
+        val labels = arrayOf("Nowe oceny", "Wiadomości", "Uwagi", "Uwagi o zachowaniu")
+        val prefs = getSharedPreferences("librus_notification_settings", MODE_PRIVATE)
+        val checked = BooleanArray(keys.size) { prefs.getBoolean(keys[it], true) }
+        AlertDialog.Builder(this)
+            .setTitle("Powiadomienia Librus")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+                prefs.edit().putBoolean(keys[which], isChecked).apply()
+            }
+            .setPositiveButton("Zapisz", null)
+            .setNegativeButton("Anuluj", null)
+            .setNeutralButton("Uprawnienia") { _, _ -> requestNotificationPermissionIfNeeded() }
+            .show()
+    }
+
     private fun signOut() {
         LibrusNotificationScheduler.cancel(applicationContext)
         thread {
