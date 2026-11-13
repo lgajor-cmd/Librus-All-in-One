@@ -115,6 +115,11 @@ class MainActivity : Activity() {
             "teal" -> Color.rgb(32, 174, 160)
             "violet" -> Color.rgb(145, 112, 220)
             "amber" -> Color.rgb(224, 156, 58)
+            "red" -> Color.rgb(220, 65, 78)
+            "christmas" -> Color.rgb(58, 166, 112)
+            "halloween" -> Color.rgb(235, 126, 48)
+            "pink" -> Color.rgb(220, 105, 165)
+            "spring" -> Color.rgb(145, 190, 75)
             else -> Color.rgb(105, 165, 255)
         }
     private val warningColor = Color.rgb(255, 190, 95)
@@ -3500,8 +3505,18 @@ class MainActivity : Activity() {
     }
 
     private fun showAppearanceSettings(activeSection: String) {
-        val options = arrayOf("Niebieski — klasyczny", "Turkusowy — świeży", "Fioletowy — nowoczesny", "Bursztynowy — ciepły")
-        val keys = arrayOf("blue", "teal", "violet", "amber")
+        val options = arrayOf(
+            "Niebieski — klasyczny",
+            "Turkusowy — świeży",
+            "Fioletowy — nowoczesny",
+            "Bursztynowy — ciepły",
+            "Mikołajki — świąteczna czerwień",
+            "Boże Narodzenie — leśna zieleń",
+            "Halloween — dyniowy pomarańcz",
+            "Walentynki — różowy",
+            "Wiosna — zielony"
+        )
+        val keys = arrayOf("blue", "teal", "violet", "amber", "red", "christmas", "halloween", "pink", "spring")
         val selected = keys.indexOf(uiPrefs.getString("accent", "blue")).coerceAtLeast(0)
         val motionEnabled = uiPrefs.getBoolean("motion", true)
 
