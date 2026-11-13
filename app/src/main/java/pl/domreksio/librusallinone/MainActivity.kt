@@ -4652,7 +4652,7 @@ class MainActivity : Activity() {
                 is JSONArray -> raw.length() > 0
                 is JSONObject -> {
                     val nested = raw.optJSONArray("items") ?: raw.optJSONArray("entries")
-                    (nested?.length() ?: 1) > 0
+                    (nested?.length() ?: raw.length()) > 0
                 }
                 else -> false
             }
