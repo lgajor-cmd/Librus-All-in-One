@@ -21,6 +21,7 @@ import androidx.work.WorkManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -60,16 +61,21 @@ class LibrusNotificationWorker(
         val credentials = LibrusCredentialVault(applicationContext).load()
             ?: return Result.success()
 
+        var connection: HttpURLConnection? = null
         return try {
-            val sessionState = supabase.auth.sessionStatus.first {
-                it !is SessionStatus.Initializing
-            }
+            // Supabase may still be restoring the device session after process start.
+            // Bound the wait so a background worker cannot remain suspended indefinitely.
+            val sessionState = withTimeoutOrNull(20_000L) {
+                supabase.auth.sessionStatus.first {
+                    it !is SessionStatus.Initializing
+                }
+            } ?: return Result.retry()
             if (sessionState !is SessionStatus.Authenticated) return Result.success()
 
             val accessToken = supabase.auth.currentAccessTokenOrNull()
                 ?: return Result.retry()
 
-            val connection = (URL("$BACKEND_URL/v1/sync").openConnection()
+            val activeConnection = (URL("$BACKEND_URL/v1/sync").openConnection()
                 as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 25_000
@@ -79,6 +85,7 @@ class LibrusNotificationWorker(
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
             }
+            connection = activeConnection
 
             val payload = JSONObject().apply {
                 put("profile", "parent")
@@ -86,14 +93,13 @@ class LibrusNotificationWorker(
                 put("password", credentials.password)
                 credentials.sessionJson?.let { put("session", JSONObject(it)) }
             }
-            connection.outputStream.use {
+            activeConnection.outputStream.use {
                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
             }
 
-            val code = connection.responseCode
-            val body = (if (code in 200..299) connection.inputStream
-                else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            connection.disconnect()
+            val code = activeConnection.responseCode
+            val body = (if (code in 200..299) activeConnection.inputStream
+                else activeConnection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
 
             if (code == 401 || code == 428 || code == 409) return Result.success()
             if (code !in 200..299) return if (code >= 500 || code == 429) Result.retry() else Result.success()
@@ -117,6 +123,8 @@ class LibrusNotificationWorker(
             Result.success()
         } catch (_: Exception) {
             Result.retry()
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -233,7 +241,7 @@ class LibrusNotificationWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(applicationContext, "librus_updates")
-            .setSmallIcon(applicationApplicationIcon())
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
@@ -244,6 +252,4 @@ class LibrusNotificationWorker(
             (section + title + System.currentTimeMillis()).hashCode(), notification
         )
     }
-
-    private fun applicationApplicationIcon(): Int = R.drawable.ic_launcher
 }
