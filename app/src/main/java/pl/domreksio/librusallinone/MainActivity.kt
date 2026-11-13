@@ -1502,7 +1502,7 @@ class MainActivity : Activity() {
                             activeLesson != null -> sortedDayLessons.indexOf(activeLesson)
                             nextLesson != null -> sortedDayLessons.indexOf(nextLesson)
                             else -> sortedDayLessons.size
-                        }.coerceIn(0, timelineList.childCount - 1)
+                        }.coerceIn(0, sortedDayLessons.size)
                         timelineList.removeView(timelineMarker)
                         timelineList.addView(timelineMarker, markerTarget)
 
