@@ -4235,7 +4235,8 @@ class MainActivity : Activity() {
                     else -> "Ocena"
                 }
                 entries.add(TimelineEntry("OCENY", category, "$value • $subject",
-                    description, date, "✦", gradeFocusKey(grade, sourceKey)))
+                    description.takeIf { it.isNotBlank() }?.let { "Za co: $it" }.orEmpty(),
+                    date, "✦", gradeFocusKey(grade, sourceKey)))
             }
         }
         collect(
@@ -4245,22 +4246,34 @@ class MainActivity : Activity() {
             arrayOf("title", "subject", "topic", "name"),
             arrayOf("sender_name", "sender", "author", "teacher_name", "from")
         )
+        val homeworkSource = if ((data.optJSONArray("homework_assignments")?.length() ?: 0) > 0) {
+            "homework_assignments"
+        } else {
+            listOf("homework", "homeworks").firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
+                ?: "homework"
+        }
         collect(
-            listOf("homework_assignments", "homework", "homeworks"),
+            listOf(homeworkSource),
             "ZADANIA DOMOWE", "Zadanie domowe", "▤",
             arrayOf("due_date", "deadline", "date", "created_at", "start_date"),
             arrayOf("title", "topic", "name", "subject_name"),
             arrayOf("description", "content", "teacher_name", "subject_name", "status")
         )
+        val agendaSource = listOf("agenda", "events").firstOrNull {
+            data.has(it) && data.opt(it) != JSONObject.NULL
+        } ?: "agenda"
         collect(
-            listOf("agenda", "events", "calendar_events"),
+            listOf(agendaSource),
             "TERMINARZ", "Wydarzenie", "▦",
             arrayOf("start_date", "date", "event_date", "due_date"),
             arrayOf("title", "name", "topic", "subject"),
             arrayOf("description", "details", "type", "location")
         )
+        val notesSource = listOf("notes", "behaviour_notes").firstOrNull {
+            data.has(it) && data.opt(it) != JSONObject.NULL
+        } ?: "notes"
         collect(
-            listOf("notes", "behaviour_notes"),
+            listOf(notesSource),
             "UWAGI", "Uwaga", "✎",
             arrayOf("date", "created_at", "added_at"),
             arrayOf("title", "content", "text", "description", "type"),
