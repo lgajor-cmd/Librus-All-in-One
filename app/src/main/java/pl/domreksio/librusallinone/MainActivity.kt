@@ -12,6 +12,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.FileProvider
 import android.text.InputType
 import android.view.Gravity
@@ -3273,6 +3275,23 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(18, 26, 41))
             elevation = 12f * density
         }
+
+        // Android 15+ enforces edge-to-edge for apps targeting SDK 35.
+        // Reserve the real system navigation-bar inset inside this bottom bar,
+        // so app tabs stay above gesture/3-button navigation on every device.
+        ViewCompat.setOnApplyWindowInsetsListener(nav) { view, insets ->
+            val navigationBottom = insets.getInsets(
+                WindowInsetsCompat.Type.navigationBars()
+            ).bottom
+            view.setPadding(
+                (7 * density).toInt(),
+                (7 * density).toInt(),
+                (7 * density).toInt(),
+                (8 * density).toInt() + navigationBottom
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(nav)
 
         data class NavItem(val key: String, val icon: String, val title: String)
         val items = listOf(
