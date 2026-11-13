@@ -2769,7 +2769,7 @@ class MainActivity : Activity() {
     // WIADOMOŚCI I OGŁOSZENIA
     // ---------------------------------------------------------
 
-    // Kalendarz miesięczny z prywatnymi wydarzeniami użytkownika.
+    // Kalendarz miesięczny łączący wydarzenia szkolne z Librusa i prywatne wydarzenia.
     // Siatka używa wymiarów dp i pełnej szerokości, aby nie ściskać dni na różnych ekranach.
     private fun renderAgendaCalendar(parent: LinearLayout, data: JSONObject) {
         val density = resources.displayMetrics.density
