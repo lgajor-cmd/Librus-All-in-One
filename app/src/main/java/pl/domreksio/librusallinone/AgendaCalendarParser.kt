@@ -2,10 +2,6 @@ package pl.domreksio.librusallinone
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
-import java.time.format.ResolverStyle
 
 internal data class SchoolAgendaEvent(
     val sourceKey: String,
