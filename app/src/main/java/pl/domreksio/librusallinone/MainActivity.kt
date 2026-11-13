@@ -1796,10 +1796,19 @@ class MainActivity : Activity() {
             )
             header.addView(label("${grades.size} wpisów", 12f, successColor))
             subjectCard.addView(header)
-            val simulatorGrades = grades.mapNotNull { grade ->
-                val raw = firstDisplayValue(grade, "value", "grade", "symbol", "text", "result", "assessment",
-                    "grade_value", "grade_text", "mark", "grade_description", "skill", "name").trim()
-                raw.toIntOrNull()?.takeIf { it in 1..6 }
+            // Średnią arytmetyczną licz wyłącznie z ocen szkolnych.
+            // Oceny opisowe, cząstkowe, punktowe, tekstowe i zachowania
+            // mogą zawierać cyfry 1–6, ale nie są zwykłymi stopniami do średniej.
+            val simulatorGrades = if (sourceKey == "grades") {
+                grades.mapNotNull { grade ->
+                    val raw = firstDisplayValue(
+                        grade,
+                        "value", "grade", "symbol", "grade_value", "mark"
+                    ).trim()
+                    raw.toIntOrNull()?.takeIf { it in 1..6 }
+                }
+            } else {
+                emptyList()
             }
             if (simulatorGrades.isNotEmpty()) {
                 subjectCard.addView(actionButton("SYMULUJ ŚREDNIĄ (bez wag)") {
