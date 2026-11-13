@@ -1831,6 +1831,78 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showAppSettings() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 76, 20, 24)
+            setBackgroundColor(bgColor)
+        }
+        root.addView(label("USTAWIENIA", 11f, Color.rgb(170, 198, 235), true))
+        root.addView(label("Dostosuj aplikację", 27f, white, true), params(0, 4, 0, 6))
+        root.addView(label("Wygląd, wygoda i sposób działania", 13f, muted), params(0, 0, 0, 18))
+
+        root.addView(infoCard("KOLORY APLIKACJI"), params(0, 0, 0, 8))
+        val colors = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(
+            "blue" to ("Niebieski" to Color.rgb(105, 165, 255)),
+            "teal" to ("Turkusowy" to Color.rgb(32, 174, 160)),
+            "violet" to ("Fioletowy" to Color.rgb(145, 112, 220)),
+            "amber" to ("Bursztynowy" to Color.rgb(224, 156, 58))
+        ).forEach { (key, pair) ->
+            val button = TextView(this).apply {
+                text = pair.first
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(5, 12, 5, 12)
+                background = roundedBackground(pair.second, 12)
+                alpha = if (uiPrefs.getString("accent", "blue") == key) 1f else 0.55f
+                setOnClickListener {
+                    uiPrefs.edit().putString("accent", key).apply()
+                    showAppSettings()
+                }
+            }
+            colors.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                val d = (5 * resources.displayMetrics.density).toInt()
+                setMargins(d, 0, d, 0)
+            })
+        }
+        root.addView(colors, params(0, 0, 0, 18))
+
+        val compact = android.widget.Switch(this).apply {
+            text = "Kompaktowy pulpit"
+            setTextColor(white)
+            isChecked = uiPrefs.getBoolean("compact_dashboard", false)
+            setOnCheckedChangeListener { _, checked ->
+                uiPrefs.edit().putBoolean("compact_dashboard", checked).apply()
+            }
+        }
+        root.addView(compact, params(0, 0, 0, 10))
+
+        val animations = android.widget.Switch(this).apply {
+            text = "Animacje i przejścia"
+            setTextColor(white)
+            isChecked = uiPrefs.getBoolean("animations", true)
+            setOnCheckedChangeListener { _, checked ->
+                uiPrefs.edit().putBoolean("animations", checked).apply()
+            }
+        }
+        root.addView(animations, params(0, 0, 0, 18))
+
+        val notifications = actionButton("USTAWIENIA POWIADOMIEŃ") { showNotificationSettings() }
+        root.addView(notifications, params(0, 0, 0, 10))
+        val sync = actionButton("SYNCHRONIZACJA I ODŚWIEŻANIE") {
+            AlertDialog.Builder(this)
+                .setTitle("Synchronizacja Librusa")
+                .setMessage("Dane są pobierane na żądanie. Powiadomienia lokalne sprawdzają nowe wpisy cyklicznie, zwykle co około 15 minut. Android może opóźnić wykonanie zależnie od oszczędzania energii.")
+                .setPositiveButton("Rozumiem", null)
+                .show()
+        }
+        root.addView(sync, params(0, 0, 0, 10))
+        val scroll = ScrollView(this).apply { addView(root); setBackgroundColor(bgColor) }
+        installNavigationDrawer(scroll, "USTAWIENIA")
+    }
+
     private fun showNotificationSettings() {
         val keys = arrayOf("grades", "messages", "notes", "behaviour_notes")
         val labels = arrayOf("Nowe oceny", "Wiadomości", "Uwagi", "Uwagi o zachowaniu")
