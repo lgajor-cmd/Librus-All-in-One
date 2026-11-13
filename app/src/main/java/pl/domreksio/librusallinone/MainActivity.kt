@@ -213,10 +213,17 @@ class MainActivity : Activity() {
             setBackgroundColor(bgColor)
         }
 
-        content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
-        content.addView(label("Witaj!", 32f, white, true))
-        content.addView(label("Zalogowano jako: $email", 14f, muted))
-        content.addView(label("Konto aplikacji działa.", 15f, successColor))
+        val welcomeCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 20)
+            background = roundedBackground(panelLight, 22)
+            elevation = 3f * resources.displayMetrics.density
+        }
+        welcomeCard.addView(label("LIBRUS  /  ALL-IN-ONE", 12f, accentColor, true))
+        welcomeCard.addView(label("Witaj!", 32f, white, true))
+        welcomeCard.addView(label("Zalogowano jako: $email", 14f, muted))
+        welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, successColor))
+        content.addView(welcomeCard, params(0, 0, 0, 16))
 
         val savedLibrus = librusVault.load()
 
