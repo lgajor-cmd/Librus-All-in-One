@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timetable_now">TERAZ: %1$s</string>
+    <string name="timetable_lesson_detail">Lekcja %1$s • %2$s–%3$s • koniec za %4$d min</string>
+    <string name="timetable_break">PRZERWA</string>
+    <string name="timetable_next_lesson">Do lekcji %1$s (%2$s) zostało %3$d min</string>
+    <string name="timetable_before_lessons">PRZED LEKCJAMI</string>
+    <string name="timetable_first_lesson">Pierwsza lekcja: %1$s o %2$s • za %3$d min</string>
+    <string name="timetable_day_complete">KONIEC LEKCJI NA DZIŚ</string>
+    <string name="timetable_done">Plan na dziś został zrealizowany.</string>
+    <string name="grade_input_error">Wpisz ocenę całkowitą od 1 do 6.</string>
+    <string name="grade_average_result">Po dodaniu oceny %1$s średnia wyniosłaby %2$s (z %3$d ocen).</string>
+    <string name="message_read">PRZECZYTANA</string>
+    <string name="homework_summary">Wszystkie: %1$d • Do zrobienia: %2$d • Wykonane: %3$d</string>
+    <string name="backend_checking_session">Sprawdzam sesję Supabase i połączenie z serwerem…</string>
+    <string name="backend_no_active_token">Brak aktywnego tokenu. Zaloguj się ponownie.</string>
+    <string name="shopping_summary">%1$d do kupienia • %2$d kupione • %3$d produktów</string>
+    <string name="shopping_category">Kategoria: %1$s</string>
+</resources>
