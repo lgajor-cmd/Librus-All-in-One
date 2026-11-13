@@ -253,6 +253,48 @@ async def health() -> dict[str, str]:
         "service": "librus-all-in-one-api"
     }
 
+@app.get("/ready")
+async def readiness() -> dict[str, Any]:
+    """Configuration readiness check; /health remains a cheap liveness probe."""
+    required = ("SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY")
+    missing = [name for name in required if not os.environ.get(name, "").strip()]
+    if missing:
+        raise HTTPException(
+            503,
+            {
+                "status": "not_ready",
+                "missing_configuration": missing,
+            },
+        )
+    return {
+        "status": "ready",
+        "checks": {"supabase_configuration": "present"},
+    }
+
+
+async def _fetch_notification_grade_feeds(librus: Librus) -> tuple[dict[str, list[Any]], list[str]]:
+    """Fetch optional grade feeds independently so one broken feed cannot hide the others."""
+    names = (
+        "descriptive_grades",
+        "partial_grades",
+        "point_grades",
+        "text_grades",
+        "behaviour_grades",
+    )
+    results = await asyncio.gather(
+        *(getattr(librus, name)() for name in names),
+        return_exceptions=True,
+    )
+    feeds: dict[str, list[Any]] = {}
+    failed: list[str] = []
+    for name, result in zip(names, results, strict=True):
+        if isinstance(result, Exception):
+            feeds[name] = []
+            failed.append(name)
+        else:
+            feeds[name] = list(result or [])
+    return feeds, failed
+
 
 @app.get("/v1/session-check")
 async def session_check(
@@ -785,26 +827,32 @@ async def sync(
                 # fetch_all()'s ~35; it omits the newer grade feeds, so fetch
                 # those separately and merge them into the same response.
                 data = await librus.fetch_changes()
-                descriptive, partial, point, text, behaviour = await asyncio.gather(
-                    librus.descriptive_grades(),
-                    librus.partial_grades(),
-                    librus.point_grades(),
-                    librus.text_grades(),
-                    librus.behaviour_grades(),
+                feeds, failed_grade_feeds = await _fetch_notification_grade_feeds(librus)
+                # Keep the established API shape: descriptive and partial
+                # grades are combined for the app's grade notification parser.
+                data.descriptive_grades = (
+                    feeds["descriptive_grades"] + feeds["partial_grades"]
                 )
-                data.descriptive_grades = descriptive + partial
-                data.point_grades = point
-                data.text_grades = text
-                data.behaviour_grades = behaviour
+                data.point_grades = feeds["point_grades"]
+                data.text_grades = feeds["text_grades"]
+                data.behaviour_grades = feeds["behaviour_grades"]
             else:
                 data = await librus.fetch_all()
+                failed_grade_feeds = []
             state = asdict(librus.session_data)
+
+        serialized_data = asdict(data)
+        if payload.notifications_only:
+            # The Android worker must distinguish an unavailable feed from an
+            # empty feed; otherwise a transient Librus error could create
+            # false "new grade" alerts on the next successful poll.
+            serialized_data["failed_sections"] = failed_grade_feeds
 
         return jsonable_encoder({
             "ok": True,
             "user_id": user["id"],
             "profile": payload.profile,
-            "data": asdict(data),
+            "data": serialized_data,
             "session": state,
         })
 
