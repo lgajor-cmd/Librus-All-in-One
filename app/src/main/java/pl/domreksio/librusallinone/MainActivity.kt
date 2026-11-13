@@ -2567,6 +2567,9 @@ class MainActivity : Activity() {
                     if (event.optString("description").isNotBlank()) {
                         itemCard.addView(label(event.optString("description"), 12f, muted), params(0, 4, 0, 0))
                     }
+                    itemCard.addView(actionButton("EDYTUJ WYDARZENIE") {
+                        addAgendaEvent(selected, { redraw() }, event)
+                    }, params(0, 6, 0, 4))
                     itemCard.addView(actionButton("USUŃ WYDARZENIE") {
                         AlertDialog.Builder(this).setTitle("Usunąć wydarzenie?")
                             .setMessage(event.optString("title"))
@@ -2588,26 +2591,28 @@ class MainActivity : Activity() {
         redraw()
     }
 
-    private fun addAgendaEvent(defaultDate: String, onSaved: () -> Unit) {
+    private fun addAgendaEvent(defaultDate: String, onSaved: () -> Unit, existing: JSONObject? = null) {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 0)
         }
         val title = EditText(this).apply {
             hint = "Nazwa wydarzenia"
+            setText(existing?.optString("title", "").orEmpty())
             setTextColor(white)
             setHintTextColor(muted)
             setSingleLine(true)
         }
         val date = EditText(this).apply {
             hint = "Data RRRR-MM-DD"
-            setText(defaultDate)
+            setText(existing?.optString("date", defaultDate) ?: defaultDate)
             setTextColor(white)
             setHintTextColor(muted)
             setSingleLine(true)
         }
         val description = EditText(this).apply {
             hint = "Opis (opcjonalnie)"
+            setText(existing?.optString("description", "").orEmpty())
             setTextColor(white)
             setHintTextColor(muted)
             minLines = 2
@@ -2615,7 +2620,7 @@ class MainActivity : Activity() {
         fields.addView(title)
         fields.addView(date, params(0, 6, 0, 0))
         fields.addView(description, params(0, 6, 0, 0))
-        AlertDialog.Builder(this).setTitle("Nowe wydarzenie").setView(fields)
+        AlertDialog.Builder(this).setTitle(if (existing == null) "Nowe wydarzenie" else "Edytuj wydarzenie").setView(fields)
             .setNegativeButton("Anuluj", null)
             .setPositiveButton("Zapisz") { _, _ ->
                 val eventTitle = title.text.toString().trim()
@@ -2627,10 +2632,17 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Podaj nazwę i poprawną datę RRRR-MM-DD.", Toast.LENGTH_LONG).show()
                 } else {
                     val events = readLocalArray("personal_events")
-                    events.put(JSONObject().put("id", System.currentTimeMillis().toString())
+                    val eventId = existing?.optString("id")?.takeIf { it.isNotBlank() }
+                        ?: System.currentTimeMillis().toString()
+                    val updated = JSONArray()
+                    for (index in 0 until events.length()) {
+                        val item = events.optJSONObject(index) ?: continue
+                        if (item.optString("id") != eventId) updated.put(item)
+                    }
+                    updated.put(JSONObject().put("id", eventId)
                         .put("title", eventTitle).put("date", eventDate)
                         .put("description", description.text.toString().trim()))
-                    saveLocalArray("personal_events", events)
+                    saveLocalArray("personal_events", updated)
                     onSaved()
                 }
             }.show()
