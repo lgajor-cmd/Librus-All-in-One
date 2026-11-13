@@ -42,7 +42,7 @@ internal object LibrusNotificationDiagnostics {
             edit.putLong("last_success", System.currentTimeMillis())
                 .putLong("success_count", prefs.getLong("success_count", 0L) + 1L)
         }
-        if (status == "error" || status == "auth_required" || status == "blocked" || status == "partial_success") {
+        if (status == "error" || status == "auth_required" || status == "blocked" || status == "partial_success" || status == "vault_error") {
             edit.putLong("error_count", prefs.getLong("error_count", 0L) + 1L)
         }
         edit.commit()
@@ -128,11 +128,37 @@ class LibrusNotificationWorker(
 
     override suspend fun doWork(): Result {
         LibrusNotificationDiagnostics.record(applicationContext, "running")
-        val credentials = LibrusCredentialVault(applicationContext).load()
-            ?: run {
-                LibrusNotificationDiagnostics.record(applicationContext, "not_configured", "Brak zapisanych danych logowania Librusa.")
-                return Result.success()
+        val vaultResult = LibrusCredentialVault(applicationContext).loadDetailed()
+        val credentials = vaultResult.credentials ?: run {
+            when (vaultResult.status) {
+                LibrusCredentialVault.LoadStatus.NOT_CONFIGURED ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "not_configured",
+                        "Brak zapisanych danych logowania Librusa."
+                    )
+                LibrusCredentialVault.LoadStatus.KEY_MISSING ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "vault_error",
+                        "Brakuje klucza Android Keystore dla zapisanych danych. Nie usunięto zaszyfrowanych danych."
+                    )
+                LibrusCredentialVault.LoadStatus.DECRYPTION_FAILED ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "vault_error",
+                        "Android Keystore nie może odszyfrować zapisanych danych Librusa. Dane pozostawiono bez zmian."
+                    )
+                LibrusCredentialVault.LoadStatus.CORRUPTED ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "vault_error",
+                        "Zapisany magazyn danych logowania jest uszkodzony lub ma nieprawidłowy format. Dane pozostawiono bez zmian."
+                    )
+                LibrusCredentialVault.LoadStatus.OK -> Unit
             }
+            return Result.success()
+        }
 
         var connection: HttpURLConnection? = null
         return try {
