@@ -16,6 +16,10 @@ Przegląd kodu Androida, synchronizacji backendu, harmonogramu powiadomień, obs
 - Komórki dni zwiększono z 62 dp do 70 dp, aby poprawić czytelność na wąskich ekranach.
 - Lista wydarzeń wybiera pierwsze źródło zawierające dane, zamiast pustej sekcji, jeśli Librus zwrócił ją obok niepustego alternatywnego źródła.
 
+### Ograniczanie liczby żądań API
+
+Audyt wykazał, że backend weryfikował token Supabase przed sprawdzeniem limitu żądań. Przeniesiono limiter przed zdalną weryfikację tokenu, dzięki czemu nieprawidłowe żądania również podlegają limitowi i nie wymuszają niepotrzebnego wywołania Supabase. Dodano test regresyjny limitu 10 żądań na minutę na adres IP.
+
 ## Potwierdzone kontrole
 
 - CI Android: Android Lint, testy jednostkowe, budowanie release i weryfikacja certyfikatu.
