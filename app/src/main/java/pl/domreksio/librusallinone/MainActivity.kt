@@ -1006,8 +1006,8 @@ class MainActivity : Activity() {
             val item = array.optJSONObject(i) ?: continue
             val title = firstValue(item, "title", "subject", "topic")
                 .ifBlank { heading.removeSuffix("i") }
-            val sender = firstValue(item, "sender", "author", "teacher_name", "from")
-            val date = firstValue(item, "date", "created_at", "send_date")
+            val sender = firstValue(item, "sender", "author", "teacher_name", "from", "sender_name")
+            val date = firstValue(item, "date", "created_at", "send_date", "sent_at")
             val body = firstValue(
                 item,
                 "content", "message", "body", "text",
@@ -1019,18 +1019,113 @@ class MainActivity : Activity() {
             if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
             if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
 
-            if (body.isNotBlank()) {
-                val preview = body.take(220) + if (body.length > 220) "…" else ""
-                card.addView(label(preview, 13f, white))
-
-                card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
-                    showMessageDetails(title, sender, date, body)
-                })
+            if (heading == "Ogłoszenia") {
+                if (body.isNotBlank()) {
+                    card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
+                    card.addView(actionButton("OTWÓRZ OGŁOSZENIE") {
+                        showMessageDetails(title, sender, date, body)
+                    })
+                } else {
+                    card.addView(label("Brak treści ogłoszenia.", 12f, muted))
+                }
             } else {
-                card.addView(label("Brak treści w danych zwróconych przez Librusa.", 12f, muted))
+                val messageId = firstValue(item, "id", "message_id", "messageId")
+                if (body.isNotBlank()) {
+                    card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
+                } else {
+                    card.addView(label("Podgląd wiadomości niedostępny.", 12f, muted))
+                }
+
+                if (messageId.isNotBlank()) {
+                    card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
+                        fetchFullMessage(messageId, title, sender, date)
+                    })
+                } else {
+                    card.addView(label("Brak identyfikatora wiadomości — nie można pobrać pełnej treści.", 12f, warningColor))
+                }
             }
 
             parent.addView(card, params(0, 0, 0, 8))
+        }
+    }
+
+    private fun fetchFullMessage(
+        messageId: String,
+        title: String,
+        sender: String,
+        date: String
+    ) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Pobieram pełną treść wiadomości…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/message").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    put("message_id", messageId)
+                    put("mailbox", "inbox")
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use {
+                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                }
+
+                val code = connection.responseCode
+                val responseBody = readResponse(connection, code)
+                if (code in 200..299) {
+                    val json = JSONObject(responseBody)
+                    val message = json.optJSONObject("message")
+                    val fullBody = message?.let {
+                        firstValue(it, "content", "message", "body", "text", "content_html", "message_content")
+                    }.orEmpty()
+                    if (fullBody.isBlank()) {
+                        "ERROR|Librus nie zwrócił treści tej wiadomości."
+                    } else {
+                        librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                        librusVault.updateSession(librusSessionMemory?.toString())
+                        "SUCCESS|$fullBody"
+                    }
+                } else {
+                    "ERROR|Nie udało się pobrać wiadomości ($code): ${errorDetail(responseBody, "HTTP $code")}"
+                }
+            } catch (e: Exception) {
+                "ERROR|Błąd pobierania wiadomości: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("SUCCESS|")) {
+                    setLibrusStatus("Pobrano pełną treść wiadomości.", true)
+                    showMessageDetails(title, sender, date, result.substringAfter("|"))
+                } else {
+                    setLibrusStatus(result.substringAfter("|"), false)
+                }
+            }
         }
     }
 
