@@ -4186,7 +4186,7 @@ class MainActivity : Activity() {
         })
         card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
 
-        // Ilustracja ma własny, stały obszar — nie jest przycinana przez szerokość tekstu.
+        // Własna ilustracja wektorowa — ostre kształty, bez emoji i bez pobierania grafik z sieci.
         val illustration = FrameLayout(this).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
@@ -4198,17 +4198,8 @@ class MainActivity : Activity() {
             clipChildren = false
             clipToPadding = false
         }
-        val art = TextView(this).apply {
-            text = emoji
-            textSize = 43f
-            gravity = Gravity.CENTER
-            includeFontPadding = true
-            setShadowLayer(8f, 0f, 3f, Color.argb(85, 0, 0, 0))
-            contentDescription = "Grafika: $heading"
-        }
-        illustration.addView(art, FrameLayout.LayoutParams(
-            (76 * density).toInt(), (76 * density).toInt(), Gravity.CENTER
-        ))
+        illustration.addView(ThematicBannerArtView(this, heading),
+            FrameLayout.LayoutParams((76 * density).toInt(), (76 * density).toInt(), Gravity.CENTER))
         card.addView(illustration, LinearLayout.LayoutParams(
             (76 * density).toInt(), (76 * density).toInt()
         ).apply { marginStart = (8 * density).toInt() })
@@ -4223,6 +4214,125 @@ class MainActivity : Activity() {
             .setStartDelay(parent.childCount.coerceAtMost(12) * 35L)
             .setDuration(320)
             .start()
+    }
+
+
+    private inner class ThematicBannerArtView(
+        context: android.content.Context,
+        private val section: String
+    ) : View(context) {
+        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        private fun color(value: Int) { paint.color = value; paint.style = android.graphics.Paint.Style.FILL }
+        private fun line(value: Int, width: Float = 5f) {
+            paint.color = value
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = width
+            paint.strokeCap = android.graphics.Paint.Cap.ROUND
+            paint.strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val save = canvas.save()
+            canvas.scale(width / 100f, height / 100f)
+            val whiteSoft = Color.argb(235, 239, 247, 255)
+            val accent = Color.rgb(145, 211, 255)
+            val warm = Color.rgb(255, 211, 139)
+            val green = Color.rgb(155, 226, 190)
+            val navy = Color.argb(210, 15, 35, 57)
+
+            when (section.uppercase(Locale("pl", "PL"))) {
+                "PROFILE" -> {
+                    // Budynek szkoły, wejście i okna.
+                    color(whiteSoft); canvas.drawRoundRect(17f, 39f, 83f, 83f, 6f, 6f, paint)
+                    color(accent); canvas.drawRect(12f, 34f, 88f, 42f, paint)
+                    color(warm)
+                    val roof = android.graphics.Path().apply { moveTo(10f, 36f); lineTo(50f, 10f); lineTo(90f, 36f); close() }
+                    canvas.drawPath(roof, paint)
+                    color(navy); canvas.drawRoundRect(42f, 58f, 58f, 83f, 3f, 3f, paint)
+                    color(accent)
+                    for (x in listOf(25f, 64f)) for (y in listOf(49f, 66f)) canvas.drawRoundRect(x, y, x+10f, y+9f, 2f, 2f, paint)
+                    line(warm, 3f); canvas.drawLine(50f, 10f, 50f, 3f, paint)
+                    color(warm); canvas.drawCircle(50f, 3f, 3f, paint)
+                }
+                "PLAN LEKCJI" -> {
+                    color(whiteSoft); canvas.drawRoundRect(22f, 13f, 78f, 87f, 9f, 9f, paint)
+                    color(accent); canvas.drawRoundRect(22f, 13f, 78f, 31f, 8f, 8f, paint)
+                    color(warm); canvas.drawRoundRect(34f, 8f, 40f, 23f, 3f, 3f, paint); canvas.drawRoundRect(60f, 8f, 66f, 23f, 3f, 3f, paint)
+                    line(Color.rgb(65, 106, 143), 3f)
+                    for (x in listOf(36f, 50f, 64f)) for (y in listOf(43f, 57f, 71f)) canvas.drawRoundRect(x-4f, y-4f, x+4f, y+4f, 2f, 2f, paint)
+                    color(green); canvas.drawCircle(68f, 70f, 12f, paint)
+                    line(navy, 3f); canvas.drawLine(68f, 70f, 68f, 62f, paint); canvas.drawLine(68f, 70f, 74f, 73f, paint)
+                }
+                "OCENY" -> {
+                    color(whiteSoft)
+                    val book = android.graphics.Path().apply { moveTo(12f, 29f); quadTo(32f, 20f, 49f, 34f); lineTo(49f, 83f); quadTo(29f, 69f, 12f, 78f); close() }
+                    canvas.drawPath(book, paint)
+                    val page = android.graphics.Path().apply { moveTo(51f, 34f); quadTo(70f, 20f, 88f, 29f); lineTo(88f, 78f); quadTo(68f, 69f, 51f, 83f); close() }
+                    canvas.drawPath(page, paint)
+                    line(accent, 3f); canvas.drawLine(50f, 35f, 50f, 83f, paint)
+                    color(warm); canvas.drawCircle(69f, 47f, 13f, paint)
+                    val star = android.graphics.Path().apply { for(i in 0..9){ val a=(-Math.PI/2+i*Math.PI/5); val r=if(i%2==0)8.0 else 3.5; val x=69+Math.cos(a)*r; val y=47+Math.sin(a)*r; if(i==0)moveTo(x.toFloat(),y.toFloat()) else lineTo(x.toFloat(),y.toFloat()) }; close() }
+                    color(navy); canvas.drawPath(star, paint)
+                    line(Color.rgb(74, 115, 151), 2.5f); canvas.drawLine(21f, 48f, 39f, 48f, paint); canvas.drawLine(21f, 58f, 39f, 58f, paint)
+                }
+                "WIADOMOŚCI" -> {
+                    color(whiteSoft); canvas.drawRoundRect(11f, 26f, 89f, 76f, 9f, 9f, paint)
+                    color(accent)
+                    val flap=android.graphics.Path().apply { moveTo(13f,29f); lineTo(50f,58f); lineTo(87f,29f); close() }
+                    canvas.drawPath(flap, paint)
+                    line(Color.rgb(79, 115, 157), 4f); canvas.drawLine(14f,72f,39f,51f,paint); canvas.drawLine(86f,72f,61f,51f,paint)
+                    color(warm); canvas.drawCircle(77f, 19f, 10f, paint)
+                    color(navy); canvas.drawCircle(74f,17f,1.7f,paint); canvas.drawCircle(80f,17f,1.7f,paint)
+                    line(navy,2f); canvas.drawArc(74f,17f,81f,24f,10f,150f,false,paint)
+                }
+                "FREKWENCJA" -> {
+                    color(whiteSoft); canvas.drawRoundRect(18f, 18f, 82f, 84f, 8f, 8f, paint)
+                    color(accent); canvas.drawRoundRect(18f, 18f, 82f, 36f, 7f, 7f, paint)
+                    color(warm); canvas.drawRoundRect(29f, 11f, 36f, 26f, 3f, 3f, paint); canvas.drawRoundRect(64f, 11f, 71f, 26f, 3f, 3f, paint)
+                    color(green); canvas.drawCircle(51f, 59f, 19f, paint)
+                    line(navy, 5f); canvas.drawLine(41f,59f,48f,66f,paint); canvas.drawLine(48f,66f,63f,49f,paint)
+                }
+                "ZADANIA DOMOWE" -> {
+                    color(whiteSoft); canvas.drawRoundRect(23f, 14f, 76f, 86f, 6f, 6f, paint)
+                    color(accent); canvas.drawRoundRect(36f, 9f, 64f, 22f, 5f, 5f, paint)
+                    line(Color.rgb(80, 119, 156), 3f)
+                    for(y in listOf(39f,54f,69f)){ canvas.drawRoundRect(33f,y-4f,41f,y+4f,2f,2f,paint); canvas.drawLine(48f,y,67f,y,paint) }
+                    color(warm); canvas.drawCircle(70f,70f,13f,paint)
+                    line(navy,3f); canvas.drawLine(64f,76f,76f,64f,paint)
+                }
+                "TERMINARZ" -> {
+                    color(whiteSoft); canvas.drawRoundRect(17f, 20f, 83f, 82f, 8f, 8f, paint)
+                    color(accent); canvas.drawRoundRect(17f,20f,83f,38f,7f,7f,paint)
+                    color(warm); canvas.drawCircle(68f,68f,17f,paint)
+                    line(navy,3.5f); canvas.drawLine(68f,68f,68f,57f,paint); canvas.drawLine(68f,68f,77f,73f,paint)
+                    line(Color.rgb(71,111,145),3f); canvas.drawLine(30f,49f,45f,49f,paint); canvas.drawLine(30f,60f,45f,60f,paint)
+                }
+                "UWAGI" -> {
+                    color(whiteSoft); canvas.drawRoundRect(24f,13f,77f,86f,6f,6f,paint)
+                    color(accent); canvas.drawRect(35f,25f,67f,31f,paint)
+                    line(Color.rgb(75,111,148),3f); canvas.drawLine(35f,43f,66f,43f,paint); canvas.drawLine(35f,54f,66f,54f,paint); canvas.drawLine(35f,65f,55f,65f,paint)
+                    color(warm); val pencil=android.graphics.Path().apply { moveTo(66f,72f); lineTo(81f,57f); lineTo(88f,64f); lineTo(73f,79f); close() }; canvas.drawPath(pencil,paint)
+                }
+                "SZCZĘŚLIWY NUMEREK" -> {
+                    color(warm); canvas.drawCircle(50f,50f,29f,paint)
+                    color(green)
+                    for(a in listOf(0.0, Math.PI/2, Math.PI, Math.PI*1.5)) {
+                        val x=50+Math.cos(a)*13; val y=50+Math.sin(a)*13
+                        canvas.drawOval((x-9).toFloat(),(y-13).toFloat(),(x+9).toFloat(),(y+13).toFloat(),paint)
+                    }
+                    color(navy); canvas.drawCircle(50f,50f,5f,paint)
+                    line(whiteSoft,3f); canvas.drawLine(50f,55f,50f,75f,paint)
+                }
+                else -> {
+                    color(whiteSoft); canvas.drawRoundRect(18f,18f,82f,82f,10f,10f,paint)
+                    color(accent); canvas.drawCircle(50f,42f,14f,paint)
+                    color(warm); canvas.drawRoundRect(31f,62f,69f,72f,5f,5f,paint)
+                }
+            }
+            canvas.restoreToCount(save)
+        }
     }
 
     private fun card(): LinearLayout =
