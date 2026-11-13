@@ -1812,7 +1812,7 @@ class MainActivity : Activity() {
                     "teacher_comment", "feedback", "note", "details"
                 )
                 val categoryId = firstValue(grade, "category_id")
-                val category = firstDisplayValue(grade, "category_name", "category", "skill")
+                val category = firstDisplayValue(grade, "category_name", "category")
                     .ifBlank { lookupName(gradeCategories, categoryId) }
                     .ifBlank { grade.optJSONObject("category")?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
                 val comments = displayJsonValue(grade.opt("comments"))
@@ -4352,7 +4352,7 @@ class MainActivity : Activity() {
                 val description = firstDisplayValue(grade, "description", "skill_description", "comment",
                     "teacher_comment", "feedback", "note", "details")
                 val categoryId = firstValue(grade, "category_id")
-                val categoryName = firstDisplayValue(grade, "category_name", "category", "skill")
+                val categoryName = firstDisplayValue(grade, "category_name", "category")
                     .ifBlank { lookupName(gradeCategories, categoryId) }
                     .ifBlank { grade.optJSONObject("category")?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
                 val comments = displayJsonValue(grade.opt("comments"))
