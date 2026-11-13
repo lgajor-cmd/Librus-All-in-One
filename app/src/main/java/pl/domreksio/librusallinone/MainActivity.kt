@@ -1891,7 +1891,7 @@ class MainActivity : Activity() {
                         else ""
                     }
 
-                val numericGrade = value.trim().matches(Regex("^[1-6][+-]?$"))
+                val numericGrade = GradeAverageParser.parse(value) != null
                 val valueColor = gradeColor(value)
                 val row = LinearLayout(this).apply {
                     val focusKey = gradeFocusKey(grade, sourceKey)
@@ -6565,7 +6565,7 @@ class MainActivity : Activity() {
         // Koloruj wyłącznie jednoznaczne oceny liczbowe. Opisów typu
         // "5 umiejętności opanowanych" nie klasyfikuj jak stopnia 5.
         val normalized = value.trim()
-        if (!normalized.matches(Regex("^[1-6][+-]?$"))) return white
+        if (GradeAverageParser.parse(normalized) == null) return white
         return when (normalized.first()) {
             '5', '6' -> successColor
             '1', '2' -> errorColor
