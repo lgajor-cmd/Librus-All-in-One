@@ -47,10 +47,10 @@ private const val SUPABASE_PUBLISHABLE_KEY =
 private const val AUTH_REDIRECT =
     "pl.domreksio.librusallinone://login-callback"
 
-private const val BACKEND_URL =
+internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
 
-private val supabase = createSupabaseClient(
+internal val supabase = createSupabaseClient(
     supabaseUrl = SUPABASE_URL,
     supabaseKey = SUPABASE_PUBLISHABLE_KEY
 ) {
