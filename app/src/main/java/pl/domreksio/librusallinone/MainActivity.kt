@@ -18,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -415,10 +416,19 @@ class MainActivity : Activity() {
             signOut()
         }, params(0, 24, 0, 8))
 
-        setContentView(ScrollView(this).apply {
+        val homeScroll = ScrollView(this).apply {
             setBackgroundColor(bgColor)
             addView(content)
-        })
+        }
+        val homePage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        homePage.addView(homeScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        homePage.addView(buildBottomNavigation("START"))
+        setContentView(homePage)
 
         if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext)
 
@@ -702,10 +712,20 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
             addView(root)
         }
-        setContentView(scroll)
-        root.alpha = 0f
-        root.translationY = 12f * resources.displayMetrics.density
-        root.animate().alpha(1f).translationY(0f).setDuration(280).start()
+        val sectionPage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        sectionPage.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        sectionPage.addView(buildBottomNavigation(section))
+        setContentView(sectionPage)
+        if (uiPrefs.getBoolean("motion", true)) {
+            root.alpha = 0f
+            root.translationY = 12f * resources.displayMetrics.density
+            root.animate().alpha(1f).translationY(0f).setDuration(280).start()
+        }
     }
 
     // ---------------------------------------------------------
@@ -853,16 +873,51 @@ class MainActivity : Activity() {
         )
 
         val grouped = lessons.groupBy { it.date }.toSortedMap()
+        val dates = grouped.keys.toList()
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .format(java.util.Date())
+        // Wybierz dzisiaj, a gdy nie ma go w planie — najbliższy przyszły dzień.
+        // Jeśli cały pobrany plan jest z przeszłości, pokaż ostatni dostępny dzień.
+        var selectedDate = dates.firstOrNull { it == today }
+            ?: dates.firstOrNull { it > today }
+            ?: dates.last()
 
         parent.addView(
-            infoCard("Znaleziono ${lessons.size} lekcji w ${grouped.size} dniach.")
+            infoCard("Znaleziono ${lessons.size} lekcji w ${grouped.size} dniach. Wybierz dzień, aby zobaczyć szczegóły planu.")
         )
+        parent.addView(sectionHeader("PLAN TYGODNIA"), params(0, 14, 0, 8))
 
-        for ((date, dayLessons) in grouped) {
+        val daySelector = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val dayScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(daySelector)
+        }
+        val dayButtons = linkedMapOf<String, TextView>()
+
+        fun refreshDaySelection() {
+            dayButtons.forEach { (date, button) ->
+                val selected = date == selectedDate
+                button.background = roundedBackground(
+                    if (selected) Color.rgb(47, 91, 148) else panelLight,
+                    12
+                )
+                button.setTextColor(if (selected) white else muted)
+            }
+        }
+
+        val dayContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        fun renderSelectedDay(date: String) {
+            dayContent.removeAllViews()
+            val dayLessons = grouped[date] ?: return
             val dayCard = card()
-
-            val dayTitle = dateLabel(date)
-            dayCard.addView(label(dayTitle, 18f, white, true))
+            dayCard.addView(label(dateLabel(date), 18f, white, true))
             dayCard.addView(
                 label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
@@ -873,8 +928,64 @@ class MainActivity : Activity() {
             )) {
                 dayCard.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
             }
+            dayContent.addView(dayCard, params(0, 8, 0, 4))
+        }
 
-            parent.addView(dayCard, params(0, 10, 0, 4))
+        for (date in dates) {
+            val weekday = try {
+                val parsed = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)
+                parsed?.let {
+                    SimpleDateFormat("EEE", Locale("pl", "PL"))
+                        .format(it)
+                        .replaceFirstChar { first -> first.uppercase() }
+                } ?: date
+            } catch (_: Exception) {
+                date
+            }
+            val button = TextView(this).apply {
+                text = "$weekday\n${date.takeLast(5)}"
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTypeface(null, Typeface.BOLD)
+                setPadding(9, 9, 9, 9)
+                isClickable = true
+                isFocusable = true
+                contentDescription = dateLabel(date)
+                setOnClickListener {
+                    selectedDate = date
+                    refreshDaySelection()
+                    renderSelectedDay(date)
+                    if (uiPrefs.getBoolean("motion", true)) {
+                        dayContent.alpha = 0f
+                        dayContent.translationY = 8f * resources.displayMetrics.density
+                        dayContent.animate().alpha(1f).translationY(0f).setDuration(190).start()
+                        this.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120)
+                            .withEndAction { this.animate().scaleX(1f).scaleY(1f).setDuration(120).start() }
+                            .start()
+                    }
+                }
+            }
+            dayButtons[date] = button
+            daySelector.addView(
+                button,
+                LinearLayout.LayoutParams(
+                    (72 * resources.displayMetrics.density).toInt(),
+                    (58 * resources.displayMetrics.density).toInt()
+                ).apply {
+                    marginEnd = (5 * resources.displayMetrics.density).toInt()
+                }
+            )
+        }
+
+        parent.addView(dayScroll, params(0, 0, 0, 4))
+        parent.addView(dayContent, params(0, 0, 0, 4))
+        refreshDaySelection()
+        renderSelectedDay(selectedDate)
+        dayScroll.post {
+            dayButtons[selectedDate]?.let { selected ->
+                val target = selected.left - (dayScroll.width - selected.width) / 2
+                dayScroll.smoothScrollTo(target.coerceAtLeast(0), 0)
+            }
         }
     }
 
@@ -1047,13 +1158,28 @@ class MainActivity : Activity() {
             subjectCard.addView(header)
 
             for (grade in grades) {
-                val value = firstValue(grade, "value", "grade", "symbol")
-                    .ifBlank { "—" }
-                val date = firstValue(grade, "date", "add_date").take(10)
-                val description = firstValue(grade, "skill", "description", "comment")
+                // Librus może zwracać oceny liczbowe i opisowe w różnych polach.
+                // Rozszerzona lista pozwala wyświetlić także tekstowe wpisy spotykane
+                // w edukacji wczesnoszkolnej (klasy 1–3), bez wymuszania symbolu liczbowego.
+                // Wartość może być liczbą, tekstem albo obiektem/strukturą
+                // zwracaną przez różne warianty API Librusa.
+                val value = firstDisplayValue(
+                    grade,
+                    "value", "grade", "symbol", "text", "result", "assessment",
+                    "grade_value", "grade_text", "mark", "grade_description",
+                    "skill", "name"
+                ).ifBlank { "Ocena opisowa" }
+                val date = firstValue(
+                    grade, "date", "add_date", "created_at", "modified_at"
+                ).take(10)
+                val description = firstDisplayValue(
+                    grade,
+                    "description", "skill_description", "comment",
+                    "teacher_comment", "feedback", "note", "details"
+                )
                 val teacherId = firstValue(grade, "teacher_id")
                 val teacher = lookupName(teachers, teacherId)
-                    .ifBlank { grade.optString("teacher_name") }
+                    .ifBlank { firstDisplayValue(grade, "teacher_name", "teacher") }
 
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -1070,7 +1196,7 @@ class MainActivity : Activity() {
                     orientation = LinearLayout.VERTICAL
                 }
 
-                if (date.isNotBlank()) details.addView(label(date, 12f, muted))
+                if (date.isNotBlank()) details.addView(label(dateLabel(date), 12f, muted))
                 if (description.isNotBlank()) {
                     details.addView(label(description, 13f, white))
                 }
@@ -1081,11 +1207,20 @@ class MainActivity : Activity() {
                 row.addView(details, LinearLayout.LayoutParams(0, -2, 1f))
                 subjectCard.addView(row)
 
-                appendStringArray(subjectCard, grade.optJSONArray("comments"), "Komentarz")
-                appendStringArray(subjectCard, grade.optJSONArray("requirements"), "Wymaganie")
+                appendJsonDetails(subjectCard, grade, "comments", "Komentarz")
+                appendJsonDetails(subjectCard, grade, "requirements", "Wymaganie")
+                appendJsonDetails(subjectCard, grade, "criteria", "Kryterium")
+                appendJsonDetails(subjectCard, grade, "skills", "Umiejętność")
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
+            if (uiPrefs.getBoolean("motion", true)) {
+                subjectCard.alpha = 0f
+                subjectCard.translationY = 10f * resources.displayMetrics.density
+                subjectCard.animate().alpha(1f).translationY(0f)
+                    .setStartDelay((parent.childCount.coerceAtMost(8) * 35L))
+                    .setDuration(240).start()
+            }
         }
     }
 
@@ -1713,6 +1848,31 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun showAppearanceSettings(activeSection: String) {
+        val options = arrayOf("Niebieski — klasyczny", "Turkusowy — świeży", "Fioletowy — nowoczesny", "Bursztynowy — ciepły")
+        val keys = arrayOf("blue", "teal", "violet", "amber")
+        val selected = keys.indexOf(uiPrefs.getString("accent", "blue")).coerceAtLeast(0)
+        val motionEnabled = uiPrefs.getBoolean("motion", true)
+
+        AlertDialog.Builder(this)
+            .setTitle("Wygląd aplikacji")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                uiPrefs.edit().putString("accent", keys[which]).apply()
+                dialog.dismiss()
+                if (activeSection == "START") {
+                    showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                } else {
+                    loadLibrusSection(activeSection)
+                }
+            }
+            .setNeutralButton(if (motionEnabled) "Wyłącz animacje" else "Włącz animacje") { _, _ ->
+                uiPrefs.edit().putBoolean("motion", !motionEnabled).apply()
+                showAppearanceSettings(activeSection)
+            }
+            .setNegativeButton("Zamknij", null)
+            .show()
+    }
+
     private fun signOut() {
         LibrusNotificationScheduler.cancel(applicationContext)
         thread {
@@ -1742,6 +1902,128 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------
+    // DOLNA NAWIGACJA — układ inspirowany Szkolny.eu
+    // ---------------------------------------------------------
+
+    private fun buildBottomNavigation(active: String): LinearLayout {
+        val density = resources.displayMetrics.density
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding((7 * density).toInt(), (7 * density).toInt(), (7 * density).toInt(), (8 * density).toInt())
+            setBackgroundColor(Color.rgb(18, 26, 41))
+            elevation = 12f * density
+        }
+
+        data class NavItem(val key: String, val icon: String, val title: String)
+        val items = listOf(
+            NavItem("START", "⌂", "Start"),
+            NavItem("PLAN LEKCJI", "▦", "Plan"),
+            NavItem("OCENY", "✦", "Oceny"),
+            NavItem("WIADOMOŚCI", "✉", "Wiadomości"),
+            NavItem("WIĘCEJ", "•••", "Więcej")
+        )
+
+        items.forEach { item ->
+            val selected = when (active) {
+                "START" -> item.key == "START"
+                "PLAN LEKCJI" -> item.key == "PLAN LEKCJI"
+                "OCENY" -> item.key == "OCENY"
+                "WIADOMOŚCI" -> item.key == "WIADOMOŚCI"
+                else -> item.key == "WIĘCEJ"
+            }
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding((2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt(), (3 * density).toInt())
+                background = roundedBackground(
+                    if (selected) Color.argb(48, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) else Color.TRANSPARENT,
+                    13
+                )
+                isClickable = true
+                isFocusable = true
+                alpha = if (selected) 1f else 0.82f
+                scaleX = if (selected) 1.03f else 1f
+                scaleY = if (selected) 1.03f else 1f
+            }
+            if (selected) {
+                val indicator = View(this).apply {
+                    background = roundedBackground(accentColor, 4)
+                }
+                tile.addView(indicator, LinearLayout.LayoutParams((22 * density).toInt(), (3 * density).toInt()).apply {
+                    bottomMargin = (2 * density).toInt()
+                })
+            } else {
+                tile.addView(View(this), LinearLayout.LayoutParams(1, (5 * density).toInt()))
+            }
+            tile.addView(TextView(this).apply {
+                text = item.icon
+                textSize = if (item.key == "WIĘCEJ") 17f else 21f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) accentColor else muted)
+                setTypeface(null, Typeface.BOLD)
+            })
+            tile.addView(TextView(this).apply {
+                text = item.title
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) white else muted)
+                if (selected) setTypeface(null, Typeface.BOLD)
+                maxLines = 1
+            })
+            tile.setOnClickListener {
+                if (uiPrefs.getBoolean("motion", true)) {
+                    tile.animate().cancel()
+                    tile.scaleX = 0.96f
+                    tile.scaleY = 0.96f
+                    tile.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
+                }
+                when (item.key) {
+                    "START" -> showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                    "WIĘCEJ" -> showMoreMenu(active)
+                    else -> loadLibrusSection(item.key)
+                }
+            }
+            nav.addView(tile, LinearLayout.LayoutParams(0, (54 * density).toInt(), 1f).apply {
+                marginStart = (2 * density).toInt()
+                marginEnd = (2 * density).toInt()
+            })
+        }
+        return nav
+    }
+
+    private fun showMoreMenu(activeSection: String) {
+        val labels = arrayOf(
+            "Profile i nauczyciele",
+            "Frekwencja",
+            "Zadania domowe",
+            "Terminarz",
+            "Uwagi",
+            "Szczęśliwy numerek",
+            "Ustawienia powiadomień",
+            "Wygląd aplikacji"
+        )
+        val sections = arrayOf(
+            "PROFILE",
+            "FREKWENCJA",
+            "ZADANIA DOMOWE",
+            "TERMINARZ",
+            "UWAGI",
+            "SZCZĘŚLIWY NUMEREK"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Więcej modułów")
+            .setItems(labels) { _, which ->
+                when (which) {
+                    6 -> showNotificationSettings()
+                    7 -> showAppearanceSettings(activeSection)
+                    else -> loadLibrusSection(sections[which])
+                }
+            }
+            .show()
     }
 
     // ---------------------------------------------------------
@@ -1823,7 +2105,7 @@ class MainActivity : Activity() {
         TextView(this).apply {
             text = title.uppercase(Locale("pl", "PL"))
             textSize = 13f
-            setTextColor(successColor)
+            setTextColor(accentColor)
             setTypeface(null, Typeface.BOLD)
             setPadding(2, 8, 2, 5)
         }
@@ -1840,7 +2122,7 @@ class MainActivity : Activity() {
                 intArrayOf(Color.rgb(33, 51, 77), Color.rgb(25, 38, 59))
             ).apply {
                 cornerRadius = 16f * resources.displayMetrics.density
-                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(61, 85, 119))
+                setStroke((1 * resources.displayMetrics.density).toInt(), blendColor(accentColor, Color.rgb(61, 85, 119), 0.62f))
             }
         }
 
@@ -1880,10 +2162,19 @@ class MainActivity : Activity() {
         minHeight = (48 * resources.displayMetrics.density).toInt()
         background = GradientDrawable(
             GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(Color.rgb(56, 112, 194), Color.rgb(43, 83, 145))
+            intArrayOf(accentColor, blendColor(accentColor, Color.rgb(30, 48, 78), 0.55f))
         ).apply { cornerRadius = 14f * resources.displayMetrics.density }
         elevation = 2f * resources.displayMetrics.density
         setOnClickListener { action() }
+    }
+
+    private fun blendColor(from: Int, to: Int, ratio: Float): Int {
+        val inverse = 1f - ratio
+        return Color.rgb(
+            (Color.red(from) * inverse + Color.red(to) * ratio).toInt(),
+            (Color.green(from) * inverse + Color.green(to) * ratio).toInt(),
+            (Color.blue(from) * inverse + Color.blue(to) * ratio).toInt()
+        )
     }
 
     private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable =
@@ -1987,27 +2278,77 @@ class MainActivity : Activity() {
     }
 
     private fun gradeColor(value: String): Int {
+        // Koloruj wyłącznie jednoznaczne oceny liczbowe. Opisów typu
+        // "5 umiejętności opanowanych" nie klasyfikuj jak stopnia 5.
         val normalized = value.trim()
-        return when {
-            normalized.startsWith("6") || normalized.startsWith("5") ||
-                normalized.startsWith("+5") -> successColor
-            normalized.startsWith("1") || normalized.startsWith("2") ->
-                errorColor
+        if (!normalized.matches(Regex("^[1-6][+-]?$"))) return white
+        return when (normalized.first()) {
+            '5', '6' -> successColor
+            '1', '2' -> errorColor
             else -> white
         }
     }
 
-    private fun appendStringArray(
+    private fun firstDisplayValue(obj: JSONObject, vararg keys: String): String {
+        for (key in keys) {
+            if (!obj.has(key) || obj.isNull(key)) continue
+            val rendered = displayJsonValue(obj.opt(key))
+            if (rendered.isNotBlank()) return rendered
+        }
+        return ""
+    }
+
+    private fun displayJsonValue(value: Any?): String {
+        return when (value) {
+            null, JSONObject.NULL -> ""
+            is JSONObject -> {
+                val preferred = arrayOf(
+                    "value", "text", "name", "title", "description",
+                    "content", "label", "skill", "comment", "result"
+                )
+                for (key in preferred) {
+                    if (value.has(key) && !value.isNull(key)) {
+                        val rendered = displayJsonValue(value.opt(key))
+                        if (rendered.isNotBlank()) return rendered
+                    }
+                }
+                val parts = mutableListOf<String>()
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val rendered = displayJsonValue(value.opt(key))
+                    if (rendered.isNotBlank()) parts.add(rendered)
+                }
+                parts.distinct().joinToString(" · ")
+            }
+            is JSONArray -> {
+                val parts = mutableListOf<String>()
+                for (i in 0 until value.length()) {
+                    val rendered = displayJsonValue(value.opt(i))
+                    if (rendered.isNotBlank()) parts.add(rendered)
+                }
+                parts.distinct().joinToString(" · ")
+            }
+            else -> value.toString().trim().takeUnless {
+                it.isBlank() || it == "null"
+            }.orEmpty()
+        }
+    }
+
+    private fun appendJsonDetails(
         parent: LinearLayout,
-        array: JSONArray?,
+        grade: JSONObject,
+        key: String,
         heading: String
     ) {
-        if (array == null) return
-        for (i in 0 until array.length()) {
-            val value = array.optString(i)
-            if (value.isNotBlank() && value != "null") {
-                parent.addView(label("$heading: $value", 12f, muted))
-            }
+        if (!grade.has(key) || grade.isNull(key)) return
+        val raw = grade.opt(key)
+        val values = when (raw) {
+            is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
+            else -> listOf(displayJsonValue(raw))
+        }
+        values.filter { it.isNotBlank() }.distinct().forEach { value ->
+            parent.addView(label("$heading: $value", 12f, muted))
         }
     }
 
