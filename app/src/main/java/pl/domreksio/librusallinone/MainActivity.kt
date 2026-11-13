@@ -1644,8 +1644,7 @@ dictionary.optJSONObject(key) ?: continue
         if (array == null) return
         for (i in 0 until array.length()) {
             val value = array.optString(i)
-            if (value.isNotBlank() && value !
-= "null") {
+            if (value.isNotBlank() && value != "null") {
                 parent.addView(label("$heading: $value", 12f, muted))
             }
         }
