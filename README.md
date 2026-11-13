@@ -26,6 +26,8 @@ Niektóre sekcje mogą być puste, jeśli Librus nie udostępnia ich na danym ko
 
 ## Budowanie i kontrola jakości
 
+Projekt zawiera Gradle Wrapper 8.11.1. Lokalnie budowanie uruchamiaj przez `./gradlew assembleDebug` (Linux/macOS) lub `gradlew.bat assembleDebug` (Windows); nie trzeba instalować osobnej wersji Gradle.
+
 GitHub Actions uruchamia Android Lint, testy jednostkowe Androida, budowanie APK i weryfikację stałego podpisu wydawniczego. Backend ma osobny workflow: kontrolę zależności, `pip-audit`, kompilację i testy regresyjne `unittest`.
 
 Szczegóły zmian niezawodności oraz znane ograniczenia opisuje [audyt techniczny](docs/AUDIT-RELIABILITY.md).
