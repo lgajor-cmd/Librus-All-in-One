@@ -4200,6 +4200,10 @@ class MainActivity : Activity() {
         }
         illustration.addView(ThematicBannerArtView(this, heading),
             FrameLayout.LayoutParams((76 * density).toInt(), (76 * density).toInt(), Gravity.CENTER))
+        if (uiPrefs.getString("accent", "blue") in setOf("red", "christmas", "halloween", "pink", "spring")) {
+            illustration.addView(SeasonalBannerOverlayView(this),
+                FrameLayout.LayoutParams((76 * density).toInt(), (76 * density).toInt(), Gravity.CENTER))
+        }
         card.addView(illustration, LinearLayout.LayoutParams(
             (76 * density).toInt(), (76 * density).toInt()
         ).apply { marginStart = (8 * density).toInt() })
@@ -4216,6 +4220,143 @@ class MainActivity : Activity() {
             .start()
     }
 
+
+    // Lekka, przezroczysta warstwa sezonowych ilustracji nakładana na banery modułów.
+    // Rysowana lokalnie na Canvas — bez bitmap, emoji i zasobów pobieranych z internetu.
+    private inner class SeasonalBannerOverlayView(context: android.content.Context) : View(context) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        private fun fill(canvas: android.graphics.Canvas, c: Int) {
+            p.color = c
+            p.style = android.graphics.Paint.Style.FILL
+        }
+
+        private fun stroke(canvas: android.graphics.Canvas, c: Int, w: Float = 3f) {
+            p.color = c
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = w
+            p.strokeCap = android.graphics.Paint.Cap.ROUND
+            p.strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+
+        private fun snowflake(canvas: android.graphics.Canvas, x: Float, y: Float, r: Float, c: Int) {
+            stroke(canvas, c, 2.4f)
+            for (a in 0..2) {
+                val angle = Math.PI * a / 3.0
+                val dx = kotlin.math.cos(angle).toFloat() * r
+                val dy = kotlin.math.sin(angle).toFloat() * r
+                canvas.drawLine(x-dx, y-dy, x+dx, y+dy, p)
+                for (side in listOf(-1f, 1f)) {
+                    val ex = x + dx * side
+                    val ey = y + dy * side
+                    val bx = x + dx * side * 0.58f
+                    val by = y + dy * side * 0.58f
+                    val wing = r * 0.24f
+                    canvas.drawLine(ex, ey, bx - dy/r*wing, by + dx/r*wing, p)
+                    canvas.drawLine(ex, ey, bx + dy/r*wing, by - dx/r*wing, p)
+                }
+            }
+        }
+
+        private fun heart(canvas: android.graphics.Canvas, x: Float, y: Float, size: Float, c: Int) {
+            fill(canvas, c)
+            val path = android.graphics.Path().apply {
+                moveTo(x, y + size * 0.42f)
+                cubicTo(x-size*0.95f, y-size*0.18f, x-size*0.62f, y-size*0.82f, x, y-size*0.28f)
+                cubicTo(x+size*0.62f, y-size*0.82f, x+size*0.95f, y-size*0.18f, x, y+size*0.42f)
+                close()
+            }
+            canvas.drawPath(path, p)
+        }
+
+        private fun flower(canvas: android.graphics.Canvas, x: Float, y: Float, r: Float, petal: Int, center: Int) {
+            fill(canvas, petal)
+            for (a in 0..4) {
+                val angle = Math.PI * 2.0 * a / 5.0
+                val px = x + kotlin.math.cos(angle).toFloat() * r * 0.58f
+                val py = y + kotlin.math.sin(angle).toFloat() * r * 0.58f
+                canvas.drawOval(px-r*0.34f, py-r*0.48f, px+r*0.34f, py+r*0.48f, p)
+            }
+            fill(canvas, center)
+            canvas.drawCircle(x, y, r*0.25f, p)
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val save = canvas.save()
+            canvas.scale(width / 100f, height / 100f)
+            when (uiPrefs.getString("accent", "blue")) {
+                "red" -> {
+                    // Mikołajki: czapka Mikołaja i śnieżynki.
+                    fill(canvas, Color.rgb(225, 66, 78))
+                    val hat = android.graphics.Path().apply {
+                        moveTo(69f, 27f); quadTo(76f, 9f, 91f, 14f)
+                        lineTo(84f, 30f); close()
+                    }
+                    canvas.drawPath(hat, p)
+                    fill(canvas, Color.rgb(250, 248, 242))
+                    canvas.drawRoundRect(67f, 25f, 88f, 31f, 3f, 3f, p)
+                    canvas.drawCircle(92f, 13f, 4f, p)
+                    snowflake(canvas, 13f, 19f, 6f, Color.argb(220, 225, 244, 255))
+                    snowflake(canvas, 89f, 84f, 5f, Color.argb(210, 225, 244, 255))
+                }
+                "christmas" -> {
+                    // Boże Narodzenie: bombki, gwiazdka i drobne światełka.
+                    fill(canvas, Color.rgb(218, 73, 79)); canvas.drawCircle(87f, 25f, 7f, p)
+                    stroke(canvas, Color.rgb(250, 218, 157), 2f); canvas.drawLine(87f, 15f, 87f, 18f, p)
+                    fill(canvas, Color.rgb(244, 193, 92)); canvas.drawCircle(15f, 79f, 5f, p)
+                    fill(canvas, Color.rgb(106, 198, 145)); canvas.drawCircle(87f, 82f, 4f, p)
+                    fill(canvas, Color.rgb(255, 224, 150))
+                    val star = android.graphics.Path().apply {
+                        for (i in 0..9) {
+                            val a = -Math.PI/2 + i*Math.PI/5
+                            val r = if (i % 2 == 0) 7.0 else 3.0
+                            val px = 13 + kotlin.math.cos(a)*r
+                            val py = 22 + kotlin.math.sin(a)*r
+                            if (i == 0) moveTo(px.toFloat(), py.toFloat()) else lineTo(px.toFloat(), py.toFloat())
+                        }
+                        close()
+                    }
+                    canvas.drawPath(star, p)
+                }
+                "halloween" -> {
+                    // Halloween: nietoperz i mała dynia.
+                    fill(canvas, Color.rgb(111, 75, 132))
+                    val bat = android.graphics.Path().apply {
+                        moveTo(10f, 24f); lineTo(17f, 17f); lineTo(23f, 24f); lineTo(29f, 17f)
+                        lineTo(35f, 24f); lineTo(29f, 29f); lineTo(23f, 26f); lineTo(17f, 29f); close()
+                    }
+                    canvas.drawPath(bat, p)
+                    fill(canvas, Color.rgb(239, 135, 49))
+                    canvas.drawOval(70f, 70f, 94f, 91f, p)
+                    stroke(canvas, Color.rgb(105, 73, 47), 2f)
+                    canvas.drawLine(82f, 71f, 83f, 66f, p)
+                    fill(canvas, Color.rgb(45, 35, 39))
+                    canvas.drawCircle(77f, 79f, 2f, p); canvas.drawCircle(87f, 79f, 2f, p)
+                    val grin = android.graphics.Path().apply { moveTo(77f, 85f); quadTo(82f, 89f, 88f, 84f) }
+                    stroke(canvas, Color.rgb(45, 35, 39), 1.8f); canvas.drawPath(grin, p)
+                }
+                "pink" -> {
+                    // Walentynki: serca w dwóch rozmiarach, bez przesadnego zagęszczenia.
+                    heart(canvas, 15f, 20f, 8f, Color.rgb(248, 139, 190))
+                    heart(canvas, 87f, 78f, 7f, Color.rgb(255, 188, 214))
+                    heart(canvas, 88f, 18f, 4f, Color.rgb(225, 105, 165))
+                }
+                "spring" -> {
+                    // Wiosna: kwiaty, listki i lekki akcent motyla.
+                    flower(canvas, 14f, 19f, 7f, Color.rgb(255, 190, 207), Color.rgb(255, 220, 125))
+                    flower(canvas, 87f, 82f, 6f, Color.rgb(255, 231, 145), Color.rgb(239, 153, 103))
+                    fill(canvas, Color.rgb(139, 211, 143))
+                    val leaf = android.graphics.Path().apply {
+                        moveTo(83f, 17f); quadTo(96f, 10f, 94f, 25f); quadTo(85f, 27f, 83f, 17f); close()
+                    }
+                    canvas.drawPath(leaf, p)
+                    stroke(canvas, Color.rgb(87, 159, 104), 1.5f); canvas.drawLine(84f, 22f, 92f, 16f, p)
+                }
+            }
+            canvas.restoreToCount(save)
+        }
+    }
 
     private inner class ThematicBannerArtView(
         context: android.content.Context,
