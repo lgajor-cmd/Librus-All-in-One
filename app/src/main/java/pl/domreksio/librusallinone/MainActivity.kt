@@ -2515,11 +2515,13 @@ class MainActivity : Activity() {
                             first.get(Calendar.YEAR), first.get(Calendar.MONTH) + 1, day)
                         val today = date == SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
                         val chosen = date == selected
-                        val cell = TextView(this).apply {
-                            text = day.toString()
+                        val eventDates = readLocalArray("personal_events")
+                        val hasEvent = (0 until eventDates.length()).any { eventIndex ->
+                            eventDates.optJSONObject(eventIndex)?.optString("date") == date
+                        }
+                        val cell = LinearLayout(this).apply {
+                            orientation = LinearLayout.VERTICAL
                             gravity = Gravity.CENTER
-                            textSize = 13f
-                            setTextColor(if (chosen) Color.WHITE else if (today) accentColor else white)
                             background = roundedBackground(
                                 if (chosen) accentColor else if (today) Color.argb(45, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) else Color.TRANSPARENT,
                                 12
@@ -2527,6 +2529,17 @@ class MainActivity : Activity() {
                             isClickable = true
                             isFocusable = true
                             setOnClickListener { selected = date; redraw() }
+                            addView(TextView(this@MainActivity).apply {
+                                text = day.toString()
+                                gravity = Gravity.CENTER
+                                textSize = 13f
+                                setTextColor(if (chosen) Color.WHITE else if (today) accentColor else white)
+                            })
+                            if (hasEvent) addView(View(this@MainActivity).apply {
+                                background = roundedBackground(if (chosen) Color.WHITE else accentColor, 4)
+                            }, LinearLayout.LayoutParams((5 * resources.displayMetrics.density).toInt(), (5 * resources.displayMetrics.density).toInt()).apply {
+                                topMargin = (2 * resources.displayMetrics.density).toInt()
+                            })
                         }
                         row.addView(cell, LinearLayout.LayoutParams(0, 42, 1f).apply {
                             setMargins(2, 2, 2, 2)
