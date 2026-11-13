@@ -209,10 +209,11 @@ class MainActivity : Activity() {
             )
         )
 
-        setContentView(ScrollView(this).apply {
+        val homeScroll = ScrollView(this).apply {
             setBackgroundColor(bgColor)
             addView(content)
-        })
+        }
+        installNavigationDrawer(homeScroll, "PULPIT")
     }
 
     // ---------------------------------------------------------
@@ -429,6 +430,142 @@ class MainActivity : Activity() {
             pendingNotificationSection = null
             loadLibrusSection(requestedSection)
         }
+    }
+
+    // ---------------------------------------------------------
+    // GLOBALNE MENU BOCZNE
+    // ---------------------------------------------------------
+
+    private fun installNavigationDrawer(screen: View, activeSection: String) {
+        val density = resources.displayMetrics.density
+        val frame = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(bgColor)
+        }
+        frame.addView(screen, android.widget.FrameLayout.LayoutParams(-1, -1))
+
+        val scrim = View(this).apply {
+            setBackgroundColor(Color.argb(165, 0, 0, 0))
+            alpha = 0f
+            visibility = View.GONE
+        }
+        frame.addView(scrim, android.widget.FrameLayout.LayoutParams(-1, -1))
+
+        val drawerWidth = (minOf(320f, resources.displayMetrics.widthPixels / density - 52f) * density).toInt()
+        val drawer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (28 * density).toInt(), (16 * density).toInt(), (20 * density).toInt())
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.rgb(29, 48, 78), Color.rgb(17, 25, 41), Color.rgb(13, 18, 30))
+            ).apply {
+                cornerRadii = floatArrayOf(0f, 0f, 22f*density, 22f*density, 22f*density, 22f*density, 0f, 0f)
+                setStroke((1*density).toInt(), Color.rgb(65, 91, 130))
+            }
+            elevation = 18f * density
+            translationX = -drawerWidth.toFloat()
+        }
+        val drawerHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 16, 16, 18)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(45, 91, 157), Color.rgb(31, 53, 88))).apply {
+                cornerRadius = 20f * density
+            }
+        }
+        drawerHeader.addView(label("SP14  •  LIBRUS", 11f, Color.rgb(198, 220, 255), true))
+        drawerHeader.addView(label("Centrum szkolne", 23f, white, true), params(0, 6, 0, 2))
+        drawerHeader.addView(label("Wybierz miejsce, do którego chcesz przejść", 12f, Color.rgb(211, 222, 239)))
+        drawer.addView(drawerHeader, params(0, 0, 0, 18))
+
+        fun drawerItem(title: String, subtitle: String, icon: String, section: String, tint: Int) {
+            val selected = activeSection == section
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(12, 10, 10, 10)
+                background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                    if (selected) intArrayOf(Color.rgb(48, 83, 132), Color.rgb(35, 59, 91))
+                    else intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT)).apply {
+                    cornerRadius = 15f * density
+                    if (selected) setStroke((1*density).toInt(), Color.rgb(91, 139, 205))
+                }
+                isClickable = true
+                isFocusable = true
+            }
+            val iconView = TextView(this).apply {
+                text = icon
+                textSize = 19f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                background = roundedBackground(tint, 12)
+                setPadding(8, 8, 8, 8)
+            }
+            item.addView(iconView, LinearLayout.LayoutParams((42*density).toInt(), (42*density).toInt()))
+            val copy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(12, 0, 0, 0)
+            }
+            copy.addView(label(title, 14f, white, true))
+            copy.addView(label(subtitle, 11f, Color.rgb(165, 183, 208)))
+            item.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            if (selected) item.addView(label("●", 10f, Color.rgb(117, 190, 255), true))
+            drawer.addView(item, params(0, 3, 0, 3))
+            item.setOnClickListener {
+                closeDrawer()
+                if (section == "PULPIT") showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                else if (section == "USTAWIENIA") showAppSettings()
+                else if (section == "POWIADOMIENIA") showNotificationSettings()
+                else loadLibrusSection(section)
+            }
+        }
+
+        drawerItem("Pulpit", "Ekran główny", "⌂", "PULPIT", Color.rgb(55, 111, 190))
+        drawer.addView(sectionHeader("DZIENNIK"), params(0, 13, 0, 5))
+        drawerItem("Profil ucznia", "Konto i dane", "👤", "PROFILE", Color.rgb(65, 112, 176))
+        drawerItem("Oceny", "Postępy i przedmioty", "✦", "OCENY", Color.rgb(38, 139, 119))
+        drawerItem("Frekwencja", "Obecności i spóźnienia", "◷", "FREKWENCJA", Color.rgb(124, 93, 181))
+        drawerItem("Plan lekcji", "Dni i godziny zajęć", "▦", "PLAN LEKCJI", Color.rgb(53, 126, 159))
+        drawerItem("Wiadomości", "Skrzynka i korespondencja", "✉", "WIADOMOŚCI", Color.rgb(190, 126, 61))
+        drawerItem("Zadania domowe", "Prace i materiały", "▤", "ZADANIA DOMOWE", Color.rgb(78, 128, 183))
+        drawerItem("Terminarz", "Wydarzenia i sprawdziany", "◷", "TERMINARZ", Color.rgb(157, 104, 153))
+        drawerItem("Uwagi", "Informacje o zachowaniu", "✎", "UWAGI", Color.rgb(177, 91, 103))
+        drawerItem("Szczęśliwy numerek", "Numer na dziś", "🍀", "SZCZĘŚLIWY NUMEREK", Color.rgb(73, 143, 99))
+        drawer.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
+        drawer.addView(View(this).apply { setBackgroundColor(Color.rgb(55, 73, 101)) },
+            LinearLayout.LayoutParams(-1, (1*density).toInt()))
+        drawerItem("Ustawienia", "Wygląd i działanie aplikacji", "⚙", "USTAWIENIA", Color.rgb(91, 105, 132))
+        drawerItem("Powiadomienia", "Wybierz, co monitorować", "♧", "POWIADOMIENIA", Color.rgb(65, 130, 151))
+
+        frame.addView(drawer, android.widget.FrameLayout.LayoutParams(drawerWidth, -1, Gravity.START))
+        fun openDrawer() {
+            scrim.visibility = View.VISIBLE
+            scrim.animate().alpha(1f).setDuration(180).start()
+            drawer.animate().translationX(0f).setDuration(260).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+        }
+        fun closeDrawer() {
+            drawer.animate().translationX(-drawerWidth.toFloat()).setDuration(220).setInterpolator(android.view.animation.AccelerateInterpolator()).start()
+            scrim.animate().alpha(0f).setDuration(180).withEndAction { scrim.visibility = View.GONE }.start()
+        }
+        scrim.setOnClickListener { closeDrawer() }
+
+        val menuButton = TextView(this).apply {
+            text = "☰  MENU"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            setPadding(15, 10, 15, 10)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(accentColor, Color.rgb(54, 105, 170))).apply { cornerRadius = 18f*density }
+            elevation = 5f*density
+            setOnClickListener { openDrawer() }
+        }
+        val menuParams = android.widget.FrameLayout.LayoutParams(-2, (46*density).toInt(), Gravity.TOP or Gravity.START).apply {
+            leftMargin = (16*density).toInt()
+            topMargin = (14*density).toInt()
+        }
+        frame.addView(menuButton, menuParams)
+        setContentView(frame)
     }
 
     // ---------------------------------------------------------
@@ -702,7 +839,7 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
             addView(root)
         }
-        setContentView(scroll)
+        installNavigationDrawer(scroll, section)
         root.alpha = 0f
         root.translationY = 12f * resources.displayMetrics.density
         root.animate().alpha(1f).translationY(0f).setDuration(280).start()
