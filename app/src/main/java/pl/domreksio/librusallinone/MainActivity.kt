@@ -297,8 +297,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(14, 0, 0, 0)
         }
-        school.addView(label("SZKOŁA PODSTAWOWA NR 14", 12f, Color.rgb(190, 211, 245), true))
-        school.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        val schoolName = currentSchoolName()
+        school.addView(label(schoolName.ifBlank { "Szkoła z konta Librus" }, 12f, Color.rgb(190, 211, 245), true))
+        school.addView(label(
+            if (schoolName.isBlank()) "Nazwa szkoły pojawi się po synchronizacji konta" else "Dane szkoły pobrane z Librusa",
+            11f, muted
+        ))
         brand.addView(school, LinearLayout.LayoutParams(0, -2, 1f))
         seasonalDecorationText(27f)?.let { decoration ->
             brand.addView(decoration, LinearLayout.LayoutParams(-2, 56))
@@ -348,6 +352,95 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun currentSchoolName(): String {
+        val dataName = librusDataMemory?.let { extractSchoolName(it) }.orEmpty()
+        if (dataName.isNotBlank()) {
+            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                .putString("school_name", dataName).apply()
+            return dataName
+        }
+        val savedName = getSharedPreferences("librus_school_profile", MODE_PRIVATE)
+            .getString("school_name", "").orEmpty()
+        return savedName
+    }
+
+    private fun schoolBadge(name: String): String {
+        if (name.isBlank()) return "L"
+        val normalized = name.trim()
+        val match = Regex("(?i)(?:nr|numer)\\s*(\\d+)").find(normalized)
+            ?: Regex("\\b(\\d{1,3})\\b").find(normalized)
+        return match?.groupValues?.getOrNull(1) ?: normalized.split(Regex("\\s+"))
+            .take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("")
+            .take(2).ifBlank { "L" }
+    }
+
+    private fun extractSchoolName(data: JSONObject): String {
+        val directKeys = listOf("school_name", "schoolName", "institution_name", "institutionName")
+        fun readName(value: Any?): String {
+            return when (value) {
+                is String -> value.trim().takeIf { it.isNotBlank() && it.lowercase() != "null" }.orEmpty()
+                is JSONObject -> {
+                    for (key in listOf("name", "full_name", "school_name", "institution_name", "title", "display_name")) {
+                        val candidate = readName(value.opt(key))
+                        if (candidate.isNotBlank()) return candidate
+                    }
+                    ""
+                }
+                is JSONArray -> {
+                    for (index in 0 until value.length()) {
+                        val candidate = readName(value.opt(index))
+                        if (candidate.isNotBlank()) return candidate
+                    }
+                    ""
+                }
+                else -> ""
+            }
+        }
+        for (key in directKeys) {
+            val candidate = readName(data.opt(key))
+            if (candidate.isNotBlank()) return candidate
+        }
+        for (key in listOf("school", "institution", "student", "me", "profile", "account", "user")) {
+            val candidate = readName(data.opt(key)?.let { value ->
+                if (value is JSONObject && value.has("school")) value.opt("school")
+                else if (key == "school" || key == "institution") value
+                else null
+            })
+            if (candidate.isNotBlank()) return candidate
+            val nested = data.optJSONObject(key)
+            if (nested != null) {
+                for (schoolKey in listOf("school", "institution", "school_name", "schoolName", "institution_name")) {
+                    val nestedName = readName(nested.opt(schoolKey))
+                    if (nestedName.isNotBlank()) return nestedName
+                }
+            }
+        }
+        fun searchNested(value: Any?, depth: Int): String {
+            if (depth > 4) return ""
+            when (value) {
+                is JSONObject -> {
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val child = value.opt(key)
+                        if (key.lowercase() in setOf("school", "institution", "school_name", "schoolname", "institution_name")) {
+                            val candidate = readName(child)
+                            if (candidate.isNotBlank()) return candidate
+                        }
+                        val nested = searchNested(child, depth + 1)
+                        if (nested.isNotBlank()) return nested
+                    }
+                }
+                is JSONArray -> for (index in 0 until value.length()) {
+                    val nested = searchNested(value.opt(index), depth + 1)
+                    if (nested.isNotBlank()) return nested
+                }
+            }
+            return ""
+        }
+        return searchNested(data, 0)
+    }
+
     // EKRAN GŁÓWNY
     // ---------------------------------------------------------
 
@@ -376,9 +469,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        val schoolName = currentSchoolName()
         val brandMark = TextView(this).apply {
-            text = "14"
-            textSize = 23f
+            text = schoolBadge(schoolName)
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(7, 27, 73))
@@ -390,8 +484,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(12, 0, 0, 0)
         }
-        brandText.addView(label("SZKOŁA PODSTAWOWA NR 14", 11f, Color.rgb(190, 211, 245), true))
-        brandText.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        brandText.addView(label(schoolName.ifBlank { "Szkoła z konta Librus" }, 11f, Color.rgb(190, 211, 245), true))
+        brandText.addView(label(
+            if (schoolName.isBlank()) "Nazwa zostanie uzupełniona po pobraniu danych konta" else "Dane szkoły pobrane z Librusa",
+            11f, muted
+        ))
         brandRow.addView(brandText, LinearLayout.LayoutParams(0, -2, 1f))
         welcomeCard.addView(brandRow)
 
@@ -652,6 +749,10 @@ class MainActivity : Activity() {
                     val json = JSONObject(body)
 
                     if (json.has("student") && json.has("session")) {
+                        extractSchoolName(json).takeIf { it.isNotBlank() }?.let { schoolName ->
+                            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                                .putString("school_name", schoolName).apply()
+                        }
                         librusLoginMemory = login
                         librusPasswordMemory = password
                         librusSessionMemory = json.optJSONObject("session")
@@ -964,7 +1065,7 @@ class MainActivity : Activity() {
                 if (target != null) {
                     val targetBounds = android.graphics.Rect()
                     root.offsetDescendantRectToMyCoords(target, targetBounds)
-                    scroll.smoothScrollTo(0, (targetBounds.top - (24 * density).toInt()).coerceAtLeast(0))
+                    scroll.smoothScrollTo(0, (targetBounds.top - (24f * density).toInt()).coerceAtLeast(0))
                 }
                 pendingTimelineTargetKey = null
             }
@@ -4197,7 +4298,13 @@ class MainActivity : Activity() {
                     val targetKey = if (section == "WIADOMOŚCI") {
                         val messageCategory = if (key == "announcements") "Ogłoszenia" else "Wiadomości"
                         val identity = firstValue(item, "id", "message_id", "messageId", "announcement_id")
-                            .ifBlank { listOf(title, firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"), date).joinToString("|") }
+                            .ifBlank {
+                                listOf(
+                                    firstValue(item, "title", "subject", "topic"),
+                                    firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
+                                    firstValue(item, "send_date", "date", "created_at", "sent_at")
+                                ).joinToString("|")
+                            }
                         "$messageCategory:$identity"
                     } else featureFocusKey(key, item)
                     entries.add(TimelineEntry(section, category, title, detail, date, icon, targetKey))
@@ -4217,15 +4324,45 @@ class MainActivity : Activity() {
                 val subject = firstDisplayValue(grade, "subject_name")
                     .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
                     .ifBlank { lookupName(subjects, subjectId) }
-                    .ifBlank { (grade.opt("subject") as? String).orEmpty() }
-                    .ifBlank { "Przedmiot nieokreślony" }
+                    .ifBlank {
+                        val rawSubject = grade.opt("subject")
+                        if (rawSubject is String) lookupName(subjects, rawSubject).ifBlank { rawSubject } else ""
+                    }
+                    .ifBlank { "Pozostałe" }
                 val value = firstDisplayValue(grade, "value", "grade", "symbol", "text", "result", "assessment",
                     "grade_value", "grade_text", "mark", "grade_description", "skill", "name")
                     .ifBlank { "Ocena opisowa" }
                 val description = firstDisplayValue(grade, "description", "skill_description", "comment",
-                    "teacher_comment", "feedback", "note", "details", "category_name", "type_name", "grade_type")
-                    .ifBlank { firstDisplayValue(grade, "comments", "requirements", "criteria", "skills") }
-                val date = firstValue(grade, "date", "grade_date", "add_date", "created_at", "modified_at")
+                    "teacher_comment", "feedback", "note", "details")
+                val teacherObject = grade.optJSONObject("teacher")
+                val teacherId = firstValue(grade, "teacher_id")
+                    .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                val teacher = firstDisplayValue(grade, "teacher_name")
+                    .ifBlank { teacherObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                    .ifBlank { lookupName(data.optJSONObject("teachers"), teacherId) }
+                    .ifBlank {
+                        val rawTeacher = grade.opt("teacher")
+                        if (rawTeacher is String) lookupName(data.optJSONObject("teachers"), rawTeacher).ifBlank { rawTeacher } else ""
+                    }
+                val detailParts = mutableListOf<String>()
+                if (description.isNotBlank()) detailParts.add(description)
+                if (teacher.isNotBlank()) detailParts.add("Nauczyciel: $teacher")
+                listOf(
+                    "comments" to "Komentarz",
+                    "requirements" to "Wymaganie",
+                    "criteria" to "Kryterium",
+                    "skills" to "Umiejętność"
+                ).forEach { (field, heading) ->
+                    val raw = grade.opt(field)
+                    if (raw != null && raw != JSONObject.NULL) {
+                        val values = when (raw) {
+                            is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
+                            else -> listOf(displayJsonValue(raw))
+                        }.filter { it.isNotBlank() }.distinct()
+                        values.forEach { detailParts.add("$heading: $it") }
+                    }
+                }
+                val date = firstValue(grade, "date", "add_date", "created_at", "modified_at")
                 val category = when (sourceKey) {
                     "descriptive_grades" -> "Ocena opisowa"
                     "partial_grades" -> "Ocena cząstkowa"
@@ -4235,7 +4372,9 @@ class MainActivity : Activity() {
                     else -> "Ocena"
                 }
                 entries.add(TimelineEntry("OCENY", category, "$value • $subject",
-                    description.takeIf { it.isNotBlank() }?.let { "Za co: $it" }.orEmpty(),
+                    detailParts.joinToString(" · ").let { detail ->
+                        if (detail.isBlank()) "" else "Za co: $detail"
+                    },
                     date, "✦", gradeFocusKey(grade, sourceKey)))
             }
         }
@@ -4246,12 +4385,8 @@ class MainActivity : Activity() {
             arrayOf("title", "subject", "topic", "name"),
             arrayOf("sender_name", "sender", "author", "teacher_name", "from")
         )
-        val homeworkSource = if ((data.optJSONArray("homework_assignments")?.length() ?: 0) > 0) {
-            "homework_assignments"
-        } else {
-            listOf("homework", "homeworks").firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
-                ?: "homework"
-        }
+        val homeworkSource = listOf("homework_assignments", "homework", "homeworks")
+            .firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL } ?: "homework"
         collect(
             listOf(homeworkSource),
             "ZADANIA DOMOWE", "Zadanie domowe", "▤",
@@ -4259,7 +4394,7 @@ class MainActivity : Activity() {
             arrayOf("title", "topic", "name", "subject_name"),
             arrayOf("description", "content", "teacher_name", "subject_name", "status")
         )
-        val agendaSource = listOf("agenda", "events").firstOrNull {
+        val agendaSource = listOf("agenda", "events", "calendar_events").firstOrNull {
             data.has(it) && data.opt(it) != JSONObject.NULL
         } ?: "agenda"
         collect(
