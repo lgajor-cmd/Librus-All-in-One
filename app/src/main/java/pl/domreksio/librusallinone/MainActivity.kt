@@ -1261,6 +1261,7 @@ class MainActivity : Activity() {
 
         if (array == null || array.length() == 0) {
             parent.addView(infoCard("Brak wpisów frekwencji."))
+            renderJustifications(parent, data.optJSONArray("justifications"))
             return
         }
 
@@ -1331,9 +1332,72 @@ class MainActivity : Activity() {
             }
             parent.addView(summary, 0)
         }
+
+        renderJustifications(parent, data.optJSONArray("justifications"))
     }
 
     // ---------------------------------------------------------
+    private fun renderJustifications(parent: LinearLayout, array: JSONArray?) {
+        if (array == null || array.length() == 0) return
+
+        parent.addView(sectionHeader("E-USPRAWIEDLIWIENIA"), params(0, 18, 0, 8))
+        val items = (0 until array.length())
+            .mapNotNull { array.optJSONObject(it) }
+            .sortedByDescending { firstValue(it, "posted", "date_from") }
+
+        for (item in items) {
+            val normalized = firstValue(item, "status").lowercase(Locale.ROOT)
+            val (statusLabel, tint) = when {
+                normalized.startsWith("accept") -> "PRZYJĘTE" to successColor
+                normalized.startsWith("reject") || normalized.startsWith("refus") ||
+                    normalized.startsWith("deny") || normalized.startsWith("declin") ->
+                    "ODRZUCONE" to errorColor
+                else -> "OCZEKUJE NA DECYZJĘ" to warningColor
+            }
+
+            val dateFrom = firstValue(item, "date_from")
+            val dateTo = firstValue(item, "date_to")
+            val dateRange = when {
+                dateFrom.isNotBlank() && dateTo.isNotBlank() && dateFrom != dateTo ->
+                    "$dateFrom – $dateTo"
+                dateFrom.isNotBlank() -> dateFrom
+                else -> dateTo
+            }
+            val message = firstValue(item, "message")
+            val posted = firstValue(item, "posted")
+            val justifiedCount = item.optInt("justified_absences", 0)
+            val teachers = item.optJSONArray("teachers")
+            val teacherNames = teachers?.let { list ->
+                (0 until list.length()).mapNotNull { index ->
+                    list.optString(index).takeIf { it.isNotBlank() }
+                }.joinToString(", ")
+            }.orEmpty()
+
+            val justificationCard = card()
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(statusChip(statusLabel, tint), LinearLayout.LayoutParams(0, -2, 1f))
+            if (dateRange.isNotBlank()) header.addView(label(dateRange, 12f, muted, true))
+            justificationCard.addView(header)
+            if (justifiedCount > 0) {
+                justificationCard.addView(label("Usprawiedliwione lekcje: $justifiedCount", 12f, successColor))
+            }
+            if (message.isNotBlank()) {
+                justificationCard.addView(label(message, 13f, white), params(0, 4, 0, 0))
+            }
+            if (posted.isNotBlank()) justificationCard.addView(label("Wysłano: $posted", 11f, muted))
+            if (teacherNames.isNotBlank()) {
+                justificationCard.addView(label("Powiadomieni nauczyciele: $teacherNames", 11f, muted))
+            }
+            if (item.optBoolean("has_attachment")) {
+                justificationCard.addView(label("Dodano załącznik", 11f, accentColor))
+            }
+            parent.addView(justificationCard, params(0, 0, 0, 8))
+        }
+    }
+
     private fun requestJustificationToTutor(date: String, subject: String, lesson: String) {
         val login = librusLoginMemory
         val password = librusPasswordMemory
@@ -1605,6 +1669,18 @@ class MainActivity : Activity() {
             if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
             if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
 
+            val messageReadDate = if (heading == "Wiadomości") {
+                firstValue(item, "read_date", "readDate")
+            } else {
+                "not-a-message"
+            }
+            val readChip = if (heading == "Wiadomości") {
+                statusChip(
+                    if (messageReadDate.isBlank()) "NIEPRZECZYTANA" else "PRZECZYTANA",
+                    if (messageReadDate.isBlank()) warningColor else successColor
+                ).also { card.addView(it, params(0, 5, 0, 0)) }
+            } else null
+
             if (heading == "Ogłoszenia") {
                 if (body.isNotBlank()) {
                     card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
@@ -1624,7 +1700,14 @@ class MainActivity : Activity() {
 
                 if (messageId.isNotBlank()) {
                     card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
-                        fetchFullMessage(messageId, title, sender, date)
+                        fetchFullMessage(messageId, title, sender, date) {
+                            item.put("read_date", "read")
+                            readChip?.apply {
+                                text = "PRZECZYTANA"
+                                setTextColor(successColor)
+                                background = statusChip("PRZECZYTANA", successColor).background
+                            }
+                        }
                     })
                 } else {
                     card.addView(label("Brak identyfikatora wiadomości — nie można pobrać pełnej treści.", 12f, warningColor))
@@ -1639,7 +1722,8 @@ class MainActivity : Activity() {
         messageId: String,
         title: String,
         sender: String,
-        date: String
+        date: String,
+        onRead: (() -> Unit)? = null
     ) {
         val login = librusLoginMemory
         val password = librusPasswordMemory
@@ -1707,6 +1791,7 @@ class MainActivity : Activity() {
                 if (isFinishing) return@runOnUiThread
                 if (result.startsWith("SUCCESS|")) {
                     setLibrusStatus("Pobrano pełną treść wiadomości.", true)
+                    onRead?.invoke()
                     showMessageDetails(title, sender, date, result.substringAfter("|"))
                 } else {
                     setLibrusStatus(result.substringAfter("|"), false)
