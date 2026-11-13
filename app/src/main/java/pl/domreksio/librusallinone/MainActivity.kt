@@ -89,6 +89,7 @@ class MainActivity : Activity() {
     private var syncInProgress = false
     private var timetableTicker: Runnable? = null
     private var autoRestoreStarted = false
+    private var initialRouteHandled = false
     private var pendingNotificationSection: String? = null
     private var anonymousSignInInProgress = false
 
@@ -165,7 +166,22 @@ class MainActivity : Activity() {
         activityScope.launch {
             supabase.auth.sessionStatus.collect { state ->
                 when (state) {
-                    is SessionStatus.Authenticated -> showHome()
+                    is SessionStatus.Authenticated -> {
+                        if (!initialRouteHandled) {
+                            initialRouteHandled = true
+                            val saved = librusVault.load()
+                            if (saved != null) {
+                                librusLoginMemory = saved.login
+                                librusPasswordMemory = saved.password
+                                librusSessionMemory = saved.sessionJson?.let {
+                                    runCatching { JSONObject(it) }.getOrNull()
+                                }
+                                showHome()
+                            } else {
+                                showLibrusLogin()
+                            }
+                        }
+                    }
                     SessionStatus.Initializing -> showLogin("Sprawdzam bezpieczną sesję urządzenia…")
                     is SessionStatus.NotAuthenticated -> ensureAnonymousSession()
                     is SessionStatus.RefreshFailure -> ensureAnonymousSession(replaceExisting = true)
@@ -220,6 +236,82 @@ class MainActivity : Activity() {
             }
             anonymousSignInInProgress = false
         }
+    }
+
+    private fun showLibrusLogin() {
+        if (isFinishing) return
+        val saved = librusVault.load()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(26, 28, 26, 28)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
+        }
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 22)
+        }
+        val mark = TextView(this).apply {
+            text = "14"
+            textSize = 25f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(7, 27, 73))
+            background = roundedBackground(Color.WHITE, 14)
+            setPadding(12, 8, 12, 8)
+        }
+        brand.addView(mark, LinearLayout.LayoutParams(56, 56))
+        val school = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14, 0, 0, 0)
+        }
+        school.addView(label("SZKOŁA PODSTAWOWA NR 14", 12f, Color.rgb(190, 211, 245), true))
+        school.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        brand.addView(school)
+        root.addView(brand, LinearLayout.LayoutParams(-1, -2))
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 22, 20, 22)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, heroGradient).apply {
+                cornerRadius = 24f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(58, 83, 119))
+            }
+            elevation = 4f * resources.displayMetrics.density
+        }
+        card.addView(label("LIBRUS  /  ALL-IN-ONE", 11f, Color.rgb(190, 211, 245), true))
+        card.addView(label("Zaloguj się do Librusa", 27f, white, true), params(0, 10, 0, 6))
+        card.addView(label("Wpisz dane konta rodzica Librus Synergia, aby przejść do swojego pulpitu szkolnego.", 14f, Color.rgb(205, 217, 235)), params(0, 0, 0, 16))
+
+        librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
+        saved?.let { librusLoginInput.setText(it.login) }
+        card.addView(librusLoginInput, params(0, 0, 0, 10))
+
+        librusPasswordInput = inputField(
+            "Hasło do Librusa",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        )
+        card.addView(librusPasswordInput, params(0, 0, 0, 12))
+
+        librusConnectButton = actionButton("ZALOGUJ I OTWÓRZ PULPIT") {
+            connectLibrus()
+        }
+        card.addView(librusConnectButton, params(0, 2, 0, 8))
+        librusStatusText = label(
+            if (saved != null) "Znaleziono zapisany login. Podaj hasło, aby ponownie połączyć konto."
+            else "Dane logowania są używane wyłącznie do połączenia z Librusem.",
+            13f, muted
+        )
+        card.addView(librusStatusText, params(0, 6, 0, 0))
+        card.addView(label("Hasło jest przechowywane lokalnie w zaszyfrowanym magazynie urządzenia. Połączenie z serwerem odbywa się przez HTTPS.", 11f, muted), params(0, 14, 0, 0))
+        root.addView(card, LinearLayout.LayoutParams(-1, -2))
+
+        setContentView(ScrollView(this).apply {
+            setFillViewport(true)
+            setBackgroundColor(bgColor)
+            addView(root)
+        })
     }
 
     // EKRAN GŁÓWNY
@@ -326,48 +418,9 @@ class MainActivity : Activity() {
         }, params(0, 12, 0, 0))
         content.addView(connectionCard, params(0, 2, 0, 14))
 
-        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 12, 0, 5))
-        content.addView(
-            label(
-                "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
-                14f,
-                muted
-            )
-        )
-
-        librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
-        content.addView(librusLoginInput, params(0, 12, 0, 8))
-        savedLibrus?.let { librusLoginInput.setText(it.login) }
-
-        librusPasswordInput = inputField(
-            "Hasło do Librusa",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
-        content.addView(librusPasswordInput, params(0, 0, 0, 8))
-
-        librusConnectButton = actionButton("POŁĄCZ Z LIBRUSEM") {
-            connectLibrus()
-        }
-        content.addView(librusConnectButton, params(0, 4, 0, 8))
-
-        librusStatusText = label(
-            if (savedLibrus != null)
-                "Znaleziono zapisane połączenie z Librusem."
-            else
-                "Konto Librus nie zostało jeszcze podłączone.",
-            14f,
-            muted
-        )
-        content.addView(librusStatusText)
-
-        content.addView(
-            label(
-                "Dane logowania są przesyłane do Twojego backendu przez HTTPS. Hasło jest przechowywane lokalnie w postaci zaszyfrowanej.",
-                12f,
-                muted
-            ),
-            params(0, 4, 0, 12)
-        )
+        content.addView(actionButton(if (savedLibrus != null) "ZMIEN DANE KONTA LIBRUS" else "ZALOGUJ DO LIBRUSA") {
+            showLibrusLogin()
+        }, params(0, 12, 0, 8))
 
         content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 4))
         content.addView(label("Wybierz moduł, aby przejść do danych z dziennika.", 13f, muted), params(0, 0, 0, 10))
@@ -440,10 +493,9 @@ class MainActivity : Activity() {
 
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
-            librusStatusText.text = "Przywrócono zapisane połączenie. Synchronizuję dane…"
-            val requestedSection = pendingNotificationSection ?: "PROFILE"
+            val requestedSection = pendingNotificationSection
             pendingNotificationSection = null
-            loadLibrusSection(requestedSection)
+            if (requestedSection != null) loadLibrusSection(requestedSection)
         }
     }
 
@@ -538,11 +590,8 @@ class MainActivity : Activity() {
                 librusPasswordInput.text.clear()
 
                 if (ok) {
-                    // Po pierwszym poprawnym połączeniu pobierz dane od razu,
-                    // tak samo jak przy automatycznym przywracaniu zapisanej sesji.
-                    val requestedSection = pendingNotificationSection ?: "PROFILE"
-                    pendingNotificationSection = null
-                    loadLibrusSection(requestedSection)
+                    initialRouteHandled = true
+                    showHome()
                 }
             }
         }
