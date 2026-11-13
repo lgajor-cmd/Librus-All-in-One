@@ -1738,8 +1738,15 @@ class MainActivity : Activity() {
     private fun card(): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(14, 12, 14, 12)
-            background = roundedBackground(panel, 14)
+            setPadding(16, 14, 16, 14)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(31, 45, 66), Color.rgb(22, 32, 49))
+            ).apply {
+                cornerRadius = 18f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(49, 67, 94))
+            }
+            elevation = 2f * resources.displayMetrics.density
         }
 
     private fun sectionHeader(title: String): TextView =
@@ -1755,9 +1762,16 @@ class MainActivity : Activity() {
         TextView(this).apply {
             text = message
             textSize = 14f
-            setTextColor(white)
-            setPadding(15, 13, 15, 13)
-            background = roundedBackground(panel, 12)
+            setTextColor(Color.rgb(218, 228, 243))
+            setLineSpacing(2f, 1.05f)
+            setPadding(17, 15, 17, 15)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(33, 51, 77), Color.rgb(25, 38, 59))
+            ).apply {
+                cornerRadius = 16f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(61, 85, 119))
+            }
         }
 
     private fun label(
@@ -1790,6 +1804,15 @@ class MainActivity : Activity() {
     ): Button = Button(this).apply {
         text = title
         isAllCaps = false
+        textSize = 13f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Color.WHITE)
+        minHeight = (48 * resources.displayMetrics.density).toInt()
+        background = GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.rgb(56, 112, 194), Color.rgb(43, 83, 145))
+        ).apply { cornerRadius = 14f * resources.displayMetrics.density }
+        elevation = 2f * resources.displayMetrics.density
         setOnClickListener { action() }
     }
 
