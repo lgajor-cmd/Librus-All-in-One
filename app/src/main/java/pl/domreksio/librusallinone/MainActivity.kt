@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -1320,9 +1321,36 @@ class MainActivity : Activity() {
                 normalizedType.contains("uspraw")) && !normalizedType.contains("nieuspr")
             val isUnexcusedAbsence = category == "Nieobecności" && !isExcusedAbsence
             if (isUnexcusedAbsence && date.isNotBlank()) {
+                val isoDate = normalizeLibrusDate(date)
+                val lessonsForDay = if (isoDate.isBlank()) emptyList() else sorted
+                    .filter { candidate ->
+                        val candidateDate = normalizeLibrusDate(
+                            firstValue(candidate, "date", "lesson_date")
+                        )
+                        val candidateTypeId = firstValue(
+                            candidate, "type_id", "attendance_type_id", "type"
+                        )
+                        val candidateType = lookupName(types, candidateTypeId)
+                            .ifBlank { candidate.optString("type_name").ifBlank { candidateTypeId } }
+                        val candidateNormalized = candidateType.lowercase(Locale("pl", "PL"))
+                        val candidateExcused = (candidateNormalized.contains("uspr") ||
+                            candidateNormalized.contains("uspraw")) &&
+                            !candidateNormalized.contains("nieuspr")
+                        candidateDate == isoDate &&
+                            attendanceStatusCategory(candidateType) == "Nieobecności" &&
+                            !candidateExcused
+                    }
+                    .mapNotNull { firstValue(it, "lesson_no", "lesson_number").toIntOrNull() }
+                    .filter { it in 1..20 }
+                    .distinct()
+                    .sorted()
                 attendanceCard.addView(
                     actionButton("ZŁÓŻ E-USPRAWIEDLIWIENIE") {
-                        showFormalJustificationComposer(date, subject, lesson)
+                        showFormalJustificationComposer(
+                            date, subject, lesson, lessonsForDay.ifEmpty {
+                                lesson.toIntOrNull()?.let { listOf(it) } ?: emptyList()
+                            }
+                        )
                     },
                     params(0, 8, 0, 0)
                 )
@@ -1355,10 +1383,17 @@ class MainActivity : Activity() {
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(parsed)
     }
 
-    private fun showFormalJustificationComposer(date: String, subject: String, lesson: String) {
+    private fun showFormalJustificationComposer(
+        date: String,
+        subject: String,
+        lesson: String,
+        availableLessons: List<Int>
+    ) {
         val isoDate = normalizeLibrusDate(date)
         val lessonNumber = lesson.trim().toIntOrNull()
-        if (isoDate.isBlank() || lessonNumber == null || lessonNumber !in 1..20) {
+        val choices = availableLessons.filter { it in 1..20 }.distinct().sorted()
+            .ifEmpty { lessonNumber?.takeIf { it in 1..20 }?.let { listOf(it) } ?: emptyList() }
+        if (isoDate.isBlank() || choices.isEmpty()) {
             AlertDialog.Builder(this)
                 .setTitle("Nie można wskazać lekcji")
                 .setMessage("Nie udało się jednoznacznie rozpoznać daty lub numeru lekcji. Możesz zamiast tego wysłać prośbę do wychowawcy.")
@@ -1378,8 +1413,27 @@ class MainActivity : Activity() {
         }
         form.addView(label("Data: $date", 13f, warningColor, true))
         if (subject.isNotBlank()) form.addView(label("Przedmiot: $subject", 12f, muted))
-        form.addView(label("Lekcja: $lessonNumber", 12f, muted))
-        form.addView(label("Zgłoszenie zostanie wysłane do oficjalnego modułu e-Usprawiedliwienia Librusa.", 12f, accentColor))
+        form.addView(label(
+            "Zaznacz lekcje z tego dnia, które chcesz usprawiedliwić. Domyślnie zaznaczone są wykryte nieobecności.",
+            12f, muted
+        ), params(0, 6, 0, 8))
+
+        val lessonChecks = choices.map { number ->
+            CheckBox(this).apply {
+                text = "Lekcja $number"
+                textSize = 14f
+                setTextColor(white)
+                buttonTintList = android.content.res.ColorStateList.valueOf(accentColor)
+                isChecked = true
+            }.also { check ->
+                form.addView(check, params(0, 0, 0, 2))
+            }.let { number to it }
+        }
+
+        form.addView(label(
+            "Zgłoszenie zostanie wysłane do oficjalnego modułu e-Usprawiedliwienia Librusa.",
+            12f, accentColor
+        ), params(0, 8, 0, 0))
 
         val reasonInput = EditText(this).apply {
             hint = "Powód nieobecności"
@@ -1402,22 +1456,30 @@ class MainActivity : Activity() {
             .setNegativeButton("ANULUJ", null).setPositiveButton("DALEJ", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val selectedLessons = lessonChecks.filter { it.second.isChecked }.map { it.first }
                 val reason = reasonInput.text.toString().trim()
+                if (selectedLessons.isEmpty()) {
+                    Toast.makeText(this, "Zaznacz przynajmniej jedną lekcję.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
                 if (reason.isBlank()) {
                     reasonInput.error = "Wpisz powód nieobecności."
                     return@setOnClickListener
                 }
                 dialog.dismiss()
+                val lessonLabel = selectedLessons.joinToString(", ")
                 val confirmation = AlertDialog.Builder(this).setTitle("Potwierdź e-Usprawiedliwienie")
                     .setMessage(
-                        "Librus otrzyma formalne usprawiedliwienie dla dnia $date, lekcja $lessonNumber.\n\n" +
+                        "Librus otrzyma formalne usprawiedliwienie dla dnia $date, lekcje: $lessonLabel.\n\n" +
                             "Powód: $reason\n\nWychowawca będzie mógł je zaakceptować lub odrzucić."
                     )
                     .setNegativeButton("WRÓĆ", null).setPositiveButton("WYŚLIJ", null).create()
                 confirmation.setOnShowListener {
                     confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         confirmation.dismiss()
-                        submitFormalJustification(isoDate, lessonNumber, reason, date, subject, lesson)
+                        submitFormalJustification(
+                            isoDate, selectedLessons, reason, date, subject, lessonLabel
+                        )
                     }
                 }
                 confirmation.show()
@@ -1428,7 +1490,7 @@ class MainActivity : Activity() {
 
     private fun submitFormalJustification(
         isoDate: String,
-        lessonNumber: Int,
+        lessonNumbers: List<Int>,
         reason: String,
         displayDate: String,
         subject: String,
@@ -1462,7 +1524,7 @@ class MainActivity : Activity() {
                     put("password", password)
                     put("date_from", isoDate)
                     put("date_to", isoDate)
-                    put("lessons", JSONArray().put(lessonNumber))
+                    put("lessons", JSONArray().apply { lessonNumbers.forEach { put(it) } })
                     put("message_from_parent", reason)
                     put("send_notify", true)
                     librusSessionMemory?.let { put("session", it) }
@@ -1497,7 +1559,7 @@ class MainActivity : Activity() {
                     } catch (_: Exception) { }
                     setLibrusStatus("E-Usprawiedliwienie wysłane.", true)
                     AlertDialog.Builder(this).setTitle("Zgłoszenie wysłane")
-                        .setMessage("Librus przyjął e-Usprawiedliwienie dla $displayDate, lekcja $lessonNumber. Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.")
+                        .setMessage("Librus przyjął e-Usprawiedliwienie dla $displayDate, lekcje: $lesson. Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.")
                         .setPositiveButton("OK", null).show()
                     return@runOnUiThread
                 }
