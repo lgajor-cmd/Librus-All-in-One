@@ -42,7 +42,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -538,7 +537,10 @@ class MainActivity : Activity() {
         quickTile("Oceny", "Postępy ucznia", Color.rgb(40, 78, 126), "OCENY")
         quickTile("Plan", "Lekcje i godziny", Color.rgb(47, 78, 100), "PLAN LEKCJI")
         quickTile("Wiadomości", "Ogłoszenia", Color.rgb(83, 62, 112), "WIADOMOŚCI")
-        content.addView(quickAccess, params(0, 0, 0, 12))
+        content.addView(quickAccess, params(0, 0, 0, 10))
+        content.addView(actionButton("▤  OTWÓRZ OŚ CZASU") {
+            loadLibrusSection("OŚ CZASU")
+        }, params(0, 0, 0, 12))
         addTodayPanel(content)
 
         addHomeSection(content, "PROFILE", "Dane konta, przedmioty, nauczyciele i sale lekcyjne", "🏫")
@@ -555,6 +557,7 @@ class MainActivity : Activity() {
         content.addView(label("Przydatne rzeczy poza dziennikiem szkolnym.", 13f, muted), params(0, 0, 0, 8))
         addPersonalToolCard(content, "NOTATKI", "Szybkie zapiski, pomysły i ważne informacje", "📝") { showPersonalNotes() }
         addPersonalToolCard(content, "LISTA ZAKUPÓW", "Dodawaj produkty i odhaczaj je w sklepie", "🛒") { showShoppingList() }
+        addPersonalToolCard(content, "O AUTORZE", "Poznaj twórcę aplikacji Librus All-in-One", "⌘") { showAbout() }
 
         content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
             showNotificationSettings()
@@ -671,7 +674,7 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
 
                 val ok = result.startsWith("SUCCESS|")
                 setLibrusStatus(result.substringAfter("|"), ok)
@@ -775,7 +778,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
 
                 if (result == "SUCCESS") {
                     setLibrusStatus("Dane Librusa pobrane.", true)
@@ -809,6 +812,7 @@ class MainActivity : Activity() {
             "SZCZĘŚLIWY NUMEREK" -> "Szczęśliwy numerek"
             "PROFILE" -> "Dane konta i informacje szkolne"
             "NAUCZYCIELE" -> "Katalog nauczycieli i wyszukiwarka kontaktów"
+            "OŚ CZASU" -> "Najnowsze oceny, wiadomości, zadania i wydarzenia w jednym miejscu"
             else -> "Dane z Librusa"
         }
 
@@ -818,16 +822,80 @@ class MainActivity : Activity() {
             setPadding(20, 20, 20, 18)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(35, 78, 139), Color.rgb(27, 43, 70), Color.rgb(24, 34, 53))
+                heroGradient
             ).apply {
                 cornerRadius = 24f * density
-                setStroke((1 * density).toInt(), Color.rgb(73, 105, 151))
+                setStroke((1 * density).toInt(), blendColor(accentColor, Color.rgb(73, 105, 151), 0.55f))
             }
             elevation = 4f * density
         }
         hero.addView(label("LIBRUS  /  CENTRUM UCZNIA", 10f, Color.rgb(181, 211, 255), true))
         hero.addView(label(section, 25f, white, true), params(0, 5, 0, 0))
         hero.addView(label(subtitle, 13f, Color.rgb(202, 215, 235)))
+
+        // Duża ilustracja tematyczna wewnątrz banera sekcji, a nie tylko na pulpicie.
+        // Rysowana lokalnie na Canvas — działa offline i nie wymaga pobierania obrazów.
+        val activeTheme = uiPrefs.getString("accent", "blue").orEmpty()
+        if (activeTheme in setOf("red", "christmas", "halloween", "pink", "spring")) {
+            val seasonalTitle = when (activeTheme) {
+                "red" -> "MIKOŁAJKI  •  ŚWIĄTECZNY KLIMAT"
+                "christmas" -> "BOŻE NARODZENIE  •  MAGIA ŚWIĄT"
+                "halloween" -> "HALLOWEEN  •  TROCHĘ MAGII"
+                "pink" -> "WALENTYNKI  •  MIŁY AKCENT"
+                "spring" -> "WIOSNA  •  CZAS NA KOLORY"
+                else -> "MOTYW SEZONOWY"
+            }
+            val seasonalRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(12, (7 * density).toInt(), 8, (7 * density).toInt())
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.argb(48, 255, 255, 255), Color.argb(18, 255, 255, 255))
+                ).apply {
+                    cornerRadius = 17f * density
+                    setStroke((1 * density).toInt(), Color.argb(55, 225, 238, 255))
+                }
+            }
+            val seasonalCopy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            seasonalCopy.addView(label("WYJĄTKOWY CZAS W SZKOLE", 9f, Color.argb(205, 226, 237, 255), true))
+            seasonalCopy.addView(label(seasonalTitle, 11f, white, true))
+            seasonalRow.addView(seasonalCopy, LinearLayout.LayoutParams(0, -2, 1f))
+            val seasonalArt = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(38, 255, 255, 255))
+                    setStroke((1 * density).toInt(), Color.argb(75, 235, 244, 255))
+                }
+                clipChildren = false
+                clipToPadding = false
+            }
+            seasonalArt.addView(ThematicBannerArtView(this, section),
+                FrameLayout.LayoutParams((72 * density).toInt(), (72 * density).toInt(), Gravity.CENTER))
+            seasonalArt.addView(SeasonalBannerOverlayView(this),
+                FrameLayout.LayoutParams((72 * density).toInt(), (72 * density).toInt(), Gravity.CENTER))
+            seasonalRow.addView(seasonalArt, LinearLayout.LayoutParams(
+                (76 * density).toInt(), (76 * density).toInt()
+            ))
+            hero.addView(seasonalRow, params(0, 12, 0, 0))
+
+            if (uiPrefs.getBoolean("motion", true)) {
+                val floatAnimation = android.animation.ObjectAnimator.ofFloat(
+                    seasonalArt, View.TRANSLATION_Y, 0f, -4f * density, 0f
+                ).apply {
+                    duration = 2400L
+                    repeatCount = android.animation.ValueAnimator.INFINITE
+                    interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                }
+                seasonalArt.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(view: View) { if (!floatAnimation.isStarted) floatAnimation.start() }
+                    override fun onViewDetachedFromWindow(view: View) { floatAnimation.cancel() }
+                })
+            }
+        }
         root.addView(hero, params(0, 8, 0, 16))
 
         val actions = LinearLayout(this).apply {
@@ -870,6 +938,7 @@ class MainActivity : Activity() {
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
             "NAUCZYCIELE" -> renderTeachersDirectory(root, data)
+            "OŚ CZASU" -> renderSchoolTimeline(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
         }
 
@@ -1894,7 +1963,7 @@ class MainActivity : Activity() {
                         setTypeface(null, if (isSelected || isToday || hasEntries) Typeface.BOLD else Typeface.NORMAL)
                         setTextColor(when {
                             isSelected -> Color.WHITE
-                            hasEntries -> attendanceStatusColor(typeOf(byDate[dateKey]!!.first().first))
+                            hasEntries -> byDate[dateKey]?.firstOrNull()?.first?.let { attendanceStatusColor(typeOf(it)) } ?: muted
                             isToday -> accentColor
                             else -> muted
                         })
@@ -2151,7 +2220,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nieznany wynik wysyłki e-Usprawiedliwienia.", false)
                     AlertDialog.Builder(this).setTitle("Sprawdź status zgłoszenia")
@@ -2317,7 +2386,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać wychowawcy: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -2476,7 +2545,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się potwierdzić wysyłki: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
@@ -2515,11 +2584,17 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     // Kalendarz miesięczny z prywatnymi wydarzeniami użytkownika.
+    // Siatka używa wymiarów dp i pełnej szerokości, aby nie ściskać dni na różnych ekranach.
     private fun renderAgendaCalendar(parent: LinearLayout) {
-        val month = Calendar.getInstance()
-        month.set(Calendar.DAY_OF_MONTH, 1)
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).toInt()
+        val month = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
         var selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
-        val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val today = selected
+        val host = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(2), dp(2), dp(8))
+        }
         parent.addView(sectionHeader("TWÓJ KALENDARZ"), params(0, 6, 0, 8))
         parent.addView(host, params(0, 0, 0, 14))
 
@@ -2530,91 +2605,155 @@ class MainActivity : Activity() {
             val header = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(2), 0, dp(8))
             }
-            header.addView(actionButton("‹") { month.add(Calendar.MONTH, -1); redraw() },
-                LinearLayout.LayoutParams(52, -2))
-            header.addView(label(title, 17f, white, true).apply { gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(0, -2, 1f))
-            header.addView(actionButton("›") { month.add(Calendar.MONTH, 1); redraw() },
-                LinearLayout.LayoutParams(52, -2))
+            header.addView(actionButton("‹") {
+                month.add(Calendar.MONTH, -1)
+                month.set(Calendar.DAY_OF_MONTH, 1)
+                selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(month.time)
+                redraw()
+            }, LinearLayout.LayoutParams(dp(48), dp(44)))
+            header.addView(label(title, 19f, white, true).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+            }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            header.addView(actionButton("›") {
+                month.add(Calendar.MONTH, 1)
+                month.set(Calendar.DAY_OF_MONTH, 1)
+                selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(month.time)
+                redraw()
+            }, LinearLayout.LayoutParams(dp(48), dp(44)))
             host.addView(header)
 
-            val names = listOf("Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd")
-            val weekHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            names.forEach { name ->
-                weekHeader.addView(label(name, 11f, muted, true).apply { gravity = Gravity.CENTER },
-                    LinearLayout.LayoutParams(0, 32, 1f))
+            host.addView(actionButton("DZIŚ") {
+                month.timeInMillis = Calendar.getInstance().timeInMillis
+                month.set(Calendar.DAY_OF_MONTH, 1)
+                selected = today
+                redraw()
+            }, LinearLayout.LayoutParams(-1, dp(38)).apply {
+                bottomMargin = dp(8)
+            })
+
+            val names = listOf("PON", "WT", "ŚR", "CZW", "PT", "SOB", "ND")
+            val weekHeader = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            names.forEachIndexed { index, name ->
+                weekHeader.addView(label(name, 10f, if (index >= 5) accentColor else muted, true).apply {
+                    gravity = Gravity.CENTER
+                    textAlignment = View.TEXT_ALIGNMENT_CENTER
+                }, LinearLayout.LayoutParams(0, dp(30), 1f))
             }
             host.addView(weekHeader)
 
-            val first = month.clone() as Calendar
-            first.set(Calendar.DAY_OF_MONTH, 1)
+            val first = (month.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 12)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
             val offset = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7
             val count = first.getActualMaximum(Calendar.DAY_OF_MONTH)
             val weeks = (offset + count + 6) / 7
-            val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            var number = 1
+            val eventDates = readLocalArray("personal_events")
+            val datesWithEvents = (0 until eventDates.length()).mapNotNull { index ->
+                eventDates.optJSONObject(index)?.optString("date")?.takeIf { it.isNotBlank() }
+            }.toSet()
+            val grid = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(2), 0, dp(4))
+            }
+
             repeat(weeks) { week ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                repeat(7) { col ->
-                    val position = week * 7 + col
-                    if (position < offset || number > count) {
-                        row.addView(View(this), LinearLayout.LayoutParams(0, 42, 1f))
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                repeat(7) { column ->
+                    val position = week * 7 + column
+                    val dayNumber = position - offset + 1
+                    val cellParams = LinearLayout.LayoutParams(0, dp(62), 1f).apply {
+                        setMargins(dp(2), dp(2), dp(2), dp(2))
+                    }
+                    if (dayNumber !in 1..count) {
+                        row.addView(View(this).apply {
+                            background = roundedBackground(Color.TRANSPARENT, 12)
+                        }, cellParams)
                     } else {
-                        val day = number++
-                        val date = String.format(Locale.ROOT, "%04d-%02d-%02d",
-                            first.get(Calendar.YEAR), first.get(Calendar.MONTH) + 1, day)
-                        val today = date == SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
-                        val chosen = date == selected
-                        val eventDates = readLocalArray("personal_events")
-                        val hasEvent = (0 until eventDates.length()).any { eventIndex ->
-                            eventDates.optJSONObject(eventIndex)?.optString("date") == date
-                        }
+                        val date = String.format(
+                            Locale.ROOT, "%04d-%02d-%02d",
+                            first.get(Calendar.YEAR), first.get(Calendar.MONTH) + 1, dayNumber
+                        )
+                        val isToday = date == today
+                        val isSelected = date == selected
+                        val hasEvent = date in datesWithEvents
+                        val weekend = column >= 5
                         val cell = LinearLayout(this).apply {
                             orientation = LinearLayout.VERTICAL
                             gravity = Gravity.CENTER
+                            setPadding(dp(2), dp(4), dp(2), dp(4))
                             background = roundedBackground(
-                                if (chosen) accentColor else if (today) Color.argb(45, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) else Color.TRANSPARENT,
-                                12
+                                when {
+                                    isSelected -> accentColor
+                                    isToday -> Color.argb(48, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+                                    else -> Color.argb(18, 255, 255, 255)
+                                }, 12
                             )
                             isClickable = true
                             isFocusable = true
-                            setOnClickListener { selected = date; redraw() }
+                            setOnClickListener {
+                                selected = date
+                                redraw()
+                            }
                             addView(TextView(this@MainActivity).apply {
-                                text = day.toString()
+                                text = dayNumber.toString()
                                 gravity = Gravity.CENTER
-                                textSize = 13f
-                                setTextColor(if (chosen) Color.WHITE else if (today) accentColor else white)
-                            })
-                            if (hasEvent) addView(View(this@MainActivity).apply {
-                                background = roundedBackground(if (chosen) Color.WHITE else accentColor, 4)
-                            }, LinearLayout.LayoutParams((5 * resources.displayMetrics.density).toInt(), (5 * resources.displayMetrics.density).toInt()).apply {
-                                topMargin = (2 * resources.displayMetrics.density).toInt()
-                            })
+                                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                                textSize = 15f
+                                setTypeface(typeface, if (isToday || isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                                setTextColor(when {
+                                    isSelected -> Color.WHITE
+                                    isToday -> accentColor
+                                    weekend -> Color.rgb(190, 165, 220)
+                                    else -> white
+                                })
+                            }, LinearLayout.LayoutParams(-1, dp(28)))
+                            if (hasEvent) {
+                                addView(View(this@MainActivity).apply {
+                                    background = roundedBackground(if (isSelected) Color.WHITE else accentColor, 8)
+                                }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                                    topMargin = dp(3)
+                                })
+                            } else {
+                                addView(View(this@MainActivity), LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                                    topMargin = dp(3)
+                                })
+                            }
                         }
-                        row.addView(cell, LinearLayout.LayoutParams(0, 42, 1f).apply {
-                            setMargins(2, 2, 2, 2)
-                        })
+                        row.addView(cell, cellParams)
                     }
                 }
                 grid.addView(row)
             }
             host.addView(grid)
+
+            host.addView(label("WYDARZENIA • " + selected, 11f, Color.rgb(180, 205, 239), true),
+                params(0, 8, 0, 6))
             host.addView(actionButton("+  DODAJ WYDARZENIE") {
                 addAgendaEvent(selected) { redraw() }
-            }, params(0, 10, 0, 8))
-            host.addView(label("WYDARZENIA • " + selected, 11f, Color.rgb(180, 205, 239), true),
-                params(0, 4, 0, 6))
+            }, params(0, 0, 0, 8))
 
             val events = readLocalArray("personal_events")
-            val todays = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
+            val selectedEvents = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
                 .filter { it.optString("date") == selected }
-            if (todays.isEmpty()) {
+            if (selectedEvents.isEmpty()) {
                 host.addView(infoCard("Brak prywatnych wydarzeń w tym dniu. Wydarzenia szkolne znajdziesz poniżej."))
             } else {
-                todays.forEach { event ->
+                selectedEvents.forEach { event ->
                     val itemCard = card()
-                    itemCard.addView(label(event.optString("title"), 14f, white, true))
+                    itemCard.addView(label(event.optString("title"), 15f, white, true))
                     if (event.optString("description").isNotBlank()) {
                         itemCard.addView(label(event.optString("description"), 12f, muted), params(0, 4, 0, 0))
                     }
@@ -2635,7 +2774,7 @@ class MainActivity : Activity() {
                                 redraw()
                             }.show()
                     })
-                    host.addView(itemCard, params(0, 0, 0, 6))
+                    host.addView(itemCard, params(0, 0, 0, 8))
                 }
             }
         }
@@ -2710,17 +2849,83 @@ class MainActivity : Activity() {
             setPadding(16, 12, 16, 12)
             background = roundedBackground(panelLight, 14)
         }
-        parent.addView(search, params(0, 0, 0, 12))
+        parent.addView(search, params(0, 0, 0, 10))
+        var selectedFilter = "all"
+        var currentQuery = ""
+        val filters = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        parent.addView(filters, params(0, 0, 0, 10))
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         parent.addView(results)
-        fun renderFiltered(query: String) {
+
+        fun savedKeys(key: String): Set<String> {
+            val array = readLocalArray(key)
+            return (0 until array.length()).map { array.optString(it) }.toSet()
+        }
+        fun messageKey(item: JSONObject, category: String): String {
+            val id = firstValue(item, "id", "message_id", "messageId", "announcement_id")
+            val identity = id.ifBlank {
+                listOf(
+                    firstValue(item, "title", "subject", "topic"),
+                    firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
+                    firstValue(item, "send_date", "date", "created_at", "sent_at")
+                ).joinToString("|")
+            }
+            return "$category:$identity"
+        }
+        fun toggleSaved(key: String, storageKey: String, value: Boolean) {
+            val old = readLocalArray(storageKey)
+            val updated = JSONArray()
+            for (index in 0 until old.length()) {
+                val saved = old.optString(index)
+                if (saved != key) updated.put(saved)
+            }
+            if (value) updated.put(key)
+            saveLocalArray(storageKey, updated)
+        }
+        fun renderFiltered() {
             results.removeAllViews()
-            val needle = query.trim().lowercase(Locale.ROOT)
-            fun filtered(source: JSONArray?): JSONArray {
+            filters.removeAllViews()
+            val choices = listOf(
+                "all" to "WSZYSTKIE", "unread" to "NIEPRZECZYTANE",
+                "pinned" to "PRZYPINANE", "archived" to "ARCHIWUM"
+            )
+            choices.forEach { (filter, caption) ->
+                val chip = TextView(this).apply {
+                    text = caption
+                    textSize = 9f
+                    typeface = Typeface.DEFAULT_BOLD
+                    gravity = Gravity.CENTER
+                    setPadding(7, 11, 7, 11)
+                    setTextColor(if (selectedFilter == filter) Color.WHITE else muted)
+                    background = roundedBackground(if (selectedFilter == filter) accentColor else panelLight, 9)
+                    setOnClickListener {
+                        selectedFilter = filter
+                        renderFiltered()
+                    }
+                }
+                filters.addView(chip, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginEnd = (3 * resources.displayMetrics.density).toInt()
+                })
+            }
+            val needle = currentQuery.trim().lowercase(Locale.ROOT)
+            val pinned = savedKeys("message_pinned")
+            val archived = savedKeys("message_archived")
+            fun filtered(source: JSONArray?, category: String): JSONArray {
                 val output = JSONArray()
                 if (source == null) return output
                 for (i in 0 until source.length()) {
                     val item = source.optJSONObject(i) ?: continue
+                    val key = messageKey(item, category)
+                    val isPinned = key in pinned
+                    val isArchived = key in archived
+                    val isUnread = category == "Wiadomości" && firstValue(item, "read_date", "readDate").isBlank()
+                    if (selectedFilter == "pinned" && !isPinned) continue
+                    if (selectedFilter == "archived" && !isArchived) continue
+                    if (selectedFilter == "unread" && (!isUnread || isArchived)) continue
+                    if (selectedFilter != "archived" && isArchived) continue
                     val searchable = listOf(
                         firstValue(item, "title", "subject", "topic"),
                         firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
@@ -2731,21 +2936,29 @@ class MainActivity : Activity() {
                 }
                 return output
             }
-            val messages = filtered(data.optJSONArray("messages"))
-            val announcements = filtered(data.optJSONArray("announcements"))
-            if (needle.isNotBlank() && messages.length() + announcements.length() == 0) {
-                results.addView(infoCard("Nie znaleziono wiadomości pasujących do: $query"))
+            val messages = filtered(data.optJSONArray("messages"), "Wiadomości")
+            val announcements = filtered(data.optJSONArray("announcements"), "Ogłoszenia")
+            if (messages.length() + announcements.length() == 0) {
+                results.addView(infoCard(when (selectedFilter) {
+                    "pinned" -> "Nie masz przypiętych wiadomości."
+                    "archived" -> "Archiwum jest puste."
+                    "unread" -> "Nie ma nieprzeczytanych wiadomości."
+                    else -> if (needle.isNotBlank()) "Nie znaleziono wiadomości pasujących do: $currentQuery" else "Brak wiadomości."
+                }))
             } else {
-                renderMessageArray(results, messages, "Wiadomości")
-                renderMessageArray(results, announcements, "Ogłoszenia")
+                renderMessageArray(results, messages, "Wiadomości", { item, category -> messageKey(item, category) }, { storageKey -> savedKeys(storageKey) }, { key, storageKey, value -> toggleSaved(key, storageKey, value) }, { renderFiltered() })
+                renderMessageArray(results, announcements, "Ogłoszenia", { item, category -> messageKey(item, category) }, { storageKey -> savedKeys(storageKey) }, { key, storageKey, value -> toggleSaved(key, storageKey, value) }, { renderFiltered() })
             }
         }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderFiltered(s?.toString().orEmpty()) }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                currentQuery = s?.toString().orEmpty()
+                renderFiltered()
+            }
             override fun afterTextChanged(s: Editable?) {}
         })
-        renderFiltered("")
+        renderFiltered()
     }
 
     private fun openNewMessageComposer() {
@@ -2788,7 +3001,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać odbiorców: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -2970,7 +3183,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się potwierdzić wysyłki: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
@@ -3008,77 +3221,71 @@ class MainActivity : Activity() {
     private fun renderMessageArray(
         parent: LinearLayout,
         array: JSONArray?,
-        heading: String
+        heading: String,
+        messageKey: (JSONObject, String) -> String,
+        savedKeys: (String) -> Set<String>,
+        toggleSaved: (String, String, Boolean) -> Unit,
+        onChanged: () -> Unit
     ) {
-        if (array == null || array.length() == 0) {
-            parent.addView(infoCard("Brak wiadomości do wyświetlenia: $heading."))
-            return
-        }
-
+        if (array == null || array.length() == 0) return
         parent.addView(sectionHeader(heading), params(0, 18, 0, 8))
-
+        val pinnedKeys = savedKeys("message_pinned")
+        val archivedKeys = savedKeys("message_archived")
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
-            val title = firstValue(item, "title", "subject", "topic")
-                .ifBlank { heading.removeSuffix("i") }
+            val title = firstValue(item, "title", "subject", "topic").ifBlank { heading.removeSuffix("i") }
             val sender = firstValue(item, "sender_name", "sender", "author", "teacher_name", "from")
             val date = firstValue(item, "send_date", "date", "created_at", "sent_at")
-            val body = firstValue(
-                item,
-                "content", "message", "body", "text",
-                "content_html", "message_content", "description"
-            )
-
+            val body = firstValue(item, "content", "message", "body", "text", "content_html", "message_content", "description")
+            val key = messageKey(item, heading)
+            val pinned = key in pinnedKeys
+            val archived = key in archivedKeys
             val card = card()
             card.addView(label(title, 15f, white, true))
             if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
             if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
-
-            val messageReadDate = if (heading == "Wiadomości") {
-                firstValue(item, "read_date", "readDate")
-            } else {
-                "not-a-message"
-            }
-            val readChip = if (heading == "Wiadomości") {
-                statusChip(
+            if (heading == "Wiadomości") {
+                val messageReadDate = firstValue(item, "read_date", "readDate")
+                val readChip = statusChip(
                     if (messageReadDate.isBlank()) "NIEPRZECZYTANA" else "PRZECZYTANA",
                     if (messageReadDate.isBlank()) warningColor else successColor
-                ).also { card.addView(it, params(0, 5, 0, 0)) }
-            } else null
-
-            if (heading == "Ogłoszenia") {
-                if (body.isNotBlank()) {
-                    card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
-                    card.addView(actionButton("OTWÓRZ OGŁOSZENIE") {
-                        showMessageDetails(title, sender, date, body)
-                    })
-                } else {
-                    card.addView(label("Brak treści ogłoszenia.", 12f, muted))
-                }
-            } else {
+                )
+                card.addView(readChip, params(0, 5, 0, 0))
+                if (body.isNotBlank()) card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
+                else card.addView(label("Podgląd wiadomości niedostępny.", 12f, muted))
                 val messageId = firstValue(item, "id", "message_id", "messageId")
-                if (body.isNotBlank()) {
-                    card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
-                } else {
-                    card.addView(label("Podgląd wiadomości niedostępny.", 12f, muted))
-                }
-
                 if (messageId.isNotBlank()) {
                     card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
                         fetchFullMessage(messageId, title, sender, date) {
                             item.put("read_date", "read")
-                            readChip?.apply {
-                                text = "PRZECZYTANA"
-                                setTextColor(successColor)
-                                background = statusChip("PRZECZYTANA", successColor).background
-                            }
+                            readChip.text = "PRZECZYTANA"
+                            readChip.setTextColor(successColor)
                         }
                     })
                 } else {
                     card.addView(label("Brak identyfikatora wiadomości — nie można pobrać pełnej treści.", 12f, warningColor))
                 }
+            } else if (body.isNotBlank()) {
+                card.addView(label(body.take(220) + if (body.length > 220) "…" else "", 13f, white))
+                card.addView(actionButton("OTWÓRZ OGŁOSZENIE") { showMessageDetails(title, sender, date, body) })
+            } else {
+                card.addView(label("Brak treści ogłoszenia.", 12f, muted))
             }
-
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            actions.addView(actionButton(if (pinned) "ODPINAJ" else "PRZYPNIJ") {
+                toggleSaved(key, "message_pinned", !pinned)
+                onChanged()
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                marginEnd = (5 * resources.displayMetrics.density).toInt()
+            })
+            actions.addView(actionButton(if (archived) "PRZYWRÓĆ" else "ARCHIWIZUJ") {
+                toggleSaved(key, "message_archived", !archived)
+                onChanged()
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(actions, params(0, 8, 0, 0))
             parent.addView(card, params(0, 0, 0, 8))
         }
     }
@@ -3154,7 +3361,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("SUCCESS|")) {
                     setLibrusStatus("Pobrano pełną treść wiadomości.", true)
                     onRead?.invoke()
@@ -3246,7 +3453,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać załącznika: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -3319,7 +3526,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać załącznika: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -3447,7 +3654,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się potwierdzić wysyłki odpowiedzi: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
@@ -3913,6 +4120,171 @@ class MainActivity : Activity() {
     // FUNKCJE SZKOLNE: ZADANIA, TERMINARZ, UWAGI I NUMEREK
     // ---------------------------------------------------------
 
+    private fun renderSchoolTimeline(parent: LinearLayout, data: JSONObject) {
+        data class TimelineEntry(
+            val section: String,
+            val category: String,
+            val title: String,
+            val detail: String,
+            val date: String,
+            val icon: String
+        )
+
+        val entries = mutableListOf<TimelineEntry>()
+
+        fun collect(
+            keys: List<String>,
+            section: String,
+            category: String,
+            icon: String,
+            dateKeys: Array<String>,
+            titleKeys: Array<String>,
+            detailKeys: Array<String>
+        ) {
+            keys.forEach { key ->
+                val array = data.optJSONArray(key) ?: return@forEach
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val date = firstValue(item, *dateKeys)
+                    val title = firstValue(item, *titleKeys).ifBlank { category }
+                    val detail = firstValue(item, *detailKeys)
+                    entries.add(TimelineEntry(section, category, title, detail, date, icon))
+                }
+            }
+        }
+
+        collect(
+            listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades"),
+            "OCENY", "Ocena", "✦",
+            arrayOf("date", "grade_date", "created_at", "modified_at"),
+            arrayOf("grade", "value", "grade_value", "symbol", "mark", "text", "name"),
+            arrayOf("subject_name", "subject", "teacher_name", "comment", "description")
+        )
+        collect(
+            listOf("messages", "announcements"),
+            "WIADOMOŚCI", "Wiadomość", "✉",
+            arrayOf("send_date", "date", "created_at", "sent_at"),
+            arrayOf("title", "subject", "topic", "name"),
+            arrayOf("sender_name", "sender", "author", "teacher_name", "from")
+        )
+        collect(
+            listOf("homework_assignments", "homework", "homeworks"),
+            "ZADANIA DOMOWE", "Zadanie domowe", "▤",
+            arrayOf("due_date", "deadline", "date", "created_at", "start_date"),
+            arrayOf("title", "topic", "name", "subject_name"),
+            arrayOf("description", "content", "teacher_name", "subject_name", "status")
+        )
+        collect(
+            listOf("agenda", "events", "calendar_events"),
+            "TERMINARZ", "Wydarzenie", "▦",
+            arrayOf("start_date", "date", "event_date", "due_date"),
+            arrayOf("title", "name", "topic", "subject"),
+            arrayOf("description", "details", "type", "location")
+        )
+        collect(
+            listOf("notes", "behaviour_notes"),
+            "UWAGI", "Uwaga", "✎",
+            arrayOf("date", "created_at", "added_at"),
+            arrayOf("title", "content", "text", "description", "type"),
+            arrayOf("teacher_name", "author", "category", "comment")
+        )
+
+        val ordered = entries
+            .distinctBy { listOf(it.section, it.date, it.title, it.detail).joinToString("|") }
+            .sortedByDescending { parseFeatureDate(it.date)?.time ?: 0L }
+            .take(60)
+
+        parent.addView(infoCard(
+            "Oś czasu łączy dane, które Librus rzeczywiście zwrócił. " +
+                "Znaleziono wpisów: ${entries.size} • pokazano: ${ordered.size}. " +
+                "Dotknij wpisu, aby otworzyć odpowiedni moduł."
+        ), params(0, 0, 0, 10))
+
+        val search = EditText(this).apply {
+            hint = "Filtruj oś czasu…"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(15, 12, 15, 12)
+            background = roundedBackground(panelLight, 14)
+        }
+        parent.addView(search, params(0, 0, 0, 12))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        parent.addView(list)
+
+        fun draw(query: String) {
+            list.removeAllViews()
+            val needle = query.trim().lowercase(Locale("pl", "PL"))
+            val filtered = ordered.filter {
+                needle.isBlank() || listOf(it.category, it.title, it.detail, it.date)
+                    .joinToString(" ").lowercase(Locale("pl", "PL")).contains(needle)
+            }
+            if (filtered.isEmpty()) {
+                list.addView(infoCard(if (needle.isBlank()) "Brak wpisów w dostępnych danych Librusa."
+                    else "Nie znaleziono wpisów pasujących do wyszukiwania."))
+                return
+            }
+
+            filtered.forEach { entry ->
+                val density = resources.displayMetrics.density
+                val item = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding((14 * density).toInt(), (12 * density).toInt(),
+                        (14 * density).toInt(), (12 * density).toInt())
+                    background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                        intArrayOf(Color.rgb(37, 51, 72), Color.rgb(25, 35, 52))).apply {
+                        cornerRadius = 17f * density
+                        setStroke((1 * density).toInt(), Color.rgb(59, 82, 111))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { loadLibrusSection(entry.section) }
+                }
+                val icon = TextView(this).apply {
+                    text = entry.icon
+                    textSize = 22f
+                    gravity = Gravity.CENTER
+                    setTextColor(accentColor)
+                    background = roundedBackground(Color.argb(35,
+                        Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)), 13)
+                }
+                item.addView(icon, LinearLayout.LayoutParams((44 * density).toInt(), (44 * density).toInt()))
+                val copy = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding((12 * density).toInt(), 0, 0, 0)
+                }
+                val top = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                top.addView(label(entry.category.uppercase(Locale("pl", "PL")), 9f, accentColor, true),
+                    LinearLayout.LayoutParams(0, -2, 1f))
+                val displayDate = parseFeatureDate(entry.date)?.let {
+                    SimpleDateFormat("d MMM yyyy", Locale("pl", "PL")).format(it)
+                } ?: entry.date.takeIf { it.isNotBlank() } ?: "Bez daty"
+                top.addView(label(displayDate, 10f, muted))
+                copy.addView(top)
+                copy.addView(label(entry.title, 14f, white, true), params(0, 3, 0, 0))
+                if (entry.detail.isNotBlank()) {
+                    copy.addView(label(entry.detail, 11f, Color.rgb(185, 201, 222)), params(0, 2, 0, 0))
+                }
+                item.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+                list.addView(item, params(0, 0, 0, 8))
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                draw(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        draw("")
+    }
+
     private fun renderFeatureArray(
         parent: LinearLayout,
         data: JSONObject,
@@ -3929,14 +4301,11 @@ class MainActivity : Activity() {
 
         val items = when (value) {
             is JSONArray -> value
-            is JSONObject -> {
-                value.optJSONArray("items")
-                    ?: value.optJSONArray("entries")
-                    ?: JSONArray().apply { put(value) }
-            }
+            is JSONObject -> value.optJSONArray("items")
+                ?: value.optJSONArray("entries")
+                ?: JSONArray().apply { put(value) }
             else -> JSONArray()
         }
-
         if (items.length() == 0) {
             parent.addView(infoCard("Brak wpisów: $heading."))
             return
@@ -3944,17 +4313,129 @@ class MainActivity : Activity() {
 
         val sorted = (0 until items.length())
             .mapNotNull { items.optJSONObject(it) }
-            .sortedWith(compareBy<JSONObject> { featureDateSortKey(firstValue(it, "due_date", "deadline", "date", "start_date")) }
-                .thenBy { firstValue(it, "title", "topic", "name") })
+            .sortedWith(compareBy<JSONObject> {
+                featureDateSortKey(firstValue(it, "due_date", "deadline", "date", "start_date"))
+            }.thenBy { firstValue(it, "title", "topic", "name") })
+
+        val isHomework = heading == "Zadania domowe"
+        fun localKey(item: JSONObject): String {
+            val title = firstValue(item, "title", "topic", "name", "subject", "text")
+            val date = firstValue(item, "due_date", "deadline", "date", "start_date")
+            val subject = firstValue(item, "subject_name", "subject")
+            return firstValue(item, "id", "assignment_id", "homework_id")
+                .ifBlank { "$title|$date|$subject" }
+        }
+        fun completedKeys(): Set<String> {
+            val saved = readLocalArray("homework_done")
+            return (0 until saved.length()).map { saved.optString(it) }.toSet()
+        }
 
         val now = java.util.Date()
         val datedItems = sorted.count {
             firstValue(it, "due_date", "deadline", "date", "start_date").isNotBlank()
         }
+        val doneAtStart = if (isHomework) sorted.count { localKey(it) in completedKeys() } else 0
+        if (isHomework) {
+            parent.addView(sectionHeader("TWOJA LISTA ZADAŃ"), params(0, 0, 0, 5))
+            parent.addView(label(
+                "Postęp zapisuje się lokalnie na tym urządzeniu. Nie zmienia statusu zadania w dzienniku Librus.",
+                12f, muted
+            ), params(0, 0, 0, 10))
+            val summary = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = roundedBackground(panelLight, 14)
+                setPadding(14, 12, 14, 12)
+            }
+            val summaryText = label("", 13f, white, true)
+            summary.addView(summaryText, LinearLayout.LayoutParams(0, -2, 1f))
+            val progress = TextView(this).apply {
+                textSize = 19f
+                setTextColor(successColor)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            summary.addView(progress)
+            parent.addView(summary, params(0, 0, 0, 10))
+
+            var selectedFilter = "all"
+            val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val filters = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            parent.addView(filters, params(0, 0, 0, 10))
+            parent.addView(results)
+
+            fun renderHomework() {
+                val completed = completedKeys()
+                val done = sorted.count { localKey(it) in completed }
+                val open = sorted.size - done
+                summaryText.text = "Wszystkie: ${sorted.size}  •  Do zrobienia: $open  •  Wykonane: $done"
+                progress.text = if (sorted.isEmpty()) "0%" else "${(done * 100) / sorted.size}%"
+                filters.removeAllViews()
+                val choices = listOf("all" to "WSZYSTKIE", "open" to "DO ZROBIENIA", "done" to "WYKONANE")
+                choices.forEach { (filter, caption) ->
+                    val chip = TextView(this).apply {
+                        text = caption
+                        textSize = 10f
+                        typeface = Typeface.DEFAULT_BOLD
+                        gravity = Gravity.CENTER
+                        setPadding(9, 10, 9, 10)
+                        setTextColor(if (selectedFilter == filter) Color.WHITE else muted)
+                        background = roundedBackground(
+                            if (selectedFilter == filter) accentColor else panelLight, 10
+                        )
+                        setOnClickListener {
+                            selectedFilter = filter
+                            renderHomework()
+                        }
+                    }
+                    filters.addView(chip, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        marginEnd = (4 * resources.displayMetrics.density).toInt()
+                    })
+                }
+                results.removeAllViews()
+                val visible = sorted.filter {
+                    val isDone = localKey(it) in completed
+                    selectedFilter == "all" || (selectedFilter == "done" && isDone) ||
+                        (selectedFilter == "open" && !isDone)
+                }
+                if (visible.isEmpty()) {
+                    results.addView(infoCard(
+                        if (selectedFilter == "done") "Nie oznaczono jeszcze żadnego zadania jako wykonanego."
+                        else if (selectedFilter == "open") "Świetnie! Nie masz zadań do zrobienia."
+                        else "Brak zadań domowych."
+                    ))
+                    return
+                }
+                renderFeatureItems(results, data, visible, heading, now, ::localKey, ::renderHomework)
+            }
+            renderHomework()
+            return
+        }
+
         parent.addView(infoCard("Liczba wpisów: ${items.length()}" +
             if (datedItems > 0) " • z terminem: $datedItems" else ""))
+        renderFeatureItems(parent, data, sorted, heading, now, ::localKey, null)
+    }
 
-        for (item in sorted) {
+    private fun renderFeatureItems(
+        parent: LinearLayout,
+        data: JSONObject,
+        items: List<JSONObject>,
+        heading: String,
+        now: java.util.Date,
+        localKey: (JSONObject) -> String,
+        onHomeworkChanged: (() -> Unit)?
+    ) {
+        // Odczyt i parsowanie lokalnego stanu tylko raz na render listy,
+        // zamiast ponownego parsowania całego JSON dla każdego zadania.
+        val completedHomework = if (heading == "Zadania domowe") {
+            val saved = readLocalArray("homework_done")
+            (0 until saved.length()).map { saved.optString(it) }.toSet()
+        } else emptySet()
+
+        for (item in items) {
             val title = firstValue(item, "title", "topic", "name", "subject", "text")
                 .ifBlank { heading.removeSuffix("a").removeSuffix("y") }
             val date = firstValue(item, "due_date", "deadline", "date", "start_date")
@@ -3967,7 +4448,6 @@ class MainActivity : Activity() {
             val body = firstValue(item, "description", "content", "body", "details", "comment", "text")
             val state = firstValue(item, "status", "state", "completion_status", "is_done")
             val dueState = featureDueState(date, now)
-
             val itemCard = card()
             itemCard.addView(label(title, 15f, white, true))
             if (date.isNotBlank()) {
@@ -3990,26 +4470,23 @@ class MainActivity : Activity() {
             if (teacher.isNotBlank()) itemCard.addView(label("Nauczyciel: $teacher", 12f, muted))
             if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
             if (heading == "Zadania domowe") {
-                val localKey = firstValue(item, "id", "assignment_id", "homework_id")
-                    .ifBlank { "$title|$date|$subject" }
-                val completedKeys = readLocalArray("homework_done")
-                val isLocallyDone = (0 until completedKeys.length()).any { completedKeys.optString(it) == localKey }
+                val key = localKey(item)
+                val isDone = key in completedHomework
                 val completion = CheckBox(this).apply {
-                    text = if (isLocallyDone) "Oznaczono jako wykonane (tylko na tym urządzeniu)" else "Oznacz jako wykonane"
-                    isChecked = isLocallyDone
-                    setTextColor(if (isLocallyDone) successColor else muted)
+                    text = if (isDone) "Wykonane • zapisane na tym urządzeniu" else "Oznacz jako wykonane"
+                    isChecked = isDone
+                    setTextColor(if (isDone) successColor else muted)
                     textSize = 12f
                     setOnCheckedChangeListener { _, checked ->
                         val saved = readLocalArray("homework_done")
                         val updated = JSONArray()
                         for (index in 0 until saved.length()) {
-                            val value = saved.optString(index)
-                            if (value != localKey) updated.put(value)
+                            val savedKey = saved.optString(index)
+                            if (savedKey != key) updated.put(savedKey)
                         }
-                        if (checked) updated.put(localKey)
+                        if (checked) updated.put(key)
                         saveLocalArray("homework_done", updated)
-                        text = if (checked) "Oznaczono jako wykonane (tylko na tym urządzeniu)" else "Oznacz jako wykonane"
-                        setTextColor(if (checked) successColor else muted)
+                        onHomeworkChanged?.invoke()
                     }
                 }
                 itemCard.addView(completion, params(0, 8, 0, 4))
@@ -4243,7 +4720,7 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
-                if (!isFinishing && ::backendStatusText.isInitialized) {
+                if (!isFinishing && !isDestroyed && ::backendStatusText.isInitialized) {
                     val ok = result.startsWith("SUCCESS|")
                     backendStatusText.text = result.substringAfter("|")
                     backendStatusText.setTextColor(if (ok) successColor else errorColor)
@@ -4452,6 +4929,175 @@ class MainActivity : Activity() {
         return nav
     }
 
+    // ---------------------------------------------------------
+    // O AUTORZE — niezależna karta informacyjna aplikacji
+    // ---------------------------------------------------------
+
+    private fun showAbout() {
+        stopTimetableTicker()
+        val density = resources.displayMetrics.density
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (18 * density).toInt(), (18 * density).toInt(), (26 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
+        }
+
+        val hero = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(12, 35, 65), Color.rgb(20, 29, 54), Color.rgb(34, 25, 62))).apply {
+                cornerRadius = 26f * density
+                setStroke((1 * density).toInt(), Color.argb(150, 87, 142, 205))
+            }
+            clipChildren = false
+            clipToPadding = false
+            elevation = 5f * density
+        }
+        hero.addView(TechAboutArtView(this),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (190 * density).toInt(), Gravity.TOP))
+        val heroText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.BOTTOM
+            setPadding((20 * density).toInt(), (95 * density).toInt(), (20 * density).toInt(), (18 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.TRANSPARENT, Color.argb(220, 10, 18, 34)))
+        }
+        heroText.addView(label("POZNAJ TWÓRCĘ", 10f, Color.rgb(133, 205, 255), true))
+        heroText.addView(label("Librus All-in-One", 25f, Color.WHITE, true), params(0, 3, 0, 0))
+        heroText.addView(label("Technologia, edukacja i wygoda w jednym miejscu", 12f, Color.rgb(205, 220, 240)))
+        hero.addView(heroText, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM))
+        content.addView(hero, params(0, 0, 0, 18))
+
+        val authorCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (18 * density).toInt(), (20 * density).toInt(), (18 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, surfaceGradient).apply {
+                cornerRadius = 22f * density
+                setStroke((1 * density).toInt(), Color.rgb(59, 83, 116))
+            }
+            elevation = 3f * density
+        }
+        authorCard.addView(label("AUTOR APLIKACJI", 10f, muted, true))
+        authorCard.addView(label("Łukasz Gajor", 26f, white, true), params(0, 5, 0, 0))
+        authorCard.addView(label("Niezależny projekt tworzony z myślą o wygodnym dostępie do szkolnych informacji.", 13f, Color.rgb(197, 211, 232)), params(0, 3, 0, 12))
+
+        val emailRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((13 * density).toInt(), (12 * density).toInt(), (13 * density).toInt(), (12 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.argb(55, 70, 145, 220), Color.argb(28, 70, 145, 220))).apply {
+                cornerRadius = 15f * density
+                setStroke((1 * density).toInt(), Color.argb(105, 105, 175, 235))
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        emailRow.addView(label("✉", 21f, Color.rgb(133, 205, 255), true),
+            LinearLayout.LayoutParams((38 * density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+        val emailText = TextView(this).apply {
+            text = "LGajor@gmail.com"
+            textSize = 15f
+            setTextColor(Color.rgb(145, 205, 255))
+            paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            setTypeface(null, Typeface.BOLD)
+        }
+        emailRow.addView(emailText, LinearLayout.LayoutParams(0, -2, 1f))
+        emailRow.setOnClickListener {
+            val intent = Intent(Intent.ACTION_SENDTO).apply {
+                data = android.net.Uri.parse("mailto:LGajor@gmail.com")
+                putExtra(Intent.EXTRA_SUBJECT, "Kontakt — Librus All-in-One")
+            }
+            try {
+                startActivity(intent)
+            } catch (_: Exception) {
+                Toast.makeText(this, "Brak aplikacji pocztowej na urządzeniu.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        authorCard.addView(emailRow)
+        authorCard.addView(label("Dotknij adresu, aby napisać wiadomość e-mail.", 11f, muted), params(0, 5, 0, 0))
+        content.addView(authorCard, params(0, 0, 0, 14))
+
+        val infoCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (16 * density).toInt(), (18 * density).toInt(), (16 * density).toInt())
+            background = roundedBackground(panel, 18)
+        }
+        infoCard.addView(label("O PROJEKCIE", 10f, accentColor, true))
+        infoCard.addView(label("Librus All-in-One to niezależna aplikacja pomocnicza. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
+        content.addView(infoCard, params(0, 0, 0, 12))
+        content.addView(actionButton("‹  WRÓĆ DO PULPITU") { showHome() }, params(0, 4, 0, 0))
+
+        val scroll = ScrollView(this).apply { addView(content) }
+        page.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        page.addView(buildBottomNavigation("WIĘCEJ"))
+        setContentView(page)
+    }
+
+    private inner class TechAboutArtView(context: android.content.Context) : View(context) {
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val sx = width / 360f
+            val sy = height / 190f
+            canvas.save()
+            canvas.scale(sx, sy)
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = 1.8f
+            p.strokeCap = android.graphics.Paint.Cap.ROUND
+            p.color = Color.argb(100, 83, 174, 255)
+            val traces = listOf(
+                listOf(8f, 34f, 65f, 34f, 65f, 52f, 108f, 52f),
+                listOf(16f, 112f, 72f, 112f, 72f, 94f, 116f, 94f),
+                listOf(245f, 38f, 300f, 38f, 300f, 58f, 350f, 58f),
+                listOf(235f, 126f, 292f, 126f, 292f, 105f, 352f, 105f),
+                listOf(130f, 12f, 130f, 30f, 158f, 30f),
+                listOf(208f, 12f, 208f, 29f, 184f, 29f)
+            )
+            traces.forEach { pts ->
+                val path = android.graphics.Path().apply {
+                    moveTo(pts[0], pts[1])
+                    var n = 2
+                    while (n < pts.size) { lineTo(pts[n], pts[n + 1]); n += 2 }
+                }
+                canvas.drawPath(path, p)
+            }
+            p.style = android.graphics.Paint.Style.FILL
+            p.color = Color.rgb(95, 185, 255)
+            listOf(65f to 34f, 108f to 52f, 72f to 112f, 116f to 94f,
+                300f to 38f, 350f to 58f, 292f to 126f, 352f to 105f).forEach {
+                canvas.drawCircle(it.first, it.second, 3.2f, p)
+            }
+
+            // Centralny układ scalony z delikatnym neonowym obrysem.
+            p.color = Color.argb(40, 91, 173, 255)
+            canvas.drawRoundRect(128f, 49f, 232f, 135f, 15f, 15f, p)
+            p.style = android.graphics.Paint.Style.STROKE
+            p.strokeWidth = 2.4f
+            p.color = Color.argb(225, 116, 201, 255)
+            canvas.drawRoundRect(128f, 49f, 232f, 135f, 15f, 15f, p)
+            p.style = android.graphics.Paint.Style.FILL
+            p.color = Color.rgb(220, 240, 255)
+            p.textSize = 18f
+            p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            canvas.drawText("ALL", 158f, 84f, p)
+            p.textSize = 11f
+            p.color = Color.rgb(119, 198, 255)
+            canvas.drawText("IN ONE", 155f, 102f, p)
+            p.color = Color.argb(180, 160, 215, 255)
+            p.textSize = 8f
+            p.typeface = Typeface.MONOSPACE
+            canvas.drawText("0101 1010", 148f, 119f, p)
+            p.typeface = Typeface.DEFAULT
+            canvas.restore()
+        }
+    }
+
     private fun showMoreMenu(activeSection: String) {
         val labels = arrayOf(
             "Dane konta i szkoły",
@@ -4464,7 +5110,8 @@ class MainActivity : Activity() {
             "Ustawienia powiadomień",
             "Wygląd aplikacji",
             "Notatki",
-            "Lista zakupów"
+            "Lista zakupów",
+            "O autorze"
         )
         val sections = arrayOf(
             "PROFILE",
@@ -4483,6 +5130,7 @@ class MainActivity : Activity() {
                     8 -> showAppearanceSettings(activeSection)
                     9 -> showPersonalNotes()
                     10 -> showShoppingList()
+                    11 -> showAbout()
                     else -> loadLibrusSection(sections[which])
                 }
             }
@@ -4695,7 +5343,7 @@ class MainActivity : Activity() {
         saveLocalArray("shopping_items", allItems)
         val activeListId = uiPrefs.getString("active_shopping_list", defaultListId) ?: defaultListId
         val activeList = (0 until lists.length()).mapNotNull { lists.optJSONObject(it) }
-            .firstOrNull { it.optString("id") == activeListId } ?: lists.optJSONObject(0)!!
+            .firstOrNull { it.optString("id") == activeListId } ?: lists.optJSONObject(0) ?: JSONObject().put("id", defaultListId).put("name", "Zakupy")
         val activeId = activeList.optString("id", defaultListId)
         val categories = listOf("Wszystkie", "Warzywa i owoce", "Nabiał", "Pieczywo", "Mięso i ryby", "Napoje", "Chemia", "Pozostałe")
         var categoryFilter = "Wszystkie"
