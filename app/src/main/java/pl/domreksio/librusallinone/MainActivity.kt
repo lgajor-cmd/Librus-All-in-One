@@ -1801,6 +1801,30 @@ class MainActivity : Activity() {
             // mogą zawierać cyfry 1–6, ale nie są zwykłymi stopniami do średniej.
             val simulatorGrades = if (sourceKey == "grades") {
                 grades.mapNotNull { grade ->
+                    // Librus report-card grades are not ordinary running marks.
+                    if (grade.optBoolean("is_semester_proposition", false) ||
+                        grade.optBoolean("is_final_proposition", false) ||
+                        grade.optBoolean("is_semester", false) ||
+                        grade.optBoolean("is_final", false)
+                    ) return@mapNotNull null
+
+                    // Respect Librus's "Licz do śr." setting. Category data is
+                    // keyed by category_id and defaults to counted only when
+                    // Librus has not explicitly disabled it.
+                    val categoryId = firstValue(grade, "category_id")
+                    val gradeCategory = gradeCategories?.optJSONObject(categoryId)
+                    val countsToAverage = when {
+                        gradeCategory == null -> true
+                        gradeCategory.has("count_to_average") &&
+                            !gradeCategory.isNull("count_to_average") ->
+                            gradeCategory.optBoolean("count_to_average", true)
+                        gradeCategory.has("counts_to_average") &&
+                            !gradeCategory.isNull("counts_to_average") ->
+                            gradeCategory.optBoolean("counts_to_average", true)
+                        else -> true
+                    }
+                    if (!countsToAverage) return@mapNotNull null
+
                     val raw = firstDisplayValue(
                         grade,
                         "value", "grade", "symbol", "grade_value", "mark"
@@ -1838,7 +1862,9 @@ class MainActivity : Activity() {
                 )
                 val categoryId = firstValue(grade, "category_id")
                 val category = firstDisplayValue(grade, "category_name", "category")
-                    .ifBlank { lookupName(gradeCategories, categoryId) }
+                    .ifBlank {
+                        if (sourceKey == "grades") lookupName(gradeCategories, categoryId) else ""
+                    }
                     .ifBlank { grade.optJSONObject("category")?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
                 val comments = displayJsonValue(grade.opt("comments"))
                 val teacherObject = grade.optJSONObject("teacher")
@@ -1918,7 +1944,7 @@ class MainActivity : Activity() {
                 }
                 subjectCard.addView(row)
 
-                appendGradeExtraDetails(subjectCard, grade)
+                appendGradeExtraDetails(subjectCard, grade, sourceKey)
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
@@ -4378,7 +4404,9 @@ class MainActivity : Activity() {
                     "teacher_comment", "feedback", "note", "details")
                 val categoryId = firstValue(grade, "category_id")
                 val categoryName = firstDisplayValue(grade, "category_name", "category")
-                    .ifBlank { lookupName(gradeCategories, categoryId) }
+                    .ifBlank {
+                        if (sourceKey == "grades") lookupName(gradeCategories, categoryId) else ""
+                    }
                     .ifBlank { grade.optJSONObject("category")?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
                 val comments = displayJsonValue(grade.opt("comments"))
                 val teacherObject = grade.optJSONObject("teacher")
@@ -4405,11 +4433,16 @@ class MainActivity : Activity() {
                 addGradeDetail("", description)
                 addGradeDetail("Komentarz", comments)
                 if (teacher.isNotBlank()) addGradeDetail("Nauczyciel", teacher)
+                val skillHeading = if (sourceKey == "descriptive_grades" || sourceKey == "partial_grades") {
+                    "Kategoria"
+                } else {
+                    "Umiejętność"
+                }
                 listOf(
                     "requirements" to "Wymaganie",
                     "criteria" to "Kryterium",
-                    "skills" to "Umiejętność",
-                    "skill" to "Umiejętność"
+                    "skills" to skillHeading,
+                    "skill" to skillHeading
                 ).forEach { (field, heading) ->
                     val raw = grade.opt(field)
                     if (raw != null && raw != JSONObject.NULL) {
@@ -6529,14 +6562,20 @@ class MainActivity : Activity() {
 
     private fun appendGradeExtraDetails(
         parent: LinearLayout,
-        grade: JSONObject
+        grade: JSONObject,
+        sourceKey: String
     ) {
         val seen = mutableSetOf<String>()
+        val skillHeading = if (sourceKey == "descriptive_grades" || sourceKey == "partial_grades") {
+            "Kategoria"
+        } else {
+            "Umiejętność"
+        }
         listOf(
             "requirements" to "Wymaganie",
             "criteria" to "Kryterium",
-            "skills" to "Umiejętność",
-            "skill" to "Umiejętność"
+            "skills" to skillHeading,
+            "skill" to skillHeading
         ).forEach { (field, heading) ->
             val raw = grade.opt(field) ?: return@forEach
             if (raw == JSONObject.NULL) return@forEach
