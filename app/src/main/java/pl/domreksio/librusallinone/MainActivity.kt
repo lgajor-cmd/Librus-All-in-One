@@ -1,5 +1,6 @@
 package pl.domreksio.librusallinone
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
@@ -7,6 +8,10 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -47,10 +52,10 @@ private const val SUPABASE_PUBLISHABLE_KEY =
 private const val AUTH_REDIRECT =
     "pl.domreksio.librusallinone://login-callback"
 
-private const val BACKEND_URL =
+internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
 
-private val supabase = createSupabaseClient(
+internal val supabase = createSupabaseClient(
     supabaseUrl = SUPABASE_URL,
     supabaseKey = SUPABASE_PUBLISHABLE_KEY
 ) {
@@ -85,6 +90,7 @@ class MainActivity : Activity() {
 
     private var syncInProgress = false
     private var autoRestoreStarted = false
+    private var pendingNotificationSection: String? = null
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(155, 169, 190)
@@ -100,6 +106,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         librusVault = LibrusCredentialVault(applicationContext)
+        pendingNotificationSection = intent?.getStringExtra("open_librus_section")
+        requestNotificationPermissionIfNeeded()
         showLogin("Sprawdzam sesję konta…")
 
         activityScope.launch {
@@ -209,14 +217,48 @@ class MainActivity : Activity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 28, 20, 28)
-            setBackgroundColor(bgColor)
+            setPadding(20, 24, 20, 30)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(15, 24, 42), bgColor, Color.rgb(10, 15, 26)))
         }
 
-        content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
-        content.addView(label("Witaj!", 32f, white, true))
-        content.addView(label("Zalogowano jako: $email", 14f, muted))
-        content.addView(label("Konto aplikacji działa.", 15f, successColor))
+        val welcomeCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22, 22, 22, 22)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(28, 57, 104), Color.rgb(25, 34, 58), Color.rgb(22, 31, 48))
+            ).apply { cornerRadius = 24f * resources.displayMetrics.density }
+            elevation = 5f * resources.displayMetrics.density
+            alpha = 0f
+            translationY = 18f * resources.displayMetrics.density
+        }
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val brandMark = TextView(this).apply {
+            text = "14"
+            textSize = 23f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(7, 27, 73))
+            background = roundedBackground(Color.WHITE, 13)
+            setPadding(10, 5, 10, 5)
+        }
+        brandRow.addView(brandMark, LinearLayout.LayoutParams(48, 48))
+        val brandText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(12, 0, 0, 0)
+        }
+        brandText.addView(label("SZKOŁA PODSTAWOWA NR 14", 11f, Color.rgb(190, 211, 245), true))
+        brandText.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        brandRow.addView(brandText)
+        welcomeCard.addView(brandRow)
+        welcomeCard.addView(label("Witaj!", 32f, white, true), params(0, 14, 0, 0))
+        welcomeCard.addView(label("Zalogowano jako: $email", 14f, Color.rgb(210, 220, 237)))
+        welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)))
+        content.addView(welcomeCard, params(0, 0, 0, 16))
+        welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
 
         val savedLibrus = librusVault.load()
 
@@ -285,7 +327,8 @@ class MainActivity : Activity() {
             params(0, 4, 0, 12)
         )
 
-        content.addView(sectionHeader("DANE UCZNIA"), params(0, 14, 0, 8))
+        content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 8))
+        content.addView(label("Wszystkie najważniejsze informacje i narzędzia w jednym miejscu.", 13f, muted), params(0, 0, 0, 8))
 
         addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
@@ -297,6 +340,10 @@ class MainActivity : Activity() {
         addHomeSection(content, "UWAGI", "Uwagi pozytywne, neutralne i negatywne", "📝")
         addHomeSection(content, "SZCZĘŚLIWY NUMEREK", "Numer obowiązujący danego dnia", "🍀")
 
+        content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
+            showNotificationSettings()
+        }, params(0, 12, 0, 8))
+
         content.addView(actionButton("WYLOGUJ") {
             signOut()
         }, params(0, 24, 0, 8))
@@ -306,10 +353,14 @@ class MainActivity : Activity() {
             addView(content)
         })
 
+        if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext)
+
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
             librusStatusText.text = "Przywrócono zapisane połączenie. Synchronizuję dane…"
-            loadLibrusSection("PROFILE")
+            val requestedSection = pendingNotificationSection ?: "PROFILE"
+            pendingNotificationSection = null
+            loadLibrusSection(requestedSection)
         }
     }
 
@@ -379,6 +430,7 @@ class MainActivity : Activity() {
                         librusDataMemory = null
 
                         librusVault.save(login, password, librusSessionMemory?.toString())
+                        LibrusNotificationScheduler.schedule(applicationContext)
 
                         "SUCCESS|Połączono z Librusem. Dane można teraz pobrać."
                     } else {
@@ -1549,7 +1601,33 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4101)
+        }
+    }
+
+    private fun showNotificationSettings() {
+        val keys = arrayOf("grades", "messages", "notes", "behaviour_notes")
+        val labels = arrayOf("Nowe oceny", "Wiadomości", "Uwagi", "Uwagi o zachowaniu")
+        val prefs = getSharedPreferences("librus_notification_settings", MODE_PRIVATE)
+        val checked = BooleanArray(keys.size) { prefs.getBoolean(keys[it], true) }
+        AlertDialog.Builder(this)
+            .setTitle("Powiadomienia Librus")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+                prefs.edit().putBoolean(keys[which], isChecked).apply()
+            }
+            .setPositiveButton("Zapisz", null)
+            .setNegativeButton("Anuluj", null)
+            .setNeutralButton("Uprawnienia") { _, _ -> requestNotificationPermissionIfNeeded() }
+            .show()
+    }
+
     private fun signOut() {
+        LibrusNotificationScheduler.cancel(applicationContext)
         thread {
             val result = try {
                 runBlocking { supabase.auth.signOut() }
@@ -1594,7 +1672,10 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(17, 15, 16, 15)
             minimumHeight = (76 * resources.displayMetrics.density).toInt()
-            background = roundedBackground(panelLight, 18)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(35, 49, 72), Color.rgb(25, 35, 53))).apply {
+                cornerRadius = 20f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(54, 72, 100))
+            }
             isClickable = true
             isFocusable = true
             foreground = android.util.TypedValue().let {
@@ -1610,7 +1691,7 @@ class MainActivity : Activity() {
             textSize = 23f
             gravity = Gravity.CENTER
             setTextColor(white)
-            background = roundedBackground(panel, 14)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accentColor, Color.rgb(66, 111, 190))).apply { cornerRadius = 15f * resources.displayMetrics.density }
             setPadding(8, 8, 8, 8)
         }
         card.addView(iconTile, LinearLayout.LayoutParams(48, 48))
@@ -1620,13 +1701,21 @@ class MainActivity : Activity() {
             setPadding(14, 0, 8, 0)
         }
         texts.addView(label(heading, 14f, white, true))
-        texts.addView(label(description, 12f, muted))
+        texts.addView(label(description, 12f, Color.rgb(174, 190, 213)))
 
         card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(label("›", 28f, accentColor, true))
+        card.addView(label("›", 28f, Color.rgb(145, 190, 255), true))
 
         card.setOnClickListener { loadLibrusSection(heading) }
+        card.alpha = 0f
+        card.translationY = 12f * resources.displayMetrics.density
         parent.addView(card, params(0, 6, 0, 6))
+        card.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setStartDelay(parent.childCount.coerceAtMost(12) * 35L)
+            .setDuration(320)
+            .start()
     }
 
     private fun card(): LinearLayout =
