@@ -1592,28 +1592,41 @@ class MainActivity : Activity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(15, 13, 15, 13)
-            background = roundedBackground(panel, 14)
+            setPadding(17, 15, 16, 15)
+            minimumHeight = (76 * resources.displayMetrics.density).toInt()
+            background = roundedBackground(panelLight, 18)
             isClickable = true
             isFocusable = true
+            foreground = android.util.TypedValue().let {
+                val out = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
+                getDrawable(out.resourceId)
+            }
+            elevation = 2f * resources.displayMetrics.density
         }
 
-        card.addView(
-            label(emoji, 24f, white),
-            LinearLayout.LayoutParams(42, -2)
-        )
+        val iconTile = TextView(this).apply {
+            text = emoji
+            textSize = 23f
+            gravity = Gravity.CENTER
+            setTextColor(white)
+            background = roundedBackground(panel, 14)
+            setPadding(8, 8, 8, 8)
+        }
+        card.addView(iconTile, LinearLayout.LayoutParams(48, 48))
 
         val texts = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(14, 0, 8, 0)
         }
-        texts.addView(label(heading, 15f, white, true))
+        texts.addView(label(heading, 14f, white, true))
         texts.addView(label(description, 12f, muted))
 
         card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(label("›", 27f, accentColor, true))
+        card.addView(label("›", 28f, accentColor, true))
 
         card.setOnClickListener { loadLibrusSection(heading) }
-        parent.addView(card, params(0, 5, 0, 5))
+        parent.addView(card, params(0, 6, 0, 6))
     }
 
     private fun card(): LinearLayout =
