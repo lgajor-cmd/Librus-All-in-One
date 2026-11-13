@@ -4234,14 +4234,11 @@ class MainActivity : Activity() {
 
         val items = when (value) {
             is JSONArray -> value
-            is JSONObject -> {
-                value.optJSONArray("items")
-                    ?: value.optJSONArray("entries")
-                    ?: JSONArray().apply { put(value) }
-            }
+            is JSONObject -> value.optJSONArray("items")
+                ?: value.optJSONArray("entries")
+                ?: JSONArray().apply { put(value) }
             else -> JSONArray()
         }
-
         if (items.length() == 0) {
             parent.addView(infoCard("Brak wpisów: $heading."))
             return
@@ -4249,17 +4246,122 @@ class MainActivity : Activity() {
 
         val sorted = (0 until items.length())
             .mapNotNull { items.optJSONObject(it) }
-            .sortedWith(compareBy<JSONObject> { featureDateSortKey(firstValue(it, "due_date", "deadline", "date", "start_date")) }
-                .thenBy { firstValue(it, "title", "topic", "name") })
+            .sortedWith(compareBy<JSONObject> {
+                featureDateSortKey(firstValue(it, "due_date", "deadline", "date", "start_date"))
+            }.thenBy { firstValue(it, "title", "topic", "name") })
+
+        val isHomework = heading == "Zadania domowe"
+        fun localKey(item: JSONObject): String {
+            val title = firstValue(item, "title", "topic", "name", "subject", "text")
+            val date = firstValue(item, "due_date", "deadline", "date", "start_date")
+            val subject = firstValue(item, "subject_name", "subject")
+            return firstValue(item, "id", "assignment_id", "homework_id")
+                .ifBlank { "$title|$date|$subject" }
+        }
+        fun completedKeys(): Set<String> {
+            val saved = readLocalArray("homework_done")
+            return (0 until saved.length()).map { saved.optString(it) }.toSet()
+        }
 
         val now = java.util.Date()
         val datedItems = sorted.count {
             firstValue(it, "due_date", "deadline", "date", "start_date").isNotBlank()
         }
+        val doneAtStart = if (isHomework) sorted.count { localKey(it) in completedKeys() } else 0
+        if (isHomework) {
+            parent.addView(sectionHeader("TWOJA LISTA ZADAŃ"), params(0, 0, 0, 5))
+            parent.addView(label(
+                "Postęp zapisuje się lokalnie na tym urządzeniu. Nie zmienia statusu zadania w dzienniku Librus.",
+                12f, muted
+            ), params(0, 0, 0, 10))
+            val summary = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = roundedBackground(panelLight, 14)
+                setPadding(14, 12, 14, 12)
+            }
+            val summaryText = label("", 13f, white, true)
+            summary.addView(summaryText, LinearLayout.LayoutParams(0, -2, 1f))
+            val progress = TextView(this).apply {
+                textSize = 19f
+                setTextColor(successColor)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            summary.addView(progress)
+            parent.addView(summary, params(0, 0, 0, 10))
+
+            var selectedFilter = "all"
+            val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val filters = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            parent.addView(filters, params(0, 0, 0, 10))
+            parent.addView(results)
+
+            fun renderHomework() {
+                val completed = completedKeys()
+                val done = sorted.count { localKey(it) in completed }
+                val open = sorted.size - done
+                summaryText.text = "Wszystkie: ${sorted.size}  •  Do zrobienia: $open  •  Wykonane: $done"
+                progress.text = if (sorted.isEmpty()) "0%" else "${(done * 100) / sorted.size}%"
+                filters.removeAllViews()
+                val choices = listOf("all" to "WSZYSTKIE", "open" to "DO ZROBIENIA", "done" to "WYKONANE")
+                choices.forEach { (filter, caption) ->
+                    val chip = TextView(this).apply {
+                        text = caption
+                        textSize = 10f
+                        typeface = Typeface.DEFAULT_BOLD
+                        gravity = Gravity.CENTER
+                        setPadding(9, 10, 9, 10)
+                        setTextColor(if (selectedFilter == filter) Color.WHITE else muted)
+                        background = roundedBackground(
+                            if (selectedFilter == filter) accentColor else panelLight, 10
+                        )
+                        setOnClickListener {
+                            selectedFilter = filter
+                            renderHomework()
+                        }
+                    }
+                    filters.addView(chip, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        marginEnd = (4 * resources.displayMetrics.density).toInt()
+                    })
+                }
+                results.removeAllViews()
+                val visible = sorted.filter {
+                    val isDone = localKey(it) in completed
+                    selectedFilter == "all" || (selectedFilter == "done" && isDone) ||
+                        (selectedFilter == "open" && !isDone)
+                }
+                if (visible.isEmpty()) {
+                    results.addView(infoCard(
+                        if (selectedFilter == "done") "Nie oznaczono jeszcze żadnego zadania jako wykonanego."
+                        else if (selectedFilter == "open") "Świetnie! Nie masz zadań do zrobienia."
+                        else "Brak zadań domowych."
+                    ))
+                    return
+                }
+                renderFeatureItems(results, data, visible, heading, now, ::localKey, ::renderHomework)
+            }
+            renderHomework()
+            return
+        }
+
         parent.addView(infoCard("Liczba wpisów: ${items.length()}" +
             if (datedItems > 0) " • z terminem: $datedItems" else ""))
+        renderFeatureItems(parent, data, sorted, heading, now, ::localKey, null)
+    }
 
-        for (item in sorted) {
+    private fun renderFeatureItems(
+        parent: LinearLayout,
+        data: JSONObject,
+        items: List<JSONObject>,
+        heading: String,
+        now: java.util.Date,
+        localKey: (JSONObject) -> String,
+        onHomeworkChanged: (() -> Unit)?
+    ) {
+        for (item in items) {
             val title = firstValue(item, "title", "topic", "name", "subject", "text")
                 .ifBlank { heading.removeSuffix("a").removeSuffix("y") }
             val date = firstValue(item, "due_date", "deadline", "date", "start_date")
@@ -4272,7 +4374,6 @@ class MainActivity : Activity() {
             val body = firstValue(item, "description", "content", "body", "details", "comment", "text")
             val state = firstValue(item, "status", "state", "completion_status", "is_done")
             val dueState = featureDueState(date, now)
-
             val itemCard = card()
             itemCard.addView(label(title, 15f, white, true))
             if (date.isNotBlank()) {
@@ -4295,26 +4396,24 @@ class MainActivity : Activity() {
             if (teacher.isNotBlank()) itemCard.addView(label("Nauczyciel: $teacher", 12f, muted))
             if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
             if (heading == "Zadania domowe") {
-                val localKey = firstValue(item, "id", "assignment_id", "homework_id")
-                    .ifBlank { "$title|$date|$subject" }
-                val completedKeys = readLocalArray("homework_done")
-                val isLocallyDone = (0 until completedKeys.length()).any { completedKeys.optString(it) == localKey }
+                val key = localKey(item)
+                val isDone = key in (0 until readLocalArray("homework_done").length())
+                    .map { readLocalArray("homework_done").optString(it) }.toSet()
                 val completion = CheckBox(this).apply {
-                    text = if (isLocallyDone) "Oznaczono jako wykonane (tylko na tym urządzeniu)" else "Oznacz jako wykonane"
-                    isChecked = isLocallyDone
-                    setTextColor(if (isLocallyDone) successColor else muted)
+                    text = if (isDone) "Wykonane • zapisane na tym urządzeniu" else "Oznacz jako wykonane"
+                    isChecked = isDone
+                    setTextColor(if (isDone) successColor else muted)
                     textSize = 12f
                     setOnCheckedChangeListener { _, checked ->
                         val saved = readLocalArray("homework_done")
                         val updated = JSONArray()
                         for (index in 0 until saved.length()) {
-                            val value = saved.optString(index)
-                            if (value != localKey) updated.put(value)
+                            val savedKey = saved.optString(index)
+                            if (savedKey != key) updated.put(savedKey)
                         }
-                        if (checked) updated.put(localKey)
+                        if (checked) updated.put(key)
                         saveLocalArray("homework_done", updated)
-                        text = if (checked) "Oznaczono jako wykonane (tylko na tym urządzeniu)" else "Oznacz jako wykonane"
-                        setTextColor(if (checked) successColor else muted)
+                        onHomeworkChanged?.invoke()
                     }
                 }
                 itemCard.addView(completion, params(0, 8, 0, 4))
