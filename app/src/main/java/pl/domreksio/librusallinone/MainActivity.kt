@@ -1868,12 +1868,17 @@ class MainActivity : Activity() {
                 }
 
                 if (date.isNotBlank()) details.addView(label(dateLabel(date), 12f, muted))
-                if (category.isNotBlank()) details.addView(label("Za co: $category", 13f, white, true))
-                if (description.isNotBlank()) {
-                    details.addView(label(description, 13f, white))
+                val cleanCategory = cleanGradeDetail(category, "Za co")
+                val cleanDescription = cleanGradeDetail(description, "Opis", "Za co")
+                val cleanComments = cleanGradeDetail(comments, "Komentarz")
+                if (cleanCategory.isNotBlank()) details.addView(label("Za co: $cleanCategory", 13f, white, true))
+                if (cleanDescription.isNotBlank() && !sameGradeDetail(cleanDescription, cleanCategory)) {
+                    details.addView(label(cleanDescription, 13f, white))
                 }
-                if (comments.isNotBlank() && comments != description) {
-                    details.addView(label("Komentarz: $comments", 12f, muted))
+                if (cleanComments.isNotBlank() &&
+                    !sameGradeDetail(cleanComments, cleanDescription) &&
+                    !sameGradeDetail(cleanComments, cleanCategory)) {
+                    details.addView(label("Komentarz: $cleanComments", 12f, muted))
                 }
                 if (teacher.isNotBlank()) {
                     details.addView(label("Nauczyciel: $teacher", 11f, muted))
@@ -1888,10 +1893,7 @@ class MainActivity : Activity() {
                 }
                 subjectCard.addView(row)
 
-                appendJsonDetails(subjectCard, grade, "comments", "Komentarz")
-                appendJsonDetails(subjectCard, grade, "requirements", "Wymaganie")
-                appendJsonDetails(subjectCard, grade, "criteria", "Kryterium")
-                appendJsonDetails(subjectCard, grade, "skills", "Umiejętność")
+                appendGradeExtraDetails(subjectCard, grade)
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
@@ -4365,25 +4367,32 @@ class MainActivity : Activity() {
                         if (rawTeacher is String) lookupName(data.optJSONObject("teachers"), rawTeacher).ifBlank { rawTeacher } else ""
                     }
                 val detailParts = mutableListOf<String>()
-                if (categoryName.isNotBlank()) detailParts.add("Za co: $categoryName")
-                if (description.isNotBlank()) detailParts.add(description)
-                if (comments.isNotBlank() && comments != description) detailParts.add("Komentarz: $comments")
-                if (teacher.isNotBlank()) detailParts.add("Nauczyciel: $teacher")
+                val seenDetails = mutableSetOf<String>()
+                fun addGradeDetail(heading: String, rawValue: String) {
+                    val value = cleanGradeDetail(rawValue, heading, "Za co")
+                    if (heading == "Komentarz" && sameGradeDetail(value, description)) return
+                    val identity = heading.lowercase(Locale("pl", "PL")) + "|" +
+                        value.lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
+                    if (value.isBlank() || !seenDetails.add(identity)) return
+                    detailParts.add(if (heading.isBlank()) value else "$heading: $value")
+                }
+                addGradeDetail("Za co", categoryName)
+                addGradeDetail("", description)
+                addGradeDetail("Komentarz", comments)
+                if (teacher.isNotBlank()) addGradeDetail("Nauczyciel", teacher)
                 listOf(
-                    "comments" to "Komentarz",
                     "requirements" to "Wymaganie",
                     "criteria" to "Kryterium",
                     "skills" to "Umiejętność",
-                    "skill" to "Umiejętność",
-                    "category" to "Kategoria"
+                    "skill" to "Umiejętność"
                 ).forEach { (field, heading) ->
                     val raw = grade.opt(field)
                     if (raw != null && raw != JSONObject.NULL) {
                         val values = when (raw) {
                             is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
                             else -> listOf(displayJsonValue(raw))
-                        }.filter { it.isNotBlank() }.distinct()
-                        values.forEach { detailParts.add("$heading: $it") }
+                        }
+                        values.forEach { addGradeDetail(heading, it) }
                     }
                 }
                 val date = firstValue(grade, "date", "add_date", "created_at", "modified_at")
@@ -4396,9 +4405,7 @@ class MainActivity : Activity() {
                     else -> "Ocena"
                 }
                 entries.add(TimelineEntry("OCENY", category, "$value • $subject",
-                    detailParts.joinToString(" · ").let { detail ->
-                        if (detail.isBlank()) "" else "Za co: $detail"
-                    },
+                    detailParts.joinToString(" · "),
                     date, "✦", gradeFocusKey(grade, sourceKey)))
             }
         }
@@ -6471,20 +6478,55 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun appendJsonDetails(
+    private fun cleanGradeDetail(value: String, vararg prefixes: String): String {
+        var result = value.trim()
+        var changed: Boolean
+        do {
+            changed = false
+            for (prefix in prefixes) {
+                val pattern = Regex("^\\s*${Regex.escape(prefix)}\\s*:\\s*", RegexOption.IGNORE_CASE)
+                val cleaned = result.replaceFirst(pattern, "")
+                if (cleaned != result) {
+                    result = cleaned.trim()
+                    changed = true
+                }
+            }
+        } while (changed)
+        return result
+    }
+
+    private fun sameGradeDetail(first: String, second: String): Boolean {
+        if (first.isBlank() || second.isBlank()) return false
+        fun normalize(value: String) = cleanGradeDetail(value, "Za co", "Komentarz", "Opis")
+            .lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
+        return normalize(first) == normalize(second)
+    }
+
+    private fun appendGradeExtraDetails(
         parent: LinearLayout,
-        grade: JSONObject,
-        key: String,
-        heading: String
+        grade: JSONObject
     ) {
-        if (!grade.has(key) || grade.isNull(key)) return
-        val raw = grade.opt(key)
-        val values = when (raw) {
-            is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
-            else -> listOf(displayJsonValue(raw))
-        }
-        values.filter { it.isNotBlank() }.distinct().forEach { value ->
-            parent.addView(label("$heading: $value", 12f, muted))
+        val seen = mutableSetOf<String>()
+        listOf(
+            "requirements" to "Wymaganie",
+            "criteria" to "Kryterium",
+            "skills" to "Umiejętność",
+            "skill" to "Umiejętność"
+        ).forEach { (field, heading) ->
+            val raw = grade.opt(field) ?: return@forEach
+            if (raw == JSONObject.NULL) return@forEach
+            val values = when (raw) {
+                is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
+                else -> listOf(displayJsonValue(raw))
+            }
+            values.forEach { rawValue ->
+                val value = cleanGradeDetail(rawValue, heading)
+                val identity = heading.lowercase(Locale("pl", "PL")) + "|" +
+                    value.lowercase(Locale("pl", "PL")).replace(Regex("\\s+"), " ").trim()
+                if (value.isNotBlank() && seen.add(identity)) {
+                    parent.addView(label("$heading: $value", 12f, muted))
+                }
+            }
         }
     }
 
