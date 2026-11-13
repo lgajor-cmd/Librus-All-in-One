@@ -98,6 +98,7 @@ class MainActivity : Activity() {
     private var librusDataMemory: JSONObject? = null
 
     private var syncInProgress = false
+    private var timetableTicker: Runnable? = null
     private var autoRestoreStarted = false
     private var pendingNotificationSection: String? = null
 
@@ -929,6 +930,8 @@ class MainActivity : Activity() {
         }
 
         fun renderSelectedDay(date: String) {
+            timetableTicker?.let { android.os.Handler(mainLooper).removeCallbacks(it) }
+            timetableTicker = null
             dayContent.removeAllViews()
             val dayLessons = grouped[date] ?: return
             val dayCard = card()
@@ -936,6 +939,153 @@ class MainActivity : Activity() {
             dayCard.addView(
                 label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
+
+            val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+            if (date == todayKey) {
+                val livePanel = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding((12 * resources.displayMetrics.density).toInt(), (10 * resources.displayMetrics.density).toInt(),
+                        (12 * resources.displayMetrics.density).toInt(), (10 * resources.displayMetrics.density).toInt())
+                    background = roundedBackground(Color.rgb(23, 48, 72), 14)
+                }
+                val liveHeader = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val bellIcon = label("🔔", 21f, warningColor, true)
+                liveHeader.addView(bellIcon, LinearLayout.LayoutParams((36 * resources.displayMetrics.density).toInt(), -2))
+                val liveStatus = label("Sprawdzam aktualną lekcję…", 14f, white, true)
+                liveHeader.addView(liveStatus, LinearLayout.LayoutParams(0, -2, 1f))
+                livePanel.addView(liveHeader)
+                val liveDetail = label("", 12f, Color.rgb(190, 210, 232))
+                livePanel.addView(liveDetail, params(0, 2, 0, 4))
+                val liveProgress = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = 100
+                    progressTintList = android.content.res.ColorStateList.valueOf(accentColor)
+                    progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(55, 73, 94))
+                }
+                livePanel.addView(liveProgress, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, (5 * resources.displayMetrics.density).toInt()
+                ))
+                val bellSync = TextView(this).apply {
+                    text = "🔔  SYNCHRONIZUJ Z DZWONKIEM"
+                    textSize = 11f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Color.rgb(170, 207, 255))
+                    setPadding(0, (9 * resources.displayMetrics.density).toInt(), 0, 0)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        val choices = mutableListOf<Pair<String, Int>>()
+                        dayLessons.filterNot { it.canceled }.forEach { item ->
+                            val startMinute = item.from.split(":").takeIf { it.size >= 2 }
+                                ?.let { (it[0].toIntOrNull() ?: -1) * 60 + (it[1].toIntOrNull() ?: -1) }
+                                ?: -1
+                            val endMinute = item.to.split(":").takeIf { it.size >= 2 }
+                                ?.let { (it[0].toIntOrNull() ?: -1) * 60 + (it[1].toIntOrNull() ?: -1) }
+                                ?: -1
+                            if (startMinute in 0..1439) choices.add("Początek: ${item.subject} (${item.from})" to startMinute)
+                            if (endMinute in 0..1439) choices.add("Koniec: ${item.subject} (${item.to})" to endMinute)
+                        }
+                        if (choices.isEmpty()) {
+                            Toast.makeText(this@MainActivity, "Brak godzin lekcji do synchronizacji.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            AlertDialog.Builder(this@MainActivity)
+                                .setTitle("Kiedy zadzwonił dzwonek?")
+                                .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
+                                    val now = java.util.Calendar.getInstance()
+                                    val actual = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+                                    val offset = choices[which].second - actual
+                                    uiPrefs.edit().putInt("bell_offset_minutes", offset).apply()
+                                    Toast.makeText(this@MainActivity,
+                                        "Zsynchronizowano dzwonek (${if (offset >= 0) "+" else ""}${offset} min).",
+                                        Toast.LENGTH_LONG).show()
+                                }
+                                .setNegativeButton("Anuluj", null)
+                                .show()
+                        }
+                    }
+                }
+                livePanel.addView(bellSync)
+                dayCard.addView(livePanel, params(0, 10, 0, 2))
+
+                var previousLiveState = ""
+                val handler = android.os.Handler(mainLooper)
+                val ticker = object : Runnable {
+                    override fun run() {
+                        val now = java.util.Calendar.getInstance()
+                        val actualMinute = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+                        val correctedMinute = (actualMinute + uiPrefs.getInt("bell_offset_minutes", 0)).let {
+                            ((it % 1440) + 1440) % 1440
+                        }
+                        fun minuteOf(value: String): Int? {
+                            val match = Regex("^(\\d{1,2}):(\\d{2})").find(value.trim()) ?: return null
+                            val hour = match.groupValues[1].toIntOrNull() ?: return null
+                            val minute = match.groupValues[2].toIntOrNull() ?: return null
+                            return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else null
+                        }
+                        val activeLesson = dayLessons.firstOrNull { item ->
+                            !item.canceled && (minuteOf(item.from)?.let { it <= correctedMinute } == true) &&
+                                (minuteOf(item.to)?.let { correctedMinute < it } == true)
+                        }
+                        val nextLesson = dayLessons.filterNot { it.canceled }
+                            .filter { (minuteOf(it.from) ?: -1) > correctedMinute }
+                            .minByOrNull { minuteOf(it.from) ?: Int.MAX_VALUE }
+                        val previousLesson = dayLessons.filterNot { it.canceled }
+                            .filter { (minuteOf(it.to) ?: Int.MAX_VALUE) <= correctedMinute }
+                            .maxByOrNull { minuteOf(it.to) ?: -1 }
+
+                        val stateKey: String
+                        when {
+                            activeLesson != null -> {
+                                val endMinute = minuteOf(activeLesson.to) ?: correctedMinute
+                                val remaining = (endMinute - correctedMinute).coerceAtLeast(0)
+                                stateKey = "lesson-${activeLesson.number}"
+                                liveStatus.text = "TERAZ: ${activeLesson.subject}"
+                                liveDetail.text = "Lekcja ${activeLesson.number} • ${activeLesson.from}–${activeLesson.to} • koniec za ${remaining} min"
+                                val startMinute = minuteOf(activeLesson.from) ?: correctedMinute
+                                val duration = (endMinute - startMinute).coerceAtLeast(1)
+                                liveProgress.progress = (((correctedMinute - startMinute).toFloat() / duration) * 100).toInt().coerceIn(0, 100)
+                            }
+                            nextLesson != null && previousLesson != null -> {
+                                val startMinute = minuteOf(nextLesson.from) ?: correctedMinute
+                                val endMinute = minuteOf(previousLesson.to) ?: correctedMinute
+                                val remaining = (startMinute - correctedMinute).coerceAtLeast(0)
+                                stateKey = "break-${nextLesson.number}"
+                                liveStatus.text = "PRZERWA"
+                                liveDetail.text = "Do lekcji ${nextLesson.number} (${nextLesson.subject}) zostało ${remaining} min"
+                                liveProgress.progress = if (startMinute > endMinute)
+                                    (((correctedMinute - endMinute).toFloat() / (startMinute - endMinute)) * 100).toInt().coerceIn(0, 100)
+                                else 0
+                            }
+                            nextLesson != null -> {
+                                val startMinute = minuteOf(nextLesson.from) ?: correctedMinute
+                                stateKey = "before"
+                                liveStatus.text = "PRZED LEKCJAMI"
+                                liveDetail.text = "Pierwsza lekcja: ${nextLesson.subject} o ${nextLesson.from} • za ${(startMinute - correctedMinute).coerceAtLeast(0)} min"
+                                liveProgress.progress = 0
+                            }
+                            else -> {
+                                stateKey = "after"
+                                liveStatus.text = "KONIEC LEKCJI NA DZIŚ"
+                                liveDetail.text = "Plan na dziś został zrealizowany."
+                                liveProgress.progress = 100
+                            }
+                        }
+                        if (stateKey != previousLiveState && uiPrefs.getBoolean("motion", true)) {
+                            bellIcon.animate().cancel()
+                            bellIcon.rotation = -10f
+                            bellIcon.animate().rotation(10f).setDuration(130)
+                                .withEndAction { bellIcon.animate().rotation(0f).setDuration(130).start() }
+                                .start()
+                        }
+                        previousLiveState = stateKey
+                        handler.postDelayed(this, 30_000L)
+                    }
+                }
+                timetableTicker = ticker
+                ticker.run()
+            }
 
             for (lesson in dayLessons.sortedWith(
                 compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
@@ -3910,6 +4060,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        timetableTicker?.let { android.os.Handler(mainLooper).removeCallbacks(it) }
+        timetableTicker = null
         activityScope.cancel()
         super.onDestroy()
     }
