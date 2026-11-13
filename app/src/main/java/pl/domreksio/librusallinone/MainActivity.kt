@@ -549,6 +549,11 @@ class MainActivity : Activity() {
         addHomeSection(content, "UWAGI", "Uwagi pozytywne, neutralne i negatywne", "📝")
         addHomeSection(content, "SZCZĘŚLIWY NUMEREK", "Numer obowiązujący danego dnia", "🍀")
 
+        content.addView(sectionHeader("TWOJE NARZĘDZIA"), params(0, 18, 0, 5))
+        content.addView(label("Przydatne rzeczy poza dziennikiem szkolnym.", 13f, muted), params(0, 0, 0, 8))
+        addPersonalToolCard(content, "NOTATKI", "Szybkie zapiski, pomysły i ważne informacje", "📝") { showPersonalNotes() }
+        addPersonalToolCard(content, "LISTA ZAKUPÓW", "Dodawaj produkty i odhaczaj je w sklepie", "🛒") { showShoppingList() }
+
         content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
             showNotificationSettings()
         }, params(0, 12, 0, 8))
@@ -4154,7 +4159,9 @@ class MainActivity : Activity() {
             "Szczęśliwy numerek",
             "Katalog nauczycieli",
             "Ustawienia powiadomień",
-            "Wygląd aplikacji"
+            "Wygląd aplikacji",
+            "Notatki",
+            "Lista zakupów"
         )
         val sections = arrayOf(
             "PROFILE",
@@ -4171,10 +4178,262 @@ class MainActivity : Activity() {
                 when (which) {
                     7 -> showNotificationSettings()
                     8 -> showAppearanceSettings(activeSection)
+                    9 -> showPersonalNotes()
+                    10 -> showShoppingList()
                     else -> loadLibrusSection(sections[which])
                 }
             }
             .show()
+    }
+
+
+    // ---------------------------------------------------------
+    // PRYWATNE NARZĘDZIA — dane zapisywane lokalnie na urządzeniu
+    // ---------------------------------------------------------
+
+    private fun addPersonalToolCard(parent: LinearLayout, title: String, description: String, emoji: String, action: () -> Unit) {
+        val density = resources.displayMetrics.density
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((18 * density).toInt(), (13 * density).toInt(), (16 * density).toInt(), (13 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(44, 66, 88), Color.rgb(25, 37, 55))).apply {
+                cornerRadius = 20f * density
+                setStroke((1 * density).toInt(), Color.rgb(70, 96, 126))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+        card.addView(TextView(this).apply {
+            text = emoji
+            textSize = 29f
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams((54 * density).toInt(), (54 * density).toInt()))
+        val textBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((12 * density).toInt(), 0, 0, 0)
+            addView(label(title, 14f, white, true))
+            addView(label(description, 12f, Color.rgb(196, 211, 231)))
+        }
+        card.addView(textBox, LinearLayout.LayoutParams(0, -2, 1f))
+        card.addView(label("›", 28f, Color.rgb(170, 195, 224), true))
+        parent.addView(card, params(0, 5, 0, 5))
+    }
+
+    private fun readLocalArray(key: String): JSONArray {
+        return try { JSONArray(uiPrefs.getString(key, "[]") ?: "[]") } catch (_: Exception) { JSONArray() }
+    }
+
+    private fun saveLocalArray(key: String, array: JSONArray) {
+        uiPrefs.edit().putString(key, array.toString()).apply()
+    }
+
+    private fun showPersonalNotes() {
+        stopTimetableTicker()
+        val notes = readLocalArray("personal_notes")
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 22)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
+        }
+        root.addView(label("TWOJE NOTATKI", 11f, Color.rgb(180, 205, 239), true))
+        root.addView(label("Zapisuj pomysły, informacje i sprawy do zapamiętania.", 13f, muted), params(0, 5, 0, 14))
+        root.addView(actionButton("+  DODAJ NOTATKĘ") { editPersonalNote(null) }, params(0, 0, 0, 12))
+        if (notes.length() == 0) {
+            root.addView(infoCard("Nie masz jeszcze notatek. Dodaj pierwszą, aby mieć ważne informacje pod ręką."))
+        } else {
+            val sorted = (0 until notes.length()).mapNotNull { notes.optJSONObject(it) }
+                .sortedByDescending { it.optLong("updated", 0L) }
+            sorted.forEach { note ->
+                val title = note.optString("title", "Bez tytułu")
+                val body = note.optString("body", "")
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(16, 14, 16, 14)
+                    background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                        intArrayOf(Color.rgb(37, 51, 72), Color.rgb(25, 35, 52))).apply {
+                        cornerRadius = 17f * resources.displayMetrics.density
+                        setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(61, 82, 111))
+                    }
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { editPersonalNote(note) }
+                    setOnLongClickListener {
+                        AlertDialog.Builder(this@MainActivity).setTitle("Usuń notatkę?")
+                            .setMessage(title).setNegativeButton("Anuluj", null)
+                            .setPositiveButton("Usuń") { _, _ ->
+                                val updated = JSONArray()
+                                for (i in 0 until notes.length()) {
+                                    val item = notes.optJSONObject(i) ?: continue
+                                    if (item.optString("id") != note.optString("id")) updated.put(item)
+                                }
+                                saveLocalArray("personal_notes", updated)
+                                showPersonalNotes()
+                            }.show()
+                        true
+                    }
+                }
+                card.addView(label(title, 15f, white, true))
+                if (body.isNotBlank()) card.addView(label(body, 13f, Color.rgb(201, 214, 232)).apply { maxLines = 4 }, params(0, 6, 0, 0))
+                card.addView(label("Dotknij, aby edytować • przytrzymaj, aby usunąć", 10f, muted), params(0, 8, 0, 0))
+                root.addView(card, params(0, 5, 0, 5))
+            }
+        }
+        showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun editPersonalNote(existing: JSONObject?) {
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(8, 8, 8, 0)
+        }
+        val titleInput = EditText(this).apply {
+            hint = "Tytuł notatki"
+            setText(existing?.optString("title", "").orEmpty())
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+        }
+        val bodyInput = EditText(this).apply {
+            hint = "Treść notatki"
+            setText(existing?.optString("body", "").orEmpty())
+            setTextColor(white)
+            setHintTextColor(muted)
+            minLines = 5
+            gravity = Gravity.TOP
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+        fields.addView(titleInput)
+        fields.addView(bodyInput, params(0, 8, 0, 0))
+        AlertDialog.Builder(this).setTitle(if (existing == null) "Nowa notatka" else "Edytuj notatkę")
+            .setView(fields).setNegativeButton("Anuluj", null)
+            .setPositiveButton("Zapisz") { _, _ ->
+                val title = titleInput.text.toString().trim()
+                val body = bodyInput.text.toString().trim()
+                if (title.isBlank() && body.isBlank()) {
+                    Toast.makeText(this, "Wpisz tytuł lub treść notatki.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val all = readLocalArray("personal_notes")
+                    val id = existing?.optString("id")?.takeIf { it.isNotBlank() } ?: System.currentTimeMillis().toString()
+                    val updated = JSONArray()
+                    for (i in 0 until all.length()) {
+                        val item = all.optJSONObject(i) ?: continue
+                        if (item.optString("id") != id) updated.put(item)
+                    }
+                    updated.put(JSONObject().put("id", id).put("title", title.ifBlank { "Bez tytułu" })
+                        .put("body", body).put("updated", System.currentTimeMillis()))
+                    saveLocalArray("personal_notes", updated)
+                    showPersonalNotes()
+                }
+            }.show()
+    }
+
+    private fun showShoppingList() {
+        stopTimetableTicker()
+        val items = readLocalArray("shopping_items")
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 22)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
+        }
+        root.addView(label("LISTA ZAKUPÓW", 11f, Color.rgb(180, 205, 239), true))
+        val remaining = (0 until items.length()).count { !items.optJSONObject(it).optBoolean("done", false) }
+        root.addView(label("$remaining produktów do kupienia", 13f, muted), params(0, 5, 0, 14))
+        root.addView(actionButton("+  DODAJ PRODUKT") { addShoppingItem() }, params(0, 0, 0, 10))
+        root.addView(actionButton("USUŃ KUPIONE") {
+            val kept = JSONArray()
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                if (!item.optBoolean("done", false)) kept.put(item)
+            }
+            saveLocalArray("shopping_items", kept)
+            showShoppingList()
+        }, params(0, 0, 0, 12))
+        if (items.length() == 0) {
+            root.addView(infoCard("Lista jest pusta. Dodaj produkty, które chcesz kupić."))
+        } else {
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val id = item.optString("id")
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(12, 8, 12, 8)
+                    background = roundedBackground(Color.rgb(29, 41, 59), 14)
+                }
+                val check = CheckBox(this).apply {
+                    text = item.optString("name", "")
+                    isChecked = item.optBoolean("done", false)
+                    setTextColor(if (isChecked) muted else white)
+                    textSize = 15f
+                    setOnCheckedChangeListener { _, checked ->
+                        val fresh = readLocalArray("shopping_items")
+                        for (j in 0 until fresh.length()) {
+                            val candidate = fresh.optJSONObject(j) ?: continue
+                            if (candidate.optString("id") == id) candidate.put("done", checked)
+                        }
+                        saveLocalArray("shopping_items", fresh)
+                        showShoppingList()
+                    }
+                }
+                row.addView(check, LinearLayout.LayoutParams(0, -2, 1f))
+                row.setOnLongClickListener {
+                    AlertDialog.Builder(this@MainActivity).setTitle("Usuń produkt?")
+                        .setMessage(item.optString("name")).setNegativeButton("Anuluj", null)
+                        .setPositiveButton("Usuń") { _, _ ->
+                            val fresh = readLocalArray("shopping_items")
+                            val kept = JSONArray()
+                            for (j in 0 until fresh.length()) {
+                                val candidate = fresh.optJSONObject(j) ?: continue
+                                if (candidate.optString("id") != id) kept.put(candidate)
+                            }
+                            saveLocalArray("shopping_items", kept)
+                            showShoppingList()
+                        }.show()
+                    true
+                }
+                root.addView(row, params(0, 4, 0, 4))
+            }
+        }
+        showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun addShoppingItem() {
+        val input = EditText(this).apply {
+            hint = "Np. mleko, chleb, kawa…"
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+        AlertDialog.Builder(this).setTitle("Dodaj produkt").setView(input)
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Dodaj") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotBlank()) {
+                    val items = readLocalArray("shopping_items")
+                    items.put(JSONObject().put("id", System.currentTimeMillis().toString())
+                        .put("name", name).put("done", false))
+                    saveLocalArray("shopping_items", items)
+                    showShoppingList()
+                }
+            }.show()
+    }
+
+    private fun showPersonalToolPage(root: LinearLayout, active: String) {
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(bgColor)
+            addView(root)
+        }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        page.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        page.addView(buildBottomNavigation(active))
+        setContentView(page)
     }
 
     // ---------------------------------------------------------
