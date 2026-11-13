@@ -1667,7 +1667,7 @@ class MainActivity : Activity() {
             if (array.length() == 0) continue
 
             parent.addView(sectionHeader(headings[key] ?: key), params(0, 18, 0, 8))
-            renderGradeItems(parent, array, subjects, teachers, key)
+            renderGradeItems(parent, array, subjects, teachers, key, data.optJSONObject("grade_categories"))
         }
 
         data.optJSONObject("grading_system")?.let {
@@ -1728,7 +1728,8 @@ class MainActivity : Activity() {
         items: JSONArray,
         subjects: JSONObject?,
         teachers: JSONObject?,
-        sourceKey: String = "grades"
+        sourceKey: String = "grades",
+        gradeCategories: JSONObject? = null
     ) {
         val grouped = linkedMapOf<String, MutableList<JSONObject>>()
 
@@ -1806,6 +1807,11 @@ class MainActivity : Activity() {
                     "description", "skill_description", "comment",
                     "teacher_comment", "feedback", "note", "details"
                 )
+                val categoryId = firstValue(grade, "category_id")
+                val category = firstDisplayValue(grade, "category_name", "category", "skill")
+                    .ifBlank { lookupName(gradeCategories, categoryId) }
+                    .ifBlank { grade.optJSONObject("category")?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                val comments = displayJsonValue(grade.opt("comments"))
                 val teacherObject = grade.optJSONObject("teacher")
                 val teacherId = firstValue(grade, "teacher_id")
                     .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
@@ -1858,8 +1864,12 @@ class MainActivity : Activity() {
                 }
 
                 if (date.isNotBlank()) details.addView(label(dateLabel(date), 12f, muted))
+                if (category.isNotBlank()) details.addView(label("Za co: $category", 13f, white, true))
                 if (description.isNotBlank()) {
                     details.addView(label(description, 13f, white))
+                }
+                if (comments.isNotBlank() && comments != description) {
+                    details.addView(label("Komentarz: $comments", 12f, muted))
                 }
                 if (teacher.isNotBlank()) {
                     details.addView(label("Nauczyciel: $teacher", 11f, muted))
@@ -4313,6 +4323,7 @@ class MainActivity : Activity() {
         }
 
         val subjects = data.optJSONObject("subjects")
+        val gradeCategories = data.optJSONObject("grade_categories")
         val gradeSources = listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades")
         gradeSources.forEach { sourceKey ->
             val array = data.optJSONArray(sourceKey) ?: return@forEach
@@ -4334,6 +4345,11 @@ class MainActivity : Activity() {
                     .ifBlank { "Ocena opisowa" }
                 val description = firstDisplayValue(grade, "description", "skill_description", "comment",
                     "teacher_comment", "feedback", "note", "details")
+                val categoryId = firstValue(grade, "category_id")
+                val categoryName = firstDisplayValue(grade, "category_name", "category", "skill")
+                    .ifBlank { lookupName(gradeCategories, categoryId) }
+                    .ifBlank { grade.optJSONObject("category")?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                val comments = displayJsonValue(grade.opt("comments"))
                 val teacherObject = grade.optJSONObject("teacher")
                 val teacherId = firstValue(grade, "teacher_id")
                     .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
@@ -4345,13 +4361,17 @@ class MainActivity : Activity() {
                         if (rawTeacher is String) lookupName(data.optJSONObject("teachers"), rawTeacher).ifBlank { rawTeacher } else ""
                     }
                 val detailParts = mutableListOf<String>()
+                if (categoryName.isNotBlank()) detailParts.add("Za co: $categoryName")
                 if (description.isNotBlank()) detailParts.add(description)
+                if (comments.isNotBlank() && comments != description) detailParts.add("Komentarz: $comments")
                 if (teacher.isNotBlank()) detailParts.add("Nauczyciel: $teacher")
                 listOf(
                     "comments" to "Komentarz",
                     "requirements" to "Wymaganie",
                     "criteria" to "Kryterium",
-                    "skills" to "Umiejętność"
+                    "skills" to "Umiejętność",
+                    "skill" to "Umiejętność",
+                    "category" to "Kategoria"
                 ).forEach { (field, heading) ->
                     val raw = grade.opt(field)
                     if (raw != null && raw != JSONObject.NULL) {
