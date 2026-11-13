@@ -67,6 +67,15 @@ def check_rate_limit(request: Request) -> None:
     hits.append(now)
 
 
+def _api_error(status_code: int, code: str, detail: str) -> HTTPException:
+    """Attach a stable machine-readable code without changing the response body shape."""
+    return HTTPException(
+        status_code=status_code,
+        detail=detail,
+        headers={"X-Librus-Error-Code": code},
+    )
+
+
 def verify_supabase_token(token: str) -> dict[str, Any]:
     supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     publishable_key = os.environ.get(
@@ -74,10 +83,7 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
     )
 
     if not supabase_url or not publishable_key:
-        raise HTTPException(
-            503,
-            "Brak konfiguracji Supabase na serwerze."
-        )
+        raise _api_error(503, "SUPABASE_NOT_CONFIGURED", "Brak konfiguracji Supabase na serwerze.")
 
     url = supabase_url + "/auth/v1/user"
 
@@ -96,62 +102,38 @@ def verify_supabase_token(token: str) -> dict[str, Any]:
             user = json.loads(response.read().decode("utf-8"))
 
         if not isinstance(user, dict) or not user.get("id"):
-            raise HTTPException(
-                401,
-                "Supabase nie potwierdził użytkownika."
-            )
+            raise _api_error(401, "SUPABASE_SESSION_INVALID", "Supabase nie potwierdził użytkownika.")
 
         return user
 
     except urllib.error.HTTPError as error:
         if error.code in (400, 401, 403):
-            raise HTTPException(
-                401,
-                "Sesja użytkownika jest nieważna lub wygasła."
-            ) from None
+            raise _api_error(401, "SUPABASE_SESSION_EXPIRED", "Sesja użytkownika jest nieważna lub wygasła.") from None
 
-        raise HTTPException(
-            503,
-            "Nie udało się zweryfikować sesji Supabase."
-        ) from None
+        raise _api_error(503, "SUPABASE_UNAVAILABLE", "Nie udało się zweryfikować sesji Supabase.") from None
 
     except (urllib.error.URLError, TimeoutError, OSError):
-        raise HTTPException(
-            503,
-            "Serwer Supabase jest chwilowo niedostępny."
-        ) from None
+        raise _api_error(503, "SUPABASE_UNAVAILABLE", "Serwer Supabase jest chwilowo niedostępny.") from None
 
     except json.JSONDecodeError:
-        raise HTTPException(
-            502,
-            "Nieprawidłowa odpowiedź serwera Supabase."
-        ) from None
+        raise _api_error(502, "SUPABASE_BAD_RESPONSE", "Nieprawidłowa odpowiedź serwera Supabase.") from None
 
 
 async def require_user(
     authorization: str | None,
 ) -> dict[str, Any]:
     if not authorization:
-        raise HTTPException(
-            401,
-            "Brak tokenu logowania."
-        )
+        raise _api_error(401, "AUTH_TOKEN_MISSING", "Brak tokenu logowania.")
 
     parts = authorization.split(" ", 1)
 
     if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(
-            401,
-            "Nieprawidłowy format tokenu."
-        )
+        raise _api_error(401, "AUTH_TOKEN_INVALID", "Nieprawidłowy format tokenu.")
 
     token = parts[1].strip()
 
     if not token or len(token) > 10000:
-        raise HTTPException(
-            401,
-            "Nieprawidłowy token."
-        )
+        raise _api_error(401, "AUTH_TOKEN_INVALID", "Nieprawidłowy token.")
 
     return await asyncio.to_thread(
         verify_supabase_token,
@@ -209,41 +191,21 @@ def _session_data(
 
 def _safe_error(error: Exception) -> HTTPException:
     if isinstance(error, LibrusCaptchaRequiredError):
-        return HTTPException(
-            428,
-            "Librus wymaga dodatkowej weryfikacji. "
-            "Zaloguj się w oficjalnym portalu."
-        )
+        return _api_error(428, "LIBRUS_CAPTCHA_REQUIRED", "Librus wymaga dodatkowej weryfikacji. Zaloguj się w oficjalnym portalu.")
 
     if isinstance(error, LibrusInvalidCredentialsError):
-        return HTTPException(
-            401,
-            "Librus odrzucił login lub hasło."
-        )
+        return _api_error(401, "LIBRUS_INVALID_CREDENTIALS", "Librus odrzucił login lub hasło.")
 
     if isinstance(error, LibrusAccountActionRequiredError):
-        return HTTPException(
-            409,
-            "Librus wymaga działania na koncie. "
-            "Zaloguj się w oficjalnym portalu."
-        )
+        return _api_error(409, "LIBRUS_ACCOUNT_ACTION_REQUIRED", "Librus wymaga działania na koncie. Zaloguj się w oficjalnym portalu.")
 
     if isinstance(error, LibrusAuthError):
-        return HTTPException(
-            401,
-            "Nie udało się uwierzytelnić w Librusie."
-        )
+        return _api_error(401, "LIBRUS_AUTH_FAILED", "Nie udało się uwierzytelnić w Librusie.")
 
     if isinstance(error, LibrusConnectionError):
-        return HTTPException(
-            503,
-            "Librus jest chwilowo niedostępny. Spróbuj ponownie."
-        )
+        return _api_error(503, "LIBRUS_UNAVAILABLE", "Librus jest chwilowo niedostępny. Spróbuj ponownie.")
 
-    return HTTPException(
-        502,
-        "Błąd komunikacji z Librusem."
-    )
+    return _api_error(502, "LIBRUS_API_ERROR", "Błąd komunikacji z Librusem.")
 
 
 @app.get("/health")
