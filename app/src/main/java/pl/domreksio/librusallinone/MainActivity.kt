@@ -1622,17 +1622,22 @@ class MainActivity : Activity() {
             return
         }
 
-        parent.addView(infoCard("Liczba wpisów: ${items.length()}"))
         val sorted = (0 until items.length())
             .mapNotNull { items.optJSONObject(it) }
-            .sortedByDescending {
-                firstValue(it, "date", "due_date", "deadline", "start_date", "created_at")
-            }
+            .sortedWith(compareBy<JSONObject> { featureDateSortKey(firstValue(it, "due_date", "deadline", "date", "start_date")) }
+                .thenBy { firstValue(it, "title", "topic", "name") })
+
+        val now = java.util.Date()
+        val datedItems = sorted.count {
+            firstValue(it, "due_date", "deadline", "date", "start_date").isNotBlank()
+        }
+        parent.addView(infoCard("Liczba wpisów: ${items.length()}" +
+            if (datedItems > 0) " • z terminem: $datedItems" else ""))
 
         for (item in sorted) {
             val title = firstValue(item, "title", "topic", "name", "subject", "text")
                 .ifBlank { heading.removeSuffix("a").removeSuffix("y") }
-            val date = firstValue(item, "date", "due_date", "deadline", "start_date")
+            val date = firstValue(item, "due_date", "deadline", "date", "start_date")
             val subjectId = firstValue(item, "subject_id", "subject")
             val subject = lookupName(data.optJSONObject("subjects"), subjectId)
                 .ifBlank { item.optString("subject_name") }
@@ -1640,14 +1645,82 @@ class MainActivity : Activity() {
             val teacher = lookupName(data.optJSONObject("teachers"), teacherId)
                 .ifBlank { item.optString("teacher_name") }
             val body = firstValue(item, "description", "content", "body", "details", "comment")
+            val state = firstValue(item, "status", "state", "completion_status", "is_done")
+            val dueState = featureDueState(date, now)
 
             val itemCard = card()
             itemCard.addView(label(title, 15f, white, true))
-            if (date.isNotBlank()) itemCard.addView(label("Termin: $date", 13f, successColor))
+            if (date.isNotBlank()) {
+                val dueColor = when (dueState) {
+                    "Po terminie" -> errorColor
+                    "Na dziś" -> warningColor
+                    else -> successColor
+                }
+                val dueRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                dueRow.addView(statusChip("TERMIN: $date", dueColor),
+                    LinearLayout.LayoutParams(0, -2, 1f))
+                if (dueState.isNotBlank()) dueRow.addView(statusChip(dueState.uppercase(Locale("pl", "PL")), dueColor))
+                itemCard.addView(dueRow, params(0, 5, 0, 2))
+            }
+            if (state.isNotBlank()) itemCard.addView(statusChip(state, featureStateColor(state)), params(0, 3, 0, 4))
             if (subject.isNotBlank()) itemCard.addView(label("Przedmiot: $subject", 12f, muted))
             if (teacher.isNotBlank()) itemCard.addView(label("Nauczyciel: $teacher", 12f, muted))
             if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
             parent.addView(itemCard, params(0, 0, 0, 8))
+        }
+    }
+
+    private fun featureDateSortKey(value: String): Long {
+        val parsed = parseFeatureDate(value) ?: return Long.MAX_VALUE
+        return parsed.time
+    }
+
+    private fun featureDueState(value: String, now: java.util.Date): String {
+        if (value.isBlank()) return ""
+        val due = parseFeatureDate(value) ?: return ""
+        val day = java.text.SimpleDateFormat("yyyyMMdd", Locale.US)
+        val dueDay = day.format(due)
+        val today = day.format(now)
+        return when {
+            dueDay < today -> "Po terminie"
+            dueDay == today -> "Na dziś"
+            else -> "Nadchodzące"
+        }
+    }
+
+    private fun parseFeatureDate(value: String): java.util.Date? {
+        val normalized = value.trim()
+        val formats = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            "yyyy-MM-dd",
+            "dd.MM.yyyy",
+            "dd-MM-yyyy"
+        )
+        for (pattern in formats) {
+            try {
+                val format = SimpleDateFormat(pattern, Locale.US).apply { isLenient = false }
+                format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                format.parse(normalized)?.let { return it }
+            } catch (_: Exception) {
+                // Nieznany format pozostaje bez oceny terminu — nie zgadujemy.
+            }
+        }
+        return null
+    }
+
+    private fun featureStateColor(value: String): Int {
+        val normalized = value.lowercase(Locale("pl", "PL"))
+        return when {
+            normalized.contains("zrob") || normalized.contains("ukończ") ||
+                normalized.contains("ukoncz") || normalized == "true" -> successColor
+            normalized.contains("niezrob") || normalized.contains("zaleg") ||
+                normalized.contains("brak") -> errorColor
+            normalized.contains("w trakcie") || normalized.contains("oczek") -> warningColor
+            else -> accentColor
         }
     }
 
