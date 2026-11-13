@@ -38,11 +38,11 @@ internal object LibrusNotificationDiagnostics {
             .putLong("last_attempt", System.currentTimeMillis())
             .putString("last_status", status)
             .putString("last_detail", detail.take(400))
-        if (status == "success") {
+        if (status == "success" || status == "partial_success") {
             edit.putLong("last_success", System.currentTimeMillis())
                 .putLong("success_count", prefs.getLong("success_count", 0L) + 1L)
         }
-        if (status == "error" || status == "auth_required" || status == "blocked") {
+        if (status == "error" || status == "auth_required" || status == "blocked" || status == "partial_success" || status == "vault_error") {
             edit.putLong("error_count", prefs.getLong("error_count", 0L) + 1L)
         }
         edit.commit()
@@ -128,11 +128,37 @@ class LibrusNotificationWorker(
 
     override suspend fun doWork(): Result {
         LibrusNotificationDiagnostics.record(applicationContext, "running")
-        val credentials = LibrusCredentialVault(applicationContext).load()
-            ?: run {
-                LibrusNotificationDiagnostics.record(applicationContext, "not_configured", "Brak zapisanych danych logowania Librusa.")
-                return Result.success()
+        val vaultResult = LibrusCredentialVault(applicationContext).loadDetailed()
+        val credentials = vaultResult.credentials ?: run {
+            when (vaultResult.status) {
+                LibrusCredentialVault.LoadStatus.NOT_CONFIGURED ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "not_configured",
+                        "Brak zapisanych danych logowania Librusa."
+                    )
+                LibrusCredentialVault.LoadStatus.KEY_MISSING ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "vault_error",
+                        "Brakuje klucza Android Keystore dla zapisanych danych. Nie usunięto zaszyfrowanych danych."
+                    )
+                LibrusCredentialVault.LoadStatus.DECRYPTION_FAILED ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "vault_error",
+                        "Android Keystore nie może odszyfrować zapisanych danych Librusa. Dane pozostawiono bez zmian."
+                    )
+                LibrusCredentialVault.LoadStatus.CORRUPTED ->
+                    LibrusNotificationDiagnostics.record(
+                        applicationContext,
+                        "vault_error",
+                        "Zapisany magazyn danych logowania jest uszkodzony lub ma nieprawidłowy format. Dane pozostawiono bez zmian."
+                    )
+                LibrusCredentialVault.LoadStatus.OK -> Unit
             }
+            return Result.success()
+        }
 
         var connection: HttpURLConnection? = null
         return try {
@@ -185,13 +211,40 @@ class LibrusNotificationWorker(
                 else activeConnection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
 
             if (code == 401 || code == 428 || code == 409) {
+                val errorCode = activeConnection.getHeaderField("X-Librus-Error-Code").orEmpty()
                 val detail = body.take(300).ifBlank { "HTTP $code" }
-                LibrusNotificationDiagnostics.record(applicationContext, "auth_required", detail)
-                postNotification(
-                    "Wymagane działanie w Librusie",
-                    "Otwórz aplikację i sprawdź połączenie z Librusem. $detail",
-                    "START"
-                )
+                when {
+                    errorCode.startsWith("SUPABASE_") || errorCode.startsWith("AUTH_TOKEN_") -> {
+                        LibrusNotificationDiagnostics.record(
+                            applicationContext,
+                            "auth_required",
+                            "Wymagana sesja aplikacji: $detail"
+                        )
+                        postNotification(
+                            "Wymagana sesja aplikacji",
+                            "Otwórz Librus All-in-One, aby odnowić sesję aplikacji. Dane Librusa nie zostały zmienione.",
+                            "START"
+                        )
+                    }
+                    errorCode.startsWith("LIBRUS_") || code == 428 || code == 409 -> {
+                        LibrusNotificationDiagnostics.record(applicationContext, "auth_required", detail)
+                        postNotification(
+                            "Wymagane działanie w Librusie",
+                            "Otwórz aplikację i sprawdź połączenie z Librusem. $detail",
+                            "START"
+                        )
+                    }
+                    else -> {
+                        // An unclassified 401 must not be reported as a Librus
+                        // password problem. Retry and leave a diagnostic trail.
+                        LibrusNotificationDiagnostics.record(
+                            applicationContext,
+                            "error",
+                            "Nierozpoznany błąd autoryzacji HTTP $code: $detail"
+                        )
+                        return Result.retry()
+                    }
+                }
                 return Result.success()
             }
             if (code !in 200..299) {
@@ -225,7 +278,21 @@ class LibrusNotificationWorker(
                 "librus_notification_diagnostics",
                 Context.MODE_PRIVATE
             ).getString("last_status", "")
-            if (notificationStatus != "blocked") {
+            val failedSections = data.optJSONArray("failed_sections")
+            if (notificationStatus == "blocked") {
+                // Preserve the actionable Android permission/channel problem;
+                // do not overwrite it with a generic partial-sync status.
+            } else if (failedSections != null && failedSections.length() > 0) {
+                val names = (0 until failedSections.length())
+                    .map { failedSections.optString(it) }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                LibrusNotificationDiagnostics.record(
+                    applicationContext,
+                    "partial_success",
+                    "Synchronizacja częściowa. Niedostępne kategorie: ${names.joinToString(", ")}"
+                )
+            } else {
                 LibrusNotificationDiagnostics.record(applicationContext, "success")
             }
             Result.success()

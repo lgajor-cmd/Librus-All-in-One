@@ -8,6 +8,7 @@ import android.util.Base64
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -25,6 +26,19 @@ class LibrusCredentialVault(
         val login: String,
         val password: String,
         val sessionJson: String?
+    )
+
+    enum class LoadStatus {
+        NOT_CONFIGURED,
+        OK,
+        KEY_MISSING,
+        DECRYPTION_FAILED,
+        CORRUPTED
+    }
+
+    data class LoadResult(
+        val status: LoadStatus,
+        val credentials: Credentials? = null
     )
 
     private val appContext = context.applicationContext
@@ -69,8 +83,9 @@ class LibrusCredentialVault(
     }
 
     @Synchronized
-    fun load(): Credentials? {
-        val stored = prefs.getString(encryptedValueKey, null) ?: return null
+    fun loadDetailed(): LoadResult {
+        val stored = prefs.getString(encryptedValueKey, null)
+            ?: return LoadResult(LoadStatus.NOT_CONFIGURED)
 
         return try {
             val envelope = JSONObject(stored)
@@ -79,7 +94,9 @@ class LibrusCredentialVault(
                 envelope.getString("ciphertext"),
                 Base64.NO_WRAP
             )
-            val plaintext = decrypt(iv, ciphertext)
+            val key = getExistingKey()
+                ?: return LoadResult(LoadStatus.KEY_MISSING)
+            val plaintext = decrypt(iv, ciphertext, key)
             val json = JSONObject(String(plaintext, StandardCharsets.UTF_8))
 
             val login = json.optString("login")
@@ -87,21 +104,29 @@ class LibrusCredentialVault(
             val sessionValue = json.opt("session")
 
             if (login.isBlank() || password.isBlank()) {
-                null
+                LoadResult(LoadStatus.CORRUPTED)
             } else {
-                Credentials(
-                    login = login,
-                    password = password,
-                    sessionJson = if (
-                        sessionValue == null ||
-                        sessionValue == JSONObject.NULL
-                    ) null else sessionValue.toString()
+                LoadResult(
+                    LoadStatus.OK,
+                    Credentials(
+                        login = login,
+                        password = password,
+                        sessionJson = if (
+                            sessionValue == null ||
+                            sessionValue == JSONObject.NULL
+                        ) null else sessionValue.toString()
+                    )
                 )
             }
+        } catch (_: AEADBadTagException) {
+            LoadResult(LoadStatus.DECRYPTION_FAILED)
         } catch (_: Exception) {
-            null
+            LoadResult(LoadStatus.CORRUPTED)
         }
     }
+
+    @Synchronized
+    fun load(): Credentials? = loadDetailed().credentials
 
     @Synchronized
     fun clear() {
@@ -120,14 +145,23 @@ class LibrusCredentialVault(
         return cipher.iv to cipher.doFinal(plainText)
     }
 
-    private fun decrypt(iv: ByteArray, ciphertext: ByteArray): ByteArray {
+    private fun decrypt(
+        iv: ByteArray,
+        ciphertext: ByteArray,
+        key: SecretKey
+    ): ByteArray {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(
             Cipher.DECRYPT_MODE,
-            getOrCreateKey(),
+            key,
             GCMParameterSpec(TAG_LENGTH_BITS, iv)
         )
         return cipher.doFinal(ciphertext)
+    }
+
+    private fun getExistingKey(): SecretKey? {
+        val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
+        return keyStore.getKey(keyAlias, null) as? SecretKey
     }
 
     private fun getOrCreateKey(): SecretKey {

@@ -1,5 +1,9 @@
 name: Build Librus APK
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   pull_request:
@@ -12,6 +16,7 @@ on:
       - 'improve/**'
       - 'fix/**'
       - 'release/**'
+      - 'audit/**'
 
 permissions:
   contents: read
@@ -51,6 +56,9 @@ jobs:
       - name: Check project files
         shell: bash
         run: |
+          test -x gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f app/build.gradle.kts
@@ -82,10 +90,10 @@ jobs:
           fi
 
       - name: Run Android lint
-        run: gradle --no-daemon lintDebug --stacktrace
+        run: ./gradlew --no-daemon lintDebug --stacktrace
 
       - name: Run Android unit tests
-        run: gradle --no-daemon testDebugUnitTest --stacktrace
+        run: ./gradlew --no-daemon testDebugUnitTest --stacktrace
 
       - name: Upload Android lint report
         if: always()
@@ -97,7 +105,7 @@ jobs:
 
       - name: Build signed release APK
         if: steps.signing.outputs.available == 'true'
-        run: gradle --no-daemon assembleRelease --stacktrace
+        run: ./gradlew --no-daemon assembleRelease --stacktrace
 
       - name: Verify signed release APK
         if: steps.signing.outputs.available == 'true'
@@ -120,7 +128,7 @@ jobs:
 
       - name: Build debug APK (CI only)
         if: steps.signing.outputs.available != 'true'
-        run: gradle --no-daemon assembleDebug --stacktrace
+        run: ./gradlew --no-daemon assembleDebug --stacktrace
 
       - name: Upload debug APK (CI only)
         if: steps.signing.outputs.available != 'true'
