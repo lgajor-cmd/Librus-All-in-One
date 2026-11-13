@@ -38,7 +38,7 @@ internal object LibrusNotificationDiagnostics {
             .putLong("last_attempt", System.currentTimeMillis())
             .putString("last_status", status)
             .putString("last_detail", detail.take(400))
-        if (status == "success") {
+        if (status == "success" || status == "partial_success") {
             edit.putLong("last_success", System.currentTimeMillis())
                 .putLong("success_count", prefs.getLong("success_count", 0L) + 1L)
         }
