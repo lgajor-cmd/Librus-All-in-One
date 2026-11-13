@@ -89,6 +89,7 @@ class LibrusNotificationWorker(
 
             val payload = JSONObject().apply {
                 put("profile", "parent")
+                put("notifications_only", true)
                 put("login", credentials.login)
                 put("password", credentials.password)
                 credentials.sessionJson?.let { put("session", JSONObject(it)) }
