@@ -32,4 +32,4 @@ jobs:
         env:
           PYTHONPATH: backend
         run: |
-          python -c "from app.main import app; paths = {route.path for route in app.routes}; assert '/v1/message/recipients' in paths; assert '/v1/message/send' in paths; assert '/v1/message/reply' in paths; assert '/v1/message/attachment' in paths; assert '/v1/homework/attachment' in paths; print('Backend API routes loaded successfully.')"
+          python -c "from app.main import app; paths = {route.path for route in app.routes}; assert '/v1/message/recipients' in paths; assert '/v1/message/send' in paths; assert '/v1/message/reply' in paths; assert '/v1/message/attachment' in paths; assert '/v1/homework/attachment' in paths; assert '/v1/justification/submit' in paths; print('Backend API routes loaded successfully.')"
