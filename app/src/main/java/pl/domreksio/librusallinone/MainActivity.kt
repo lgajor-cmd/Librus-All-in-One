@@ -921,7 +921,7 @@ class MainActivity : Activity() {
 
         for (date in dates) {
             val button = TextView(this).apply {
-                text = dateLabel(date).substringBefore(",") + "\\n" + date.takeLast(5)
+                text = dateLabel(date).substringBefore(",") + "\n" + date.takeLast(5)
                 textSize = 10f
                 gravity = Gravity.CENTER
                 setTypeface(null, Typeface.BOLD)
