@@ -16,6 +16,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.FileProvider
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -613,7 +615,8 @@ class MainActivity : Activity() {
             "TERMINARZ" -> "Sprawdziany, wydarzenia i wycieczki"
             "UWAGI" -> "Uwagi dotyczące zachowania"
             "SZCZĘŚLIWY NUMEREK" -> "Szczęśliwy numerek"
-            "PROFILE" -> "Dane ucznia, przedmioty i nauczyciele"
+            "PROFILE" -> "Dane ucznia i informacje szkolne"
+            "NAUCZYCIELE" -> "Katalog nauczycieli i wyszukiwarka kontaktów"
             else -> "Dane z Librusa"
         }
 
@@ -671,6 +674,7 @@ class MainActivity : Activity() {
             "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
+            "NAUCZYCIELE" -> renderTeachersDirectory(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
         }
 
@@ -3042,6 +3046,251 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------
+    // KATALOG NAUCZYCIELI
+    // ---------------------------------------------------------
+
+    private data class TeacherDirectoryEntry(
+        val id: String,
+        val name: String,
+        val subjects: Set<String>,
+        val email: String,
+        val phone: String,
+        val room: String,
+        val searchable: String
+    )
+
+    private fun renderTeachersDirectory(parent: LinearLayout, data: JSONObject) {
+        val teachers = data.optJSONObject("teachers")
+        val subjects = data.optJSONObject("subjects")
+        val byId = linkedMapOf<String, MutableMap<String, Any>>()
+
+        fun addTeacher(
+            id: String,
+            name: String,
+            subject: String = "",
+            email: String = "",
+            phone: String = "",
+            room: String = ""
+        ) {
+            val key = id.ifBlank { name.lowercase(Locale("pl", "PL")) }
+            if (key.isBlank() && name.isBlank()) return
+            val entry = byId.getOrPut(key) {
+                mutableMapOf(
+                    "name" to name.ifBlank { "Nauczyciel" },
+                    "subjects" to linkedSetOf<String>(),
+                    "email" to email,
+                    "phone" to phone,
+                    "room" to room
+                )
+            }
+            if (name.isNotBlank() && (entry["name"] as? String).isNullOrBlank()) {
+                entry["name"] = name
+            }
+            if (subject.isNotBlank()) (entry["subjects"] as MutableSet<String>).add(subject)
+            if (email.isNotBlank() && (entry["email"] as? String).isNullOrBlank()) entry["email"] = email
+            if (phone.isNotBlank() && (entry["phone"] as? String).isNullOrBlank()) entry["phone"] = phone
+            if (room.isNotBlank() && (entry["room"] as? String).isNullOrBlank()) entry["room"] = room
+        }
+
+        fun readTeacher(idHint: String, value: Any?) {
+            when (value) {
+                is String -> addTeacher(idHint, value)
+                is JSONObject -> {
+                    val id = firstValue(value, "id", "teacher_id", "user_id").ifBlank { idHint }
+                    val first = firstValue(value, "first_name", "firstname", "given_name")
+                    val last = firstValue(value, "last_name", "surname", "lastname", "family_name")
+                    val fullName = firstDisplayValue(
+                        value, "name", "full_name", "teacher_name", "display_name", "title"
+                    ).ifBlank { listOf(first, last).filter { it.isNotBlank() }.joinToString(" ") }
+                    val subject = firstDisplayValue(
+                        value, "subject_name", "subject", "subjects", "teaching_subjects"
+                    )
+                    addTeacher(
+                        id,
+                        fullName.ifBlank { "Nauczyciel" },
+                        subject,
+                        firstValue(value, "email", "mail", "email_address"),
+                        firstValue(value, "phone", "phone_number", "telephone", "mobile"),
+                        firstValue(value, "room", "room_number", "classroom")
+                    )
+                }
+                is JSONArray -> {
+                    for (index in 0 until value.length()) {
+                        readTeacher("$idHint:$index", value.opt(index))
+                    }
+                }
+            }
+        }
+
+        if (teachers != null) {
+            val keys = teachers.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                readTeacher(key, teachers.opt(key))
+            }
+        }
+
+        // Librus często zwraca słownik ID -> nazwisko, a powiązania
+        // nauczyciel–przedmiot są dopiero w planie lekcji. Uzupełnij katalog
+        // na podstawie rzeczywiście pobranych lekcji, nie zgaduj przedmiotów.
+        fun collectLesson(value: Any?) {
+            when (value) {
+                is JSONArray -> {
+                    for (index in 0 until value.length()) collectLesson(value.opt(index))
+                }
+                is JSONObject -> {
+                    val teacherId = firstValue(value, "teacher_id", "teacher")
+                    val subjectId = firstValue(value, "subject_id", "subject")
+                    val teacherName = firstDisplayValue(value, "teacher_name")
+                    val subjectName = lookupName(subjects, subjectId)
+                        .ifBlank { firstDisplayValue(value, "subject_name") }
+                    if (teacherId.isNotBlank() || teacherName.isNotBlank()) {
+                        val resolvedName = lookupName(teachers, teacherId)
+                            .ifBlank { teacherName }
+                        addTeacher(teacherId, resolvedName, subjectName)
+                    }
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val child = value.opt(key)
+                        if (child is JSONObject || child is JSONArray) collectLesson(child)
+                    }
+                }
+            }
+        }
+        collectLesson(data.opt("timetable"))
+
+        val entries = byId.map { (id, fields) ->
+            val name = fields["name"] as? String ?: "Nauczyciel"
+            val subjectSet = fields["subjects"] as? Set<String> ?: emptySet()
+            val email = fields["email"] as? String ?: ""
+            val phone = fields["phone"] as? String ?: ""
+            val room = fields["room"] as? String ?: ""
+            val searchable = listOf(name, subjectSet.joinToString(" "), email, phone, room, id)
+                .joinToString(" ")
+                .lowercase(Locale("pl", "PL"))
+            TeacherDirectoryEntry(id, name, subjectSet, email, phone, room, searchable)
+        }.distinctBy { it.id }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+
+        parent.addView(sectionHeader("KATALOG NAUCZYCIELI"), params(0, 2, 0, 6))
+        val summary = label("", 12f, muted)
+        parent.addView(summary, params(0, 0, 0, 10))
+
+        if (entries.isEmpty()) {
+            parent.addView(infoCard("Librus nie zwrócił listy nauczycieli. Po odświeżeniu sprawdź, czy konto ma dostęp do danych kadry."))
+            return
+        }
+
+        val search = EditText(this).apply {
+            hint = "Szukaj nazwiska, przedmiotu lub kontaktu"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            singleLine = true
+            setTextColor(white)
+            setHintTextColor(muted)
+            textSize = 14f
+            setPadding(
+                (15 * resources.displayMetrics.density).toInt(),
+                (12 * resources.displayMetrics.density).toInt(),
+                (15 * resources.displayMetrics.density).toInt(),
+                (12 * resources.displayMetrics.density).toInt()
+            )
+            background = roundedBackground(panelLight, 13)
+        }
+        parent.addView(search, params(0, 0, 0, 12))
+
+        val resultList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        parent.addView(resultList)
+
+        fun renderResults(query: String) {
+            resultList.removeAllViews()
+            val normalized = query.trim().lowercase(Locale("pl", "PL"))
+            val filtered = entries.filter {
+                normalized.isBlank() || it.searchable.contains(normalized)
+            }
+            summary.text = if (normalized.isBlank()) {
+                "${entries.size} nauczycieli"
+            } else {
+                "Wyniki wyszukiwania: ${filtered.size} z ${entries.size}"
+            }
+
+            if (filtered.isEmpty()) {
+                resultList.addView(infoCard("Nie znaleziono nauczyciela dla podanej frazy."))
+                return
+            }
+
+            filtered.forEach { teacher ->
+                val itemCard = card()
+                val header = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val initials = teacher.name
+                    .split(Regex("\\s+"))
+                    .filter { it.isNotBlank() }
+                    .take(2)
+                    .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+                    .joinToString("")
+                    .ifBlank { "N" }
+                val avatar = TextView(this).apply {
+                    text = initials
+                    textSize = 15f
+                    gravity = Gravity.CENTER
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(white)
+                    background = roundedBackground(accentColor, 14)
+                }
+                header.addView(
+                    avatar,
+                    LinearLayout.LayoutParams(
+                        (44 * resources.displayMetrics.density).toInt(),
+                        (44 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (12 * resources.displayMetrics.density).toInt()
+                    }
+                )
+                val identity = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                }
+                identity.addView(label(teacher.name, 15f, white, true))
+                val subjectLine = teacher.subjects.sortedWith(String.CASE_INSENSITIVE_ORDER)
+                    .joinToString(" • ")
+                identity.addView(
+                    label(
+                        subjectLine.ifBlank { "Brak przypisanego przedmiotu w pobranych danych" },
+                        12f,
+                        if (subjectLine.isBlank()) muted else Color.rgb(174, 196, 224)
+                    )
+                )
+                header.addView(identity, LinearLayout.LayoutParams(0, -2, 1f))
+                itemCard.addView(header)
+
+                if (teacher.email.isNotBlank()) {
+                    itemCard.addView(label("E-mail: ${teacher.email}", 12f, muted), params(0, 9, 0, 0))
+                }
+                if (teacher.phone.isNotBlank()) {
+                    itemCard.addView(label("Telefon: ${teacher.phone}", 12f, muted), params(0, 3, 0, 0))
+                }
+                if (teacher.room.isNotBlank()) {
+                    itemCard.addView(label("Pokój: ${teacher.room}", 12f, muted), params(0, 3, 0, 0))
+                }
+                resultList.addView(itemCard, params(0, 0, 0, 8))
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                renderResults(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        renderResults("")
+    }
+
+    // ---------------------------------------------------------
     // FUNKCJE SZKOLNE: ZADANIA, TERMINARZ, UWAGI I NUMEREK
     // ---------------------------------------------------------
 
@@ -3553,12 +3802,13 @@ class MainActivity : Activity() {
 
     private fun showMoreMenu(activeSection: String) {
         val labels = arrayOf(
-            "Profile i nauczyciele",
+            "Profile i dane ucznia",
             "Frekwencja",
             "Zadania domowe",
             "Terminarz",
             "Uwagi",
             "Szczęśliwy numerek",
+            "Katalog nauczycieli",
             "Ustawienia powiadomień",
             "Wygląd aplikacji"
         )
@@ -3568,14 +3818,15 @@ class MainActivity : Activity() {
             "ZADANIA DOMOWE",
             "TERMINARZ",
             "UWAGI",
-            "SZCZĘŚLIWY NUMEREK"
+            "SZCZĘŚLIWY NUMEREK",
+            "NAUCZYCIELE"
         )
         AlertDialog.Builder(this)
             .setTitle("Więcej modułów")
             .setItems(labels) { _, which ->
                 when (which) {
-                    6 -> showNotificationSettings()
-                    7 -> showAppearanceSettings(activeSection)
+                    7 -> showNotificationSettings()
+                    8 -> showAppearanceSettings(activeSection)
                     else -> loadLibrusSection(sections[which])
                 }
             }
