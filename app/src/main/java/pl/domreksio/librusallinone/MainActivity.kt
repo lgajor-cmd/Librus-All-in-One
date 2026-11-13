@@ -1302,6 +1302,19 @@ class MainActivity : Activity() {
             if (lesson.isNotBlank()) attendanceCard.addView(label("Lekcja: $lesson", 12f, muted))
             if (description.isNotBlank()) attendanceCard.addView(label(description, 12f, muted))
 
+            val normalizedType = type.lowercase(Locale("pl", "PL"))
+            val isUnexcusedAbsence = category == "Nieobecności" &&
+                !normalizedType.contains("uspr") &&
+                !normalizedType.contains("uspraw")
+            if (isUnexcusedAbsence && date.isNotBlank()) {
+                attendanceCard.addView(
+                    actionButton("USPRAWIEDLIW NIEOBECNOŚĆ") {
+                        requestJustificationToTutor(date, subject, lesson)
+                    },
+                    params(0, 8, 0, 0)
+                )
+            }
+
             parent.addView(attendanceCard, params(0, 0, 0, 8))
         }
 
@@ -1321,6 +1334,240 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------
+    private fun requestJustificationToTutor(date: String, subject: String, lesson: String) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Pobieram wychowawcę z Librusa…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/message/recipients").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|\${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|\${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nie udało się pobrać wychowawcy: \${result.substringAfter("|")}", false)
+                    return@runOnUiThread
+                }
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status !in 200..299) {
+                    setLibrusStatus(errorDetail(responseBody, "HTTP $status"), false)
+                    return@runOnUiThread
+                }
+                try {
+                    val json = JSONObject(responseBody)
+                    librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                    librusVault.updateSession(librusSessionMemory?.toString())
+                    val recipients = json.optJSONArray("recipients") ?: JSONArray()
+                    var tutor: JSONObject? = null
+                    for (index in 0 until recipients.length()) {
+                        val candidate = recipients.optJSONObject(index) ?: continue
+                        val group = firstValue(candidate, "group").lowercase(Locale.ROOT)
+                        val groupName = firstValue(candidate, "group_name", "groupName")
+                            .lowercase(Locale("pl", "PL"))
+                        if (group == "tutors" || groupName.contains("wychowaw")) {
+                            tutor = candidate
+                            break
+                        }
+                    }
+                    if (tutor == null) {
+                        setLibrusStatus("Librus nie udostępnił wychowawcy jako odbiorcy.", false)
+                        AlertDialog.Builder(this).setTitle("Nie znaleziono wychowawcy")
+                            .setMessage("Nie mogę bezpiecznie wybrać odbiorcy. Sprawdź listę odbiorców w Librusie.")
+                            .setPositiveButton("OK", null).show()
+                        return@runOnUiThread
+                    }
+                    val recipientId = firstValue(tutor, "account_id", "accountId")
+                    val recipientName = firstValue(tutor, "name").ifBlank { "Wychowawca" }
+                    if (recipientId.isBlank()) {
+                        setLibrusStatus("Librus nie zwrócił identyfikatora wychowawcy.", false)
+                        return@runOnUiThread
+                    }
+                    showJustificationComposer(recipientId, recipientName, date, subject, lesson)
+                } catch (e: Exception) {
+                    setLibrusStatus("Nieprawidłowa odpowiedź Librusa: \${e.message}", false)
+                }
+            }
+        }
+    }
+
+    private fun showJustificationComposer(
+        recipientId: String, recipientName: String, date: String, subject: String, lesson: String
+    ) {
+        val density = resources.displayMetrics.density
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (8 * density).toInt(),
+                (18 * density).toInt(), (12 * density).toInt())
+        }
+        form.addView(label("Do: $recipientName", 13f, muted, true))
+        form.addView(label("Nieobecność: $date", 13f, warningColor, true))
+        if (subject.isNotBlank()) form.addView(label("Przedmiot: $subject", 12f, muted))
+        if (lesson.isNotBlank()) form.addView(label("Lekcja: $lesson", 12f, muted))
+
+        val topicInput = inputField("Temat wiadomości",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES).apply {
+            setText("Prośba o usprawiedliwienie nieobecności – $date")
+        }
+        form.addView(topicInput, params(0, 8, 0, 8))
+        val absenceDescription = buildString {
+            append("Proszę o usprawiedliwienie nieobecności mojego dziecka w dniu $date")
+            if (subject.isNotBlank()) append(" na lekcji: $subject")
+            if (lesson.isNotBlank()) append(" (lekcja $lesson)")
+        }
+        val bodyInput = EditText(this).apply {
+            hint = "Treść usprawiedliwienia"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 5
+            maxLines = 9
+            gravity = Gravity.TOP or Gravity.START
+            setText("Dzień dobry,\\n\\n$absenceDescription.\\n\\nPowód nieobecności: ")
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding((14 * density).toInt(), (12 * density).toInt(),
+                (14 * density).toInt(), (12 * density).toInt())
+            background = roundedBackground(panel, 10)
+        }
+        form.addView(bodyInput, params(0, 0, 0, 0))
+        val dialog = AlertDialog.Builder(this).setTitle("Usprawiedliwienie nieobecności")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("ANULUJ", null).setPositiveButton("DALEJ", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val topic = topicInput.text.toString().trim()
+                val body = bodyInput.text.toString().trim()
+                if (topic.isBlank() || body.isBlank() || body.endsWith("Powód nieobecności:")) {
+                    bodyInput.error = "Uzupełnij powód nieobecności."
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                val confirmation = AlertDialog.Builder(this).setTitle("Potwierdź wysłanie")
+                    .setMessage("Wiadomość zostanie wysłana do: $recipientName\\n\\nTemat: $topic\\n\\n$body\\n\\nWysłanie wiadomości nie oznacza jeszcze usprawiedliwienia nieobecności.")
+                    .setNegativeButton("WRÓĆ", null).setPositiveButton("WYŚLIJ", null).create()
+                confirmation.setOnShowListener {
+                    confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        confirmation.dismiss()
+                        sendJustificationMessage(recipientId, recipientName, topic, body)
+                    }
+                }
+                confirmation.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun sendJustificationMessage(
+        recipientId: String, recipientName: String, topic: String, body: String
+    ) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Wysyłam wiadomość do wychowawcy…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/message/send").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    put("recipient_ids", JSONArray().put(recipientId))
+                    put("topic", topic)
+                    put("text", body)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|\${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|\${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nie udało się potwierdzić wysyłki: \${result.substringAfter("|")}", false)
+                    AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
+                        .setMessage("Nie ponawiaj teraz wysyłania. Sprawdź folder Wysłane w Librusie.")
+                        .setPositiveButton("OK", null).show()
+                    return@runOnUiThread
+                }
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status in 200..299) {
+                    try {
+                        val json = JSONObject(responseBody)
+                        librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                        librusVault.updateSession(librusSessionMemory?.toString())
+                    } catch (_: Exception) { }
+                    setLibrusStatus("Wiadomość wysłana do $recipientName.", true)
+                    AlertDialog.Builder(this).setTitle("Wiadomość wysłana")
+                        .setMessage("Librus przyjął wiadomość do $recipientName. Nieobecność pozostaje nieusprawiedliwiona do czasu decyzji szkoły.")
+                        .setPositiveButton("OK", null).show()
+                } else {
+                    val detail = try {
+                        val raw = JSONObject(responseBody).opt("detail")
+                        if (raw is JSONObject) raw.optString("message", raw.toString())
+                        else raw?.toString() ?: "HTTP $status"
+                    } catch (_: Exception) { "HTTP $status" }
+                    setLibrusStatus(detail, false)
+                    AlertDialog.Builder(this)
+                        .setTitle(if (status == 502) "Sprawdź folder Wysłane" else "Nie wysłano wiadomości")
+                        .setMessage(detail).setPositiveButton("OK", null).show()
+                }
+            }
+        }
+    }
+
     // WIADOMOŚCI I OGŁOSZENIA
     // ---------------------------------------------------------
 
