@@ -53,6 +53,17 @@ async def protect_and_no_store(request: Request, call_next):
 def check_rate_limit(request: Request) -> None:
     ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
+
+    # Bound memory use when many distinct client IPs have contacted this
+    # single-process limiter over time.
+    if len(_hits) > 2048:
+        stale_ips = [
+            key for key, values in _hits.items()
+            if not values or now - values[-1] > _WINDOW
+        ]
+        for key in stale_ips:
+            _hits.pop(key, None)
+
     hits = _hits[ip]
 
     while hits and now - hits[0] > _WINDOW:
