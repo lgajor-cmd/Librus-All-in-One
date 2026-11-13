@@ -675,7 +675,7 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
 
                 val ok = result.startsWith("SUCCESS|")
                 setLibrusStatus(result.substringAfter("|"), ok)
@@ -779,7 +779,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
 
                 if (result == "SUCCESS") {
                     setLibrusStatus("Dane Librusa pobrane.", true)
@@ -2221,7 +2221,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nieznany wynik wysyłki e-Usprawiedliwienia.", false)
                     AlertDialog.Builder(this).setTitle("Sprawdź status zgłoszenia")
@@ -2387,7 +2387,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać wychowawcy: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -2546,7 +2546,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się potwierdzić wysyłki: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
@@ -3002,7 +3002,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać odbiorców: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -3184,7 +3184,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się potwierdzić wysyłki: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
@@ -3362,7 +3362,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("SUCCESS|")) {
                     setLibrusStatus("Pobrano pełną treść wiadomości.", true)
                     onRead?.invoke()
@@ -3454,7 +3454,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać załącznika: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -3527,7 +3527,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się pobrać załącznika: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
@@ -3655,7 +3655,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 syncInProgress = false
-                if (isFinishing) return@runOnUiThread
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
                     setLibrusStatus("Nie udało się potwierdzić wysyłki odpowiedzi: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
@@ -4715,7 +4715,7 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
-                if (!isFinishing && ::backendStatusText.isInitialized) {
+                if (!isFinishing && !isDestroyed && ::backendStatusText.isInitialized) {
                     val ok = result.startsWith("SUCCESS|")
                     backendStatusText.text = result.substringAfter("|")
                     backendStatusText.setTextColor(if (ok) successColor else errorColor)
