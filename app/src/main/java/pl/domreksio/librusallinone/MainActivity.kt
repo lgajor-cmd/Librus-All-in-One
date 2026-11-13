@@ -275,16 +275,44 @@ class MainActivity : Activity() {
             }
         }
 
-        content.addView(sectionHeader("POŁĄCZENIE Z BACKENDEM"), params(0, 20, 0, 5))
-
-        backendStatusText = label("Nie sprawdzono jeszcze połączenia.", 14f, muted)
-        content.addView(backendStatusText)
-
-        content.addView(actionButton("SPRAWDŹ POŁĄCZENIE Z SERWEREM") {
+        val connectionCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 16)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(29, 48, 73), Color.rgb(22, 33, 51))
+            ).apply {
+                cornerRadius = 20f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(58, 83, 119))
+            }
+        }
+        val connectionTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        connectionTop.addView(label("STATUS POŁĄCZENIA", 11f, Color.rgb(180, 205, 239), true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        val statusPill = TextView(this).apply {
+            text = if (savedLibrus != null) "● ZAPISANO" else "○ NIEPOŁĄCZONO"
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (savedLibrus != null) successColor else warningColor)
+            setPadding(10, 6, 10, 6)
+            background = roundedBackground(Color.rgb(39, 55, 73), 20)
+        }
+        connectionTop.addView(statusPill)
+        connectionCard.addView(connectionTop)
+        backendStatusText = label(
+            if (savedLibrus != null) "Dane logowania Librus są zapisane na tym urządzeniu." else "Połącz konto Librus, aby pobierać dane szkolne.",
+            13f, Color.rgb(205, 217, 235)
+        )
+        connectionCard.addView(backendStatusText, params(0, 8, 0, 0))
+        connectionCard.addView(actionButton("SPRAWDŹ SERWER") {
             checkBackendConnection()
-        }, params(0, 8, 0, 12))
+        }, params(0, 12, 0, 0))
+        content.addView(connectionCard, params(0, 2, 0, 14))
 
-        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 16, 0, 5))
+        content.addView(sectionHeader("KONTO LIBRUS"), params(0, 12, 0, 5))
         content.addView(
             label(
                 "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
@@ -327,8 +355,40 @@ class MainActivity : Activity() {
             params(0, 4, 0, 12)
         )
 
-        content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 8))
-        content.addView(label("Wszystkie najważniejsze informacje i narzędzia w jednym miejscu.", 13f, muted), params(0, 0, 0, 8))
+        content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 4))
+        content.addView(label("Wybierz moduł, aby przejść do danych z dziennika.", 13f, muted), params(0, 0, 0, 10))
+
+        val quickAccess = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun quickTile(title: String, caption: String, emoji: String, tint: Int, section: String) {
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(13, 14, 12, 14)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(tint, Color.rgb(25, 36, 55))
+                ).apply {
+                    cornerRadius = 18f * resources.displayMetrics.density
+                    setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(59, 78, 106))
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { loadLibrusSection(section) }
+            }
+            tile.addView(label(emoji, 22f, white, true))
+            tile.addView(label(title, 13f, white, true), params(0, 8, 0, 1))
+            tile.addView(label(caption, 10f, Color.rgb(187, 201, 222)))
+            quickAccess.addView(tile, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (quickAccess.childCount == 0) marginEnd = (6 * resources.displayMetrics.density).toInt()
+                else marginStart = (6 * resources.displayMetrics.density).toInt()
+            })
+        }
+        quickTile("Oceny", "Postępy ucznia", "✦", Color.rgb(40, 78, 126), "OCENY")
+        quickTile("Plan", "Lekcje i godziny", "▦", Color.rgb(47, 78, 100), "PLAN LEKCJI")
+        quickTile("Frekwencja", "Obecności", "◷", Color.rgb(67, 66, 112), "FREKWENCJA")
+        content.addView(quickAccess, params(0, 0, 0, 12))
 
         addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
