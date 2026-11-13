@@ -52,7 +52,8 @@ class AgendaCalendarParserTest {
     fun ignoresEventsWithoutValidDates() {
         val data = JSONObject().put("agenda", JSONArray()
             .put(JSONObject().put("title", "Bez daty"))
-            .put(JSONObject().put("date", "2026-99-99").put("title", "Błędna data")))
+            .put(JSONObject().put("date", "2026-99-99").put("title", "Błędna data"))
+            .put(JSONObject().put("date", "31.02.2026").put("title", "Niemożliwa data")))
 
         val result = AgendaCalendarParser.parse(data)
 
