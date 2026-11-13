@@ -217,8 +217,8 @@ class MainActivity : Activity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 28, 20, 28)
-            setBackgroundColor(bgColor)
+            setPadding(20, 24, 20, 30)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(15, 24, 42), bgColor, Color.rgb(10, 15, 26)))
         }
 
         val welcomeCard = LinearLayout(this).apply {
@@ -327,7 +327,8 @@ class MainActivity : Activity() {
             params(0, 4, 0, 12)
         )
 
-        content.addView(sectionHeader("DANE UCZNIA"), params(0, 14, 0, 8))
+        content.addView(sectionHeader("CENTRUM SZKOLNE"), params(0, 18, 0, 8))
+        content.addView(label("Wszystkie najważniejsze informacje i narzędzia w jednym miejscu.", 13f, muted), params(0, 0, 0, 8))
 
         addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
@@ -1671,7 +1672,10 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(17, 15, 16, 15)
             minimumHeight = (76 * resources.displayMetrics.density).toInt()
-            background = roundedBackground(panelLight, 18)
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(35, 49, 72), Color.rgb(25, 35, 53))).apply {
+                cornerRadius = 20f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(54, 72, 100))
+            }
             isClickable = true
             isFocusable = true
             foreground = android.util.TypedValue().let {
@@ -1687,7 +1691,7 @@ class MainActivity : Activity() {
             textSize = 23f
             gravity = Gravity.CENTER
             setTextColor(white)
-            background = roundedBackground(panel, 14)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accentColor, Color.rgb(66, 111, 190))).apply { cornerRadius = 15f * resources.displayMetrics.density }
             setPadding(8, 8, 8, 8)
         }
         card.addView(iconTile, LinearLayout.LayoutParams(48, 48))
@@ -1697,10 +1701,10 @@ class MainActivity : Activity() {
             setPadding(14, 0, 8, 0)
         }
         texts.addView(label(heading, 14f, white, true))
-        texts.addView(label(description, 12f, muted))
+        texts.addView(label(description, 12f, Color.rgb(174, 190, 213)))
 
         card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(label("›", 28f, accentColor, true))
+        card.addView(label("›", 28f, Color.rgb(145, 190, 255), true))
 
         card.setOnClickListener { loadLibrusSection(heading) }
         card.alpha = 0f
