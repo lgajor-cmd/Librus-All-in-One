@@ -458,6 +458,8 @@ async def submit_justification(
         session_data=_session_data(payload.session),
         cache_reference_data=True,
     ) as librus:
+        # Reverse-engineered Librus gateway write endpoint; librus-synergia 0.3.30
+        # exposes justification reads but not a high-level submission method.
         # Ensure the authenticated cookie session is ready before the write.
         try:
             await librus.me()
