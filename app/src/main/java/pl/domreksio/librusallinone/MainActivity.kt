@@ -408,8 +408,8 @@ class MainActivity : Activity() {
         addHomeSection(content, "UWAGI", "Uwagi pozytywne, neutralne i negatywne", "📝")
         addHomeSection(content, "SZCZĘŚLIWY NUMEREK", "Numer obowiązujący danego dnia", "🍀")
 
-        content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
-            showNotificationSettings()
+        content.addView(actionButton("USTAWIENIA APLIKACJI") {
+            showAppSettings()
         }, params(0, 12, 0, 8))
 
         content.addView(actionButton("WYLOGUJ") {
