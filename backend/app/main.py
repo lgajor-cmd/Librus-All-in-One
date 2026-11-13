@@ -274,8 +274,8 @@ async def session_check(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     return {
         "ok": True,
@@ -291,8 +291,8 @@ async def connect(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -366,8 +366,8 @@ async def get_message_recipients(
     if payload.profile != "parent":
         raise HTTPException(403, "Lista odbiorców wiadomości jest dostępna wyłącznie z konta rodzica.")
 
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -400,8 +400,8 @@ async def send_message(
     if payload.profile != "parent":
         raise HTTPException(403, "Wysyłanie wiadomości jest dostępne wyłącznie z konta rodzica.")
 
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -476,8 +476,8 @@ async def submit_justification(
     if not payload.message_from_parent.strip():
         raise HTTPException(422, "Wpisz powód nieobecności.")
 
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     async with Librus(
         payload.login,
@@ -604,8 +604,8 @@ async def download_homework_attachment(
     if payload.profile != "parent":
         raise HTTPException(403, "Pobieranie załączników zadań jest dostępne wyłącznie z konta rodzica.")
 
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -647,8 +647,8 @@ async def download_message_attachment(
     if payload.profile != "parent":
         raise HTTPException(403, "Pobieranie załączników jest dostępne wyłącznie z konta rodzica.")
 
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -695,8 +695,8 @@ async def reply_to_message(
     if payload.profile != "parent":
         raise HTTPException(403, "Odpowiadanie na wiadomości jest dostępne wyłącznie z konta rodzica.")
 
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -748,8 +748,8 @@ async def get_message(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
@@ -784,8 +784,8 @@ async def sync(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    user = await require_user(authorization)
     check_rate_limit(request)
+    user = await require_user(authorization)
 
     try:
         async with Librus(
