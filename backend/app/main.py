@@ -28,6 +28,7 @@ from librus_synergia import (
     LibrusCaptchaRequiredError,
     LibrusConnectionError,
     LibrusInvalidCredentialsError,
+    LibrusMessageSendError,
     LibrusSessionData,
 )
 
@@ -330,6 +331,118 @@ async def get_message(
 
     except HTTPException:
         raise
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
+
+class MailboxRequest(Credentials):
+    mailbox: str = Field(
+        default="inbox",
+        pattern="^(inbox|outbox|notes|alerts|substitutions|absences|justifications|trash|archive/inbox|archive/outbox)$"
+    )
+    limit: int = Field(default=30, ge=1, le=100)
+
+
+@app.post("/v1/messages")
+async def list_messages(
+    payload: MailboxRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = await require_user(authorization)
+    check_rate_limit(request)
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            messages = await librus.messages(payload.mailbox, limit=payload.limit)
+            state = asdict(librus.session_data)
+        return jsonable_encoder({
+            "ok": True, "user_id": user["id"], "mailbox": payload.mailbox,
+            "messages": [asdict(item) for item in messages], "session": state,
+        })
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
+@app.post("/v1/message-recipients")
+async def message_recipients(
+    payload: Credentials,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = await require_user(authorization)
+    check_rate_limit(request)
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            recipients = await librus.message_recipients()
+            state = asdict(librus.session_data)
+        return jsonable_encoder({
+            "ok": True, "user_id": user["id"],
+            "recipients": [asdict(item) for item in recipients], "session": state,
+        })
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
+class SendMessageRequest(Credentials):
+    recipients: list[str] = Field(min_length=1, max_length=50)
+    topic: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=20000)
+    reply_to: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+@app.post("/v1/message-send")
+async def send_message(
+    payload: SendMessageRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = await require_user(authorization)
+    check_rate_limit(request)
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            if payload.reply_to:
+                sent = await librus.send_message(
+                    payload.recipients, payload.topic, payload.content,
+                    reply_to=payload.reply_to,
+                )
+            else:
+                sent = await librus.send_message(
+                    payload.recipients, payload.topic, payload.content
+                )
+            state = asdict(librus.session_data)
+        return jsonable_encoder({
+            "ok": True, "user_id": user["id"], "sent": True,
+            "message": asdict(sent), "session": state,
+        })
+    except LibrusMessageSendError as error:
+        # Never retry a send: sent=None means the outcome is uncertain.
+        raise HTTPException(
+            409 if error.sent is False else 502,
+            {
+                "sent": error.sent,
+                "message": (
+                    "Wiadomość nie została wysłana."
+                    if error.sent is False else
+                    "Nie można potwierdzić wysyłki. Sprawdź folder Wysłane przed ponowieniem."
+                ),
+            },
+        ) from None
     except Exception as error:
         raise _safe_error(error) from None
 
