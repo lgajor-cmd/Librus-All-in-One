@@ -104,50 +104,96 @@ class LibrusNotificationWorker(
                 LibrusCredentialVault(applicationContext).updateSession(it.toString())
             }
 
-            detectNewItems(data, "grades", "OCENY", "Nowa ocena")
-            detectNewItems(data, "messages", "WIADOMOŚCI", "Nowa wiadomość")
-            detectNewItems(data, "notes", "UWAGI", "Nowa uwaga")
-            detectNewItems(data, "behaviour_notes", "UWAGI", "Nowa uwaga")
+            detectNewItems(
+                data,
+                listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades"),
+                "grades",
+                "OCENY",
+                "Nowa ocena"
+            )
+            detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość")
+            detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga")
+            detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga")
             Result.success()
         } catch (_: Exception) {
             Result.retry()
         }
     }
 
-    private fun detectNewItems(data: JSONObject, key: String, section: String, title: String) {
-        val array = data.optJSONArray(key) ?: return
-        val prefs = applicationContext.getSharedPreferences("librus_notification_state", Context.MODE_PRIVATE)
-        val current = linkedSetOf<String>()
-        val items = mutableListOf<JSONObject>()
-
-        for (i in 0 until array.length()) {
-            val item = array.optJSONObject(i) ?: continue
-            val id = item.opt("id")?.toString()?.takeIf { it.isNotBlank() && it != "null" }
-                ?: item.toString().hashCode().toString()
-            current.add(id)
-            items.add(item)
+    private fun detectNewItems(
+        data: JSONObject,
+        sourceKeys: List<String>,
+        notificationKey: String,
+        section: String,
+        title: String
+    ) {
+        val failedSections = data.optJSONArray("failed_sections")
+        val failed = mutableSetOf<String>()
+        if (failedSections != null) {
+            for (i in 0 until failedSections.length()) {
+                failed.add(failedSections.optString(i))
+            }
         }
 
-        val prefKey = "known_$key"
+        val availableKeys = sourceKeys.filter { key ->
+            data.optJSONArray(key) != null && key !in failed
+        }
+        // A missing/failed Librus section is not an empty section. Keep its
+        // previous IDs so a temporary API failure cannot trigger old alerts later.
+        if (availableKeys.isEmpty()) return
+
+        val prefs = applicationContext.getSharedPreferences(
+            "librus_notification_state",
+            Context.MODE_PRIVATE
+        )
+        val current = linkedSetOf<String>()
+        val items = mutableListOf<Pair<String, JSONObject>>()
+
+        for (sourceKey in availableKeys) {
+            val array = data.optJSONArray(sourceKey) ?: continue
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val id = item.opt("id")?.toString()?.takeIf {
+                    it.isNotBlank() && it != "null"
+                } ?: item.toString().hashCode().toString()
+                val identity = "$sourceKey:$id"
+                current.add(identity)
+                items.add(identity to item)
+            }
+        }
+
+        val prefKey = "known_$notificationKey"
+        val legacyPrefix = sourceKeys.first()
         val previousRaw = prefs.getString(prefKey, null)
-        val previous = previousRaw?.split("|")?.filter { it.isNotBlank() }?.toSet()
+        val previous = previousRaw?.split("|")
+            ?.filter { it.isNotBlank() }
+            ?.map { if (it.contains(":")) it else "$legacyPrefix:$it" }
+            ?.toSet()
+
         if (previous == null) {
             prefs.edit().putString(prefKey, current.joinToString("|")).apply()
             return
         }
 
+        val unavailableKeys = sourceKeys - availableKeys.toSet()
+        unavailableKeys.forEach { unavailableKey ->
+            previous.filterTo(current) { it.startsWith("$unavailableKey:") }
+        }
+
         val newIds = current - previous
-        if (newIds.isNotEmpty() && notificationsEnabled(key)) {
-            val newest = items.firstOrNull {
-                val id = it.opt("id")?.toString()?.takeIf { value -> value.isNotBlank() && value != "null" }
-                    ?: it.toString().hashCode().toString()
-                id in newIds
-            }
+        if (newIds.isNotEmpty() && notificationsEnabled(notificationKey)) {
+            val newest = items.firstOrNull { it.first in newIds }?.second
             val detail = newest?.let {
-                listOf("title", "subject", "topic", "value", "text")
-                    .firstNotNullOfOrNull { field -> it.optString(field).takeIf(String::isNotBlank) }
+                listOf("title", "subject", "topic", "value", "text", "skill")
+                    .firstNotNullOfOrNull { field ->
+                        it.optString(field).takeIf(String::isNotBlank)
+                    }
             }.orEmpty()
-            postNotification(title, if (detail.isBlank()) "Otwórz aplikację, aby zobaczyć szczegóły." else detail, section)
+            postNotification(
+                title,
+                if (detail.isBlank()) "Otwórz aplikację, aby zobaczyć szczegóły." else detail,
+                section
+            )
         }
         prefs.edit().putString(prefKey, current.joinToString("|")).apply()
     }
