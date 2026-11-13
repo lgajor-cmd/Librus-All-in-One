@@ -1290,9 +1290,21 @@ class MainActivity : Activity() {
 
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-            val sid = firstValue(item, "subject_id", "subject")
-            val subject = lookupName(subjects, sid)
-                .ifBlank { item.optString("subject_name").ifBlank { "Pozostałe" } }
+            // W zależności od wersji danych Librus zwraca przedmiot jako ID,
+            // tekst albo zagnieżdżony obiekt { id, name }. Obsłuż wszystkie
+            // warianty bez wyświetlania surowego JSON jako nazwy przedmiotu.
+            val subjectObject = item.optJSONObject("subject")
+            val sid = firstValue(item, "subject_id")
+                .ifBlank { subjectObject?.let { firstValue(it, "id", "subject_id") }.orEmpty() }
+            val subject = firstDisplayValue(item, "subject_name")
+                .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(subjects, sid) }
+                .ifBlank {
+                    val rawSubject = item.opt("subject")
+                    if (rawSubject is String) lookupName(subjects, rawSubject).ifBlank { rawSubject }
+                    else ""
+                }
+                .ifBlank { "Pozostałe" }
 
             grouped.getOrPut(subject) { mutableListOf() }.add(item)
         }
@@ -1340,9 +1352,17 @@ class MainActivity : Activity() {
                     "description", "skill_description", "comment",
                     "teacher_comment", "feedback", "note", "details"
                 )
+                val teacherObject = grade.optJSONObject("teacher")
                 val teacherId = firstValue(grade, "teacher_id")
-                val teacher = lookupName(teachers, teacherId)
-                    .ifBlank { firstDisplayValue(grade, "teacher_name", "teacher") }
+                    .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                val teacher = firstDisplayValue(grade, "teacher_name")
+                    .ifBlank { teacherObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                    .ifBlank { lookupName(teachers, teacherId) }
+                    .ifBlank {
+                        val rawTeacher = grade.opt("teacher")
+                        if (rawTeacher is String) lookupName(teachers, rawTeacher).ifBlank { rawTeacher }
+                        else ""
+                    }
 
                 val numericGrade = value.trim().matches(Regex("^[1-6][+-]?$"))
                 val valueColor = gradeColor(value)
