@@ -17,6 +17,8 @@ Jeśli sekrety nie są skonfigurowane, CI nadal uruchomi lint i testy oraz zbudu
 
 ## Ochrona klucza
 
+Odcisk SHA-256 certyfikatu przygotowanego klucza: `3F:CA:39:0F:45:0C:25:E6:11:89:EA:60:59:78:CE:48:60:A0:48:2A:7A:95:F7:48:40:6E:5E:D9:EE:04:6E:94`. Workflow sprawdza ten odcisk po zbudowaniu APK, aby wykryć przypadkowe użycie innego klucza.
+
 - Zachowaj kopię pliku JKS i haseł w bezpiecznym miejscu.
 - Nie wysyłaj klucza do repozytorium, issue ani pull requestów.
 - Nie generuj nowego klucza dla każdej wersji. Wszystkie przyszłe wydania muszą używać tego samego klucza.
