@@ -4140,14 +4140,26 @@ class MainActivity : Activity() {
         description: String,
         emoji: String
     ) {
+        val density = resources.displayMetrics.density
+        val palette = when (heading.uppercase(Locale("pl", "PL"))) {
+            "PLAN LEKCJI" -> intArrayOf(Color.rgb(29, 83, 112), Color.rgb(24, 43, 68))
+            "OCENY" -> intArrayOf(Color.rgb(48, 76, 130), Color.rgb(29, 43, 72))
+            "WIADOMOŚCI" -> intArrayOf(Color.rgb(83, 62, 112), Color.rgb(39, 39, 70))
+            "FREKWENCJA" -> intArrayOf(Color.rgb(42, 91, 91), Color.rgb(25, 51, 65))
+            "ZADANIA DOMOWE" -> intArrayOf(Color.rgb(105, 77, 48), Color.rgb(55, 44, 39))
+            "TERMINARZ" -> intArrayOf(Color.rgb(91, 67, 105), Color.rgb(44, 39, 67))
+            "UWAGI" -> intArrayOf(Color.rgb(105, 67, 68), Color.rgb(55, 39, 52))
+            "SZCZĘŚLIWY NUMEREK" -> intArrayOf(Color.rgb(67, 91, 57), Color.rgb(34, 52, 43))
+            else -> intArrayOf(Color.rgb(45, 70, 100), Color.rgb(25, 38, 59))
+        }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(17, 15, 16, 15)
-            minimumHeight = (76 * resources.displayMetrics.density).toInt()
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, surfaceGradient).apply {
-                cornerRadius = 20f * resources.displayMetrics.density
-                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(54, 72, 100))
+            setPadding((18 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+            minimumHeight = (104 * density).toInt()
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, palette).apply {
+                cornerRadius = 22f * density
+                setStroke((1 * density).toInt(), Color.argb(105, 145, 178, 216))
             }
             isClickable = true
             isFocusable = true
@@ -4156,33 +4168,54 @@ class MainActivity : Activity() {
                 theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
                 getDrawable(out.resourceId)
             }
-            elevation = 2f * resources.displayMetrics.density
+            elevation = 3f * density
+            clipToPadding = false
+            clipChildren = false
         }
-
-        val iconTile = TextView(this).apply {
-            text = emoji
-            textSize = 23f
-            gravity = Gravity.CENTER
-            setTextColor(white)
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(accentColor, Color.rgb(66, 111, 190))).apply { cornerRadius = 15f * resources.displayMetrics.density }
-            setPadding(8, 8, 8, 8)
-        }
-        card.addView(iconTile, LinearLayout.LayoutParams(48, 48))
 
         val texts = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(14, 0, 8, 0)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, (3 * density).toInt(), (8 * density).toInt(), (3 * density).toInt())
         }
-        texts.addView(label(heading, 14f, white, true))
-        texts.addView(label(description, 12f, Color.rgb(174, 190, 213)))
-
+        texts.addView(label(heading, 15f, white, true))
+        texts.addView(label(description, 12f, Color.rgb(205, 218, 237)).apply {
+            setLineSpacing(1f, 1.04f)
+            maxLines = 2
+        })
         card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(label("›", 28f, Color.rgb(145, 190, 255), true))
+
+        // Ilustracja ma własny, stały obszar — nie jest przycinana przez szerokość tekstu.
+        val illustration = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.argb(62, 255, 255, 255), Color.argb(20, 255, 255, 255))
+            ).apply {
+                shape = GradientDrawable.OVAL
+                setStroke((1 * density).toInt(), Color.argb(70, 220, 235, 255))
+            }
+            clipChildren = false
+            clipToPadding = false
+        }
+        val art = TextView(this).apply {
+            text = emoji
+            textSize = 43f
+            gravity = Gravity.CENTER
+            includeFontPadding = true
+            setShadowLayer(8f, 0f, 3f, Color.argb(85, 0, 0, 0))
+            contentDescription = "Grafika: $heading"
+        }
+        illustration.addView(art, FrameLayout.LayoutParams(
+            (76 * density).toInt(), (76 * density).toInt(), Gravity.CENTER
+        ))
+        card.addView(illustration, LinearLayout.LayoutParams(
+            (76 * density).toInt(), (76 * density).toInt()
+        ).apply { marginStart = (8 * density).toInt() })
 
         card.setOnClickListener { loadLibrusSection(heading) }
         card.alpha = 0f
-        card.translationY = 12f * resources.displayMetrics.density
-        parent.addView(card, params(0, 6, 0, 6))
+        card.translationY = 12f * density
+        parent.addView(card, params(0, 7, 0, 7))
         card.animate()
             .alpha(1f)
             .translationY(0f)
