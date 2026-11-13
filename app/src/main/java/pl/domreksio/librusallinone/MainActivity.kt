@@ -195,7 +195,15 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        pendingNotificationSection = intent.getStringExtra("open_librus_section")
+        val requestedSection = intent.getStringExtra("open_librus_section") ?: return
+        pendingNotificationSection = requestedSection
+
+        // A notification tap must navigate even when MainActivity is already alive.
+        // If credentials are still restoring, showHome() will consume the pending section.
+        if (!librusLoginMemory.isNullOrBlank() && !librusPasswordMemory.isNullOrBlank()) {
+            pendingNotificationSection = null
+            loadLibrusSection(requestedSection)
+        }
     }
 
     // ---------------------------------------------------------
@@ -812,7 +820,12 @@ class MainActivity : Activity() {
             return
         }
 
-        if (syncInProgress) return
+        if (syncInProgress) {
+            // Keep the latest requested destination instead of silently dropping
+            // navigation taps while a refresh is running.
+            pendingNotificationSection = section
+            return
+        }
 
         librusDataMemory?.let {
             showLibrusSection(section, it)
@@ -888,8 +901,11 @@ class MainActivity : Activity() {
 
                 if (result == "SUCCESS") {
                     setLibrusStatus("Dane Librusa pobrane.", true)
-                    librusDataMemory?.let { showLibrusSection(section, it) }
+                    val destination = pendingNotificationSection ?: section
+                    pendingNotificationSection = null
+                    librusDataMemory?.let { showLibrusSection(destination, it) }
                 } else {
+                    pendingNotificationSection = null
                     setLibrusStatus(result.substringAfter("|"), false)
                 }
             }
