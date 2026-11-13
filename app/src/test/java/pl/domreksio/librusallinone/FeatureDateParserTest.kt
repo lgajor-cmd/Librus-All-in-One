@@ -12,6 +12,14 @@ class FeatureDateParserTest {
     }
 
     @Test
+    fun strictIsoDateOnlyRejectsTrailingTextAndImpossibleDates() {
+        assertEquals(LocalDate.of(2026, 11, 13), FeatureDateParser.parseIsoDateOnly("2026-11-13"))
+        assertNull(FeatureDateParser.parseIsoDateOnly("2026-11-13abc"))
+        assertNull(FeatureDateParser.parseIsoDateOnly("2026-02-30"))
+        assertNull(FeatureDateParser.parseIsoDateOnly("13.11.2026"))
+    }
+
+    @Test
     fun parsesIsoTimestampWithZuluAndNoFractionalSeconds() {
         assertEquals(
             LocalDate.of(2026, 11, 13),

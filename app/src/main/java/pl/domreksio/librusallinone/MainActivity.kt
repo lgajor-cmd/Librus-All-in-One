@@ -1052,10 +1052,7 @@ class MainActivity : Activity() {
                     renderFeatureArray(root, data, listOf("homework", "homeworks"), "Zadania domowe")
                 }
             }
-            "TERMINARZ" -> {
-                renderAgendaCalendar(root, data)
-                renderFeatureArray(root, data, listOf("agenda", "events"), "Wydarzenia szkolne z Librusa")
-            }
+            "TERMINARZ" -> renderAgendaCalendar(root, data)
             "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
@@ -3035,9 +3032,9 @@ class MainActivity : Activity() {
             .setPositiveButton("Zapisz") { _, _ ->
                 val eventTitle = title.text.toString().trim()
                 val eventDate = date.text.toString().trim()
-                val valid = try {
-                    SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }.parse(eventDate) != null
-                } catch (_: Exception) { false }
+                // Wymagaj pełnej, poprawnej daty ISO; SimpleDateFormat.parse()
+                // potrafił zaakceptować poprawny prefiks z błędnym dopiskiem.
+                val valid = FeatureDateParser.parseIsoDateOnly(eventDate) != null
                 if (eventTitle.isBlank() || !valid) {
                     Toast.makeText(this, "Podaj nazwę i poprawną datę RRRR-MM-DD.", Toast.LENGTH_LONG).show()
                 } else {

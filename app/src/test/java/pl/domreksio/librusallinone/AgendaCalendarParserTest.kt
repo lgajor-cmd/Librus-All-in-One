@@ -61,6 +61,15 @@ class AgendaCalendarParserTest {
     }
 
     @Test
+    fun rejectsDateWithTrailingGarbage() {
+        val data = JSONObject().put("agenda", JSONArray().put(
+            JSONObject().put("date", "2026-11-13not-a-date").put("title", "Niepoprawny wpis")
+        ))
+
+        assertTrue(AgendaCalendarParser.parse(data).isEmpty())
+    }
+
+    @Test
     fun readsSingleEventObjectAndIsoTimestamp() {
         val data = JSONObject().put(
             "events",
