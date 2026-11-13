@@ -703,7 +703,14 @@ class MainActivity : Activity() {
             "OCENY" -> renderGradesSection(root, data, subjects, teachers)
             "FREKWENCJA" -> renderAttendanceSection(root, data)
             "WIADOMOŚCI" -> renderMessagesSection(root, data)
-            "ZADANIA DOMOWE" -> renderFeatureArray(root, data, listOf("homework", "homeworks"), "Zadania domowe")
+            "ZADANIA DOMOWE" -> {
+                val assignments = data.optJSONArray("homework_assignments")
+                if (assignments != null && assignments.length() > 0) {
+                    renderFeatureArray(root, data, listOf("homework_assignments"), "Zadania domowe")
+                } else {
+                    renderFeatureArray(root, data, listOf("homework", "homeworks"), "Zadania domowe")
+                }
+            }
             "TERMINARZ" -> renderFeatureArray(root, data, listOf("agenda", "events"), "Wydarzenia i terminy")
             "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
@@ -2073,6 +2080,111 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun saveAndOpenAttachment(attachment: JSONObject, fallbackFilename: String, prefix: String) {
+        val encoded = attachment.optString("content_base64")
+        if (encoded.isBlank()) throw IllegalStateException("Librus zwrócił pusty plik.")
+        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+        if (bytes.size > 20 * 1024 * 1024) {
+            throw IllegalStateException("Załącznik przekracza limit 20 MB.")
+        }
+        val serverName = attachment.optString("filename").ifBlank { fallbackFilename }
+        val safeOriginal = serverName.substringAfterLast('/').substringAfterLast('\\')
+            .replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
+            .ifBlank { "zalacznik" }
+        val safeName = "${prefix}_$safeOriginal".replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val directory = File(cacheDir, "attachments").apply { mkdirs() }
+        val file = File(directory, safeName)
+        file.writeBytes(bytes)
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val extension = safeName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        val mimeType = attachment.optString("content_type").takeIf { it.contains("/") }
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?: "*/*"
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            startActivity(Intent.createChooser(intent, "Otwórz załącznik"))
+            setLibrusStatus("Załącznik pobrany.", true)
+        } catch (_: Exception) {
+            AlertDialog.Builder(this).setTitle("Załącznik pobrany")
+                .setMessage("Plik zapisano w pamięci aplikacji, ale nie znaleziono aplikacji do jego otwarcia.")
+                .setPositiveButton("OK", null).show()
+            setLibrusStatus("Załącznik pobrany.", true)
+        }
+    }
+
+    private fun downloadHomeworkAttachment(attachmentId: String, filename: String) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Pobieram załącznik zadania…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/homework/attachment").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 120000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    put("attachment_id", attachmentId)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nie udało się pobrać załącznika: ${result.substringAfter("|")}", false)
+                    return@runOnUiThread
+                }
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status !in 200..299) {
+                    val detail = errorDetail(responseBody, "HTTP $status")
+                    setLibrusStatus(detail, false)
+                    AlertDialog.Builder(this).setTitle("Nie udało się pobrać załącznika")
+                        .setMessage(detail).setPositiveButton("OK", null).show()
+                    return@runOnUiThread
+                }
+                try {
+                    val json = JSONObject(responseBody)
+                    librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                    librusVault.updateSession(librusSessionMemory?.toString())
+                    val attachment = json.optJSONObject("attachment")
+                        ?: throw IllegalStateException("Brak danych załącznika.")
+                    saveAndOpenAttachment(attachment, filename, "homework_$attachmentId")
+                } catch (e: Exception) {
+                    setLibrusStatus("Błąd zapisu załącznika: ${e.message}", false)
+                    AlertDialog.Builder(this).setTitle("Błąd załącznika")
+                        .setMessage(e.message ?: "Nie udało się otworzyć pliku.")
+                        .setPositiveButton("OK", null).show()
+                }
+            }
+        }
+    }
+
     private fun downloadMessageAttachment(messageId: String, attachmentId: String, filename: String) {
         val login = librusLoginMemory
         val password = librusPasswordMemory
@@ -2135,37 +2247,11 @@ class MainActivity : Activity() {
                     librusVault.updateSession(librusSessionMemory?.toString())
                     val attachment = json.optJSONObject("attachment")
                         ?: throw IllegalStateException("Brak danych załącznika.")
-                    val encoded = attachment.optString("content_base64")
-                    if (encoded.isBlank()) throw IllegalStateException("Librus zwrócił pusty plik.")
-                    val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                    if (bytes.size > 20 * 1024 * 1024) {
-                        throw IllegalStateException("Załącznik przekracza limit 20 MB.")
-                    }
-                    val serverName = attachment.optString("filename").ifBlank { filename }
-                    val safeOriginal = serverName.substringAfterLast('/').substringAfterLast('\\')
-                        .replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
-                        .ifBlank { "zalacznik" }
-                    val safeName = "${messageId}_${attachmentId}_$safeOriginal"
-                        .replace(Regex("[^A-Za-z0-9._-]"), "_")
-                    val directory = File(cacheDir, "attachments").apply { mkdirs() }
-                    val file = File(directory, safeName)
-                    file.writeBytes(bytes)
-                    val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-                    val extension = safeName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                    val mimeType = attachment.optString("content_type").takeIf { it.contains("/") }
-                        ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                        ?: "*/*"
-                    val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    try {
-                        startActivity(Intent.createChooser(intent, "Otwórz załącznik"))
-                        setLibrusStatus("Załącznik pobrany.", true)
-                    } catch (_: Exception) {
-                        AlertDialog.Builder(this).setTitle("Załącznik pobrany")
-                            .setMessage("Plik zapisano w pamięci aplikacji, ale nie znaleziono aplikacji do jego otwarcia.")
-                            .setPositiveButton("OK", null).show()
-                        setLibrusStatus("Załącznik pobrany.", true)
-                    }
+                    saveAndOpenAttachment(
+                        attachment,
+                        filename,
+                        "message_${messageId}_${attachmentId}"
+                    )
                 } catch (e: Exception) {
                     setLibrusStatus("Błąd zapisu załącznika: ${e.message}", false)
                     AlertDialog.Builder(this).setTitle("Błąd załącznika")
@@ -2507,7 +2593,7 @@ class MainActivity : Activity() {
             val teacherId = firstValue(item, "teacher_id")
             val teacher = lookupName(data.optJSONObject("teachers"), teacherId)
                 .ifBlank { item.optString("teacher_name") }
-            val body = firstValue(item, "description", "content", "body", "details", "comment")
+            val body = firstValue(item, "description", "content", "body", "details", "comment", "text")
             val state = firstValue(item, "status", "state", "completion_status", "is_done")
             val dueState = featureDueState(date, now)
 
@@ -2532,6 +2618,24 @@ class MainActivity : Activity() {
             if (subject.isNotBlank()) itemCard.addView(label("Przedmiot: $subject", 12f, muted))
             if (teacher.isNotBlank()) itemCard.addView(label("Nauczyciel: $teacher", 12f, muted))
             if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
+            if (heading == "Zadania domowe") {
+                val attachments = item.optJSONArray("attachments")
+                if (attachments != null && attachments.length() > 0) {
+                    itemCard.addView(sectionHeader("ZAŁĄCZNIKI"), params(0, 8, 0, 4))
+                    for (attachmentIndex in 0 until attachments.length()) {
+                        val attachment = attachments.optJSONObject(attachmentIndex) ?: continue
+                        val attachmentId = firstValue(attachment, "id")
+                        val filename = firstValue(attachment, "filename").ifBlank {
+                            "Załącznik ${attachmentIndex + 1}"
+                        }
+                        if (attachmentId.isNotBlank()) {
+                            itemCard.addView(actionButton("POBIERZ • $filename") {
+                                downloadHomeworkAttachment(attachmentId, filename)
+                            }, params(0, 0, 0, 6))
+                        }
+                    }
+                }
+            }
             parent.addView(itemCard, params(0, 0, 0, 8))
         }
     }
