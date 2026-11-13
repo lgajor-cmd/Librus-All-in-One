@@ -1775,7 +1775,7 @@ class MainActivity : Activity() {
                     } else {
                         librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
                         librusVault.updateSession(librusSessionMemory?.toString())
-                        "SUCCESS|$fullBody"
+                        "SUCCESS|${message?.toString().orEmpty()}"
                     }
                 } else {
                     "ERROR|Nie udało się pobrać wiadomości ($code): ${errorDetail(responseBody, "HTTP $code")}"
@@ -1792,9 +1792,140 @@ class MainActivity : Activity() {
                 if (result.startsWith("SUCCESS|")) {
                     setLibrusStatus("Pobrano pełną treść wiadomości.", true)
                     onRead?.invoke()
-                    showMessageDetails(title, sender, date, result.substringAfter("|"))
+                    val messageJson = JSONObject(result.substringAfter("|"))
+                    val fullBody = firstValue(messageJson, "content", "message", "body", "text")
+                    val mailbox = firstValue(messageJson, "mailbox").ifBlank { "inbox" }
+                    val noReply = messageJson.optBoolean("no_reply", false)
+                    showMessageDetails(title, sender, date, fullBody, messageId, mailbox, noReply)
                 } else {
                     setLibrusStatus(result.substringAfter("|"), false)
+                }
+            }
+        }
+    }
+
+    private fun showReplyComposer(messageId: String, mailbox: String, title: String, sender: String) {
+        val density = resources.displayMetrics.density
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (8 * density).toInt(),
+                (18 * density).toInt(), (12 * density).toInt())
+        }
+        form.addView(label("Do: $sender", 13f, muted, true))
+        form.addView(label("Wątek: $title", 12f, accentColor))
+        val bodyInput = EditText(this).apply {
+            hint = "Treść odpowiedzi"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 5
+            maxLines = 9
+            gravity = Gravity.TOP or Gravity.START
+            setText("Dzień dobry,\n\n")
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding((14 * density).toInt(), (12 * density).toInt(),
+                (14 * density).toInt(), (12 * density).toInt())
+            background = roundedBackground(panel, 10)
+        }
+        form.addView(bodyInput, params(0, 8, 0, 0))
+        val dialog = AlertDialog.Builder(this).setTitle("Odpowiedz na wiadomość")
+            .setView(ScrollView(this).apply { addView(form) })
+            .setNegativeButton("ANULUJ", null).setPositiveButton("DALEJ", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val body = bodyInput.text.toString().trim()
+                if (body.isBlank() || body == "Dzień dobry,") {
+                    bodyInput.error = "Wpisz treść odpowiedzi."
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                val confirmation = AlertDialog.Builder(this).setTitle("Potwierdź odpowiedź")
+                    .setMessage("Odpowiedź zostanie wysłana do: $sender\n\nWątek: $title\n\n$body")
+                    .setNegativeButton("WRÓĆ", null).setPositiveButton("WYŚLIJ", null).create()
+                confirmation.setOnShowListener {
+                    confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        confirmation.dismiss()
+                        sendMessageReply(messageId, mailbox, sender, body)
+                    }
+                }
+                confirmation.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun sendMessageReply(messageId: String, mailbox: String, sender: String, body: String) {
+        val login = librusLoginMemory
+        val password = librusPasswordMemory
+        val token = supabase.auth.currentAccessTokenOrNull()
+        if (login.isNullOrBlank() || password.isNullOrBlank() || token.isNullOrBlank()) {
+            setLibrusStatus("Brak aktywnej sesji. Zaloguj się ponownie.", false)
+            return
+        }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Wysyłam odpowiedź…", null)
+
+        thread {
+            var connection: HttpURLConnection? = null
+            val result = try {
+                connection = URL("$BACKEND_URL/v1/message/reply").openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.connectTimeout = 30000
+                connection.readTimeout = 90000
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Accept", "application/json")
+                val payload = JSONObject().apply {
+                    put("profile", "parent")
+                    put("login", login)
+                    put("password", password)
+                    put("message_id", messageId)
+                    put("mailbox", mailbox)
+                    put("text", body)
+                    librusSessionMemory?.let { put("session", it) }
+                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                "$status|${readResponse(connection, status)}"
+            } catch (e: Exception) {
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                connection?.disconnect()
+            }
+
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (result.startsWith("ERROR|")) {
+                    setLibrusStatus("Nie udało się potwierdzić wysyłki odpowiedzi: ${result.substringAfter("|")}", false)
+                    AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
+                        .setMessage("Nie ponawiaj teraz odpowiedzi. Sprawdź folder Wysłane w Librusie.")
+                        .setPositiveButton("OK", null).show()
+                    return@runOnUiThread
+                }
+                val status = result.substringBefore("|").toIntOrNull() ?: 0
+                val responseBody = result.substringAfter("|")
+                if (status in 200..299) {
+                    try {
+                        val json = JSONObject(responseBody)
+                        librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
+                        librusVault.updateSession(librusSessionMemory?.toString())
+                    } catch (_: Exception) { }
+                    setLibrusStatus("Odpowiedź wysłana do $sender.", true)
+                    AlertDialog.Builder(this).setTitle("Odpowiedź wysłana")
+                        .setMessage("Librus przyjął odpowiedź w istniejącym wątku.")
+                        .setPositiveButton("OK", null).show()
+                } else {
+                    val detail = try {
+                        val raw = JSONObject(responseBody).opt("detail")
+                        if (raw is JSONObject) raw.optString("message", raw.toString())
+                        else raw?.toString() ?: "HTTP $status"
+                    } catch (_: Exception) { "HTTP $status" }
+                    setLibrusStatus(detail, false)
+                    AlertDialog.Builder(this).setTitle(if (status == 502) "Sprawdź folder Wysłane" else "Nie wysłano odpowiedzi")
+                        .setMessage(detail).setPositiveButton("OK", null).show()
                 }
             }
         }
@@ -1804,7 +1935,10 @@ class MainActivity : Activity() {
         title: String,
         sender: String,
         date: String,
-        body: String
+        body: String,
+        messageId: String = "",
+        mailbox: String = "inbox",
+        noReply: Boolean = true
     ) {
         val density = resources.displayMetrics.density
         val content = LinearLayout(this).apply {
@@ -1858,11 +1992,21 @@ class MainActivity : Activity() {
             addView(content)
         }
 
-        val dialog = AlertDialog.Builder(this)
+        val dialogBuilder = AlertDialog.Builder(this)
             .setTitle(title.ifBlank { "Wiadomość" })
             .setView(scrollView)
-            .setPositiveButton("ZAMKNIJ", null)
-            .create()
+        if (messageId.isNotBlank() && !noReply) {
+            dialogBuilder.setNeutralButton("ODPOWIEDZ", null)
+        }
+        val dialog = dialogBuilder.setPositiveButton("ZAMKNIJ", null).create()
+        dialog.setOnShowListener {
+            if (messageId.isNotBlank() && !noReply) {
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    dialog.dismiss()
+                    showReplyComposer(messageId, mailbox, title, sender)
+                }
+            }
+        }
 
         dialog.show()
         dialog.window?.setBackgroundDrawable(roundedBackground(bgColor, 16))
