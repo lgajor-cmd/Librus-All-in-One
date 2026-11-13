@@ -1458,8 +1458,8 @@ class MainActivity : Activity() {
                                 val endMinute = minuteOf(activeLesson.to) ?: correctedMinute
                                 val remaining = (endMinute - correctedMinute).coerceAtLeast(0)
                                 stateKey = "lesson-${activeLesson.number}"
-                                liveStatus.text = "TERAZ: ${activeLesson.subject}"
-                                liveDetail.text = "Lekcja ${activeLesson.number} • ${activeLesson.from}–${activeLesson.to} • koniec za ${remaining} min"
+                                liveStatus.text = getString(R.string.timetable_now, activeLesson.subject)
+                                liveDetail.text = getString(R.string.timetable_lesson_detail, activeLesson.number, activeLesson.from, activeLesson.to, remaining)
                                 val startMinute = minuteOf(activeLesson.from) ?: correctedMinute
                                 val duration = (endMinute - startMinute).coerceAtLeast(1)
                                 liveProgress.progress = (((correctedMinute - startMinute).toFloat() / duration) * 100).toInt().coerceIn(0, 100)
@@ -1469,8 +1469,8 @@ class MainActivity : Activity() {
                                 val endMinute = minuteOf(previousLesson.to) ?: correctedMinute
                                 val remaining = (startMinute - correctedMinute).coerceAtLeast(0)
                                 stateKey = "break-${nextLesson.number}"
-                                liveStatus.text = "PRZERWA"
-                                liveDetail.text = "Do lekcji ${nextLesson.number} (${nextLesson.subject}) zostało ${remaining} min"
+                                liveStatus.text = getString(R.string.timetable_break)
+                                liveDetail.text = getString(R.string.timetable_next_lesson, nextLesson.number, nextLesson.subject, remaining)
                                 liveProgress.progress = if (startMinute > endMinute)
                                     (((correctedMinute - endMinute).toFloat() / (startMinute - endMinute)) * 100).toInt().coerceIn(0, 100)
                                 else 0
@@ -1478,14 +1478,14 @@ class MainActivity : Activity() {
                             nextLesson != null -> {
                                 val startMinute = minuteOf(nextLesson.from) ?: correctedMinute
                                 stateKey = "before"
-                                liveStatus.text = "PRZED LEKCJAMI"
-                                liveDetail.text = "Pierwsza lekcja: ${nextLesson.subject} o ${nextLesson.from} • za ${(startMinute - correctedMinute).coerceAtLeast(0)} min"
+                                liveStatus.text = getString(R.string.timetable_before_lessons)
+                                liveDetail.text = getString(R.string.timetable_first_lesson, nextLesson.subject, nextLesson.from, (startMinute - correctedMinute).coerceAtLeast(0))
                                 liveProgress.progress = 0
                             }
                             else -> {
                                 stateKey = "after"
-                                liveStatus.text = "KONIEC LEKCJI NA DZIŚ"
-                                liveDetail.text = "Plan na dziś został zrealizowany."
+                                liveStatus.text = getString(R.string.timetable_day_complete)
+                                liveDetail.text = getString(R.string.timetable_done)
                                 liveProgress.progress = 100
                             }
                         }
@@ -1724,13 +1724,16 @@ class MainActivity : Activity() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val value = proposed.text.toString().toIntOrNull()
                 if (value == null || value !in 1..6) {
-                    result.text = "Wpisz ocenę całkowitą od 1 do 6."
+                    result.text = getString(R.string.grade_input_error)
                     result.setTextColor(errorColor)
                 } else {
                     val projected = (currentGrades.sum() + value).toDouble() / (currentGrades.size + 1)
-                    result.text = "Po dodaniu oceny $value średnia wyniosłaby " +
-                        String.format(Locale("pl", "PL"), "%.2f", projected) +
-                        " (z " + (currentGrades.size + 1) + " ocen)."
+                    result.text = getString(
+                        R.string.grade_average_result,
+                        value,
+                        String.format(Locale("pl", "PL"), "%.2f", projected),
+                        currentGrades.size + 1
+                    )
                     result.setTextColor(successColor)
                 }
             }
@@ -3443,7 +3446,7 @@ class MainActivity : Activity() {
                     card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
                         fetchFullMessage(messageId, title, sender, date) {
                             item.put("read_date", "read")
-                            readChip.text = "PRZECZYTANA"
+                            readChip.text = getString(R.string.message_read)
                             readChip.setTextColor(successColor)
                         }
                     })
@@ -4688,7 +4691,7 @@ class MainActivity : Activity() {
                 val completed = completedKeys()
                 val done = sorted.count { localKey(it) in completed }
                 val open = sorted.size - done
-                summaryText.text = "Wszystkie: ${sorted.size}  •  Do zrobienia: $open  •  Wykonane: $done"
+                summaryText.text = getString(R.string.homework_summary, sorted.size, open, done)
                 progress.text = if (sorted.isEmpty()) "0%" else "${(done * 100) / sorted.size}%"
                 filters.removeAllViews()
                 val choices = listOf("all" to "WSZYSTKIE", "open" to "DO ZROBIENIA", "done" to "WYKONANE")
@@ -4992,13 +4995,13 @@ class MainActivity : Activity() {
     private fun checkBackendConnection() {
         if (!::backendStatusText.isInitialized) return
 
-        backendStatusText.text = "Sprawdzam sesję Supabase i połączenie z serwerem…"
+        backendStatusText.text = getString(R.string.backend_checking_session)
         backendStatusText.setTextColor(muted)
 
         val accessToken = supabase.auth.currentAccessTokenOrNull()
 
         if (accessToken.isNullOrBlank()) {
-            backendStatusText.text = "Brak aktywnego tokenu. Zaloguj się ponownie."
+            backendStatusText.text = getString(R.string.backend_no_active_token)
             backendStatusText.setTextColor(errorColor)
             return
         }
@@ -5706,7 +5709,7 @@ class MainActivity : Activity() {
         val current = readLocalArray("shopping_items")
         val scoped = (0 until current.length()).mapNotNull { current.optJSONObject(it) }.filter { it.optString("listId") == activeId }
         val remaining = scoped.count { !it.optBoolean("done", false) }
-        summary.text = remaining.toString() + " do kupienia • " + (scoped.size - remaining) + " kupione • " + scoped.size + " produktów"
+        summary.text = getString(R.string.shopping_summary, remaining, scoped.size - remaining, scoped.size)
         val visible = scoped.filter { categoryFilter == "Wszystkie" || it.optString("category", "Pozostałe") == categoryFilter }
         if (visible.isEmpty()) {
             list.addView(infoCard(if (scoped.isEmpty()) "Ta lista jest pusta. Dodaj pierwszy produkt." else "Brak produktów w kategorii: " + categoryFilter))
@@ -5828,7 +5831,7 @@ class MainActivity : Activity() {
             AlertDialog.Builder(this).setTitle("Kategoria")
                 .setSingleChoiceItems(categoryNames, categoryNames.indexOf(category).coerceAtLeast(0)) { dialog, which ->
                     category = categoryNames[which]
-                    categoryButton.text = "Kategoria: " + category
+                    categoryButton.text = getString(R.string.shopping_category, category)
                     dialog.dismiss()
                 }.show()
         }
