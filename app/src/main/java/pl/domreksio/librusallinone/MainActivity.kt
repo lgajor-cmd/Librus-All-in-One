@@ -1272,8 +1272,149 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun renderMessagesSection(parent: LinearLayout, data: JSONObject) {
-        renderMessageArray(parent, data.optJSONArray("messages"), "Wiadomości")
+        parent.addView(label("KORESPONDENCJA", 12f, muted, true))
+        parent.addView(label("Skrzynka Librusa • odbieranie i wysyłanie wiadomości", 14f, white), params(0, 0, 0, 12))
+        val mailboxRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun mailboxButton(title: String, mailbox: String) {
+            mailboxRow.addView(actionButton(title) { loadMailbox(mailbox) },
+                LinearLayout.LayoutParams(0, -2, 1f).apply {
+                    marginEnd = (5 * resources.displayMetrics.density).toInt()
+                })
+        }
+        mailboxButton("ODEBRANE", "inbox")
+        mailboxButton("WYSŁANE", "outbox")
+        mailboxButton("ARCHIWUM", "archive/inbox")
+        parent.addView(mailboxRow, params(0, 0, 0, 8))
+        parent.addView(actionButton("✉  NAPISZ WIADOMOŚĆ") { showComposeMessage() }, params(0, 0, 0, 14))
+        renderMessageArray(parent, data.optJSONArray("messages"), "Ostatnie wiadomości")
         renderMessageArray(parent, data.optJSONArray("announcements"), "Ogłoszenia")
+    }
+
+    private fun librusPayload(): JSONObject? {
+        val login = librusLoginMemory ?: return null
+        val password = librusPasswordMemory ?: return null
+        val token = supabase.auth.currentAccessTokenOrNull() ?: return null
+        return JSONObject().apply {
+            put("profile", "parent")
+            put("login", login)
+            put("password", password)
+            librusSessionMemory?.let { put("session", it) }
+        }
+    }
+
+    private fun postLibrus(path: String, payload: JSONObject): JSONObject {
+        val token = supabase.auth.currentAccessTokenOrNull()
+            ?: throw IllegalStateException("Sesja aplikacji wygasła. Zaloguj się ponownie.")
+        val connection = URL("$BACKEND_URL$path").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 30000
+            connection.readTimeout = 90000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val body = readResponse(connection, code)
+            if (code !in 200..299) throw IllegalStateException("HTTP $code: ${errorDetail(body, "Błąd Librusa")}")
+            return JSONObject(body)
+        } finally { connection.disconnect() }
+    }
+
+    private fun loadMailbox(mailbox: String) {
+        val payload = librusPayload()
+        if (payload == null) { setLibrusStatus("Połącz konto Librus i zaloguj się ponownie.", false); return }
+        if (syncInProgress) return
+        syncInProgress = true
+        setLibrusStatus("Pobieram skrzynkę…", null)
+        thread {
+            val result = try {
+                val request = JSONObject(payload.toString()).apply { put("mailbox", mailbox); put("limit", 50) }
+                val response = postLibrus("/v1/messages", request)
+                librusSessionMemory = response.optJSONObject("session") ?: librusSessionMemory
+                librusVault.updateSession(librusSessionMemory?.toString())
+                "OK|" + response.optJSONArray("messages").toString()
+            } catch (e: Exception) { "ERR|${e.message ?: "Błąd pobierania skrzynki"}" }
+            runOnUiThread {
+                syncInProgress = false
+                if (isFinishing) return@runOnUiThread
+                if (!result.startsWith("OK|")) { setLibrusStatus(result.substringAfter("|"), false); return@runOnUiThread }
+                val messages = JSONArray(result.substringAfter("|"))
+                val screen = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 22, 20, 28); setBackgroundColor(bgColor) }
+                screen.addView(sectionHeader(when(mailbox) { "outbox" -> "WYSŁANE"; "archive/inbox" -> "ARCHIWUM"; else -> "ODEBRANE" }))
+                screen.addView(actionButton("＋  NAPISZ WIADOMOŚĆ") { showComposeMessage() }, params(0, 8, 0, 12))
+                renderMessageArray(screen, messages, "Wiadomości")
+                installNavigationDrawer(ScrollView(this).apply { addView(screen) }, "WIADOMOŚCI")
+                setLibrusStatus("Pobrano wiadomości: ${messages.length()}.", true)
+            }
+        }
+    }
+
+    private fun showComposeMessage() {
+        val payload = librusPayload()
+        if (payload == null) { setLibrusStatus("Połącz konto Librus i zaloguj się ponownie.", false); return }
+        val recipients = mutableListOf<Pair<String, String>>()
+        val recipientInput = EditText(this).apply { hint = "Wybierz odbiorcę"; setTextColor(white); setHintTextColor(muted) }
+        val topicInput = EditText(this).apply { hint = "Temat wiadomości"; setTextColor(white); setHintTextColor(muted) }
+        val bodyInput = EditText(this).apply { hint = "Treść wiadomości"; setTextColor(white); setHintTextColor(muted); minLines = 5; gravity = Gravity.TOP; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE }
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 12, 20, 8); addView(recipientInput); addView(topicInput); addView(bodyInput) }
+        val dialog = AlertDialog.Builder(this).setTitle("Nowa wiadomość").setView(ScrollView(this).apply { addView(layout) })
+            .setNegativeButton("ANULUJ", null)
+            .setNeutralButton("WYBIERZ ODBIORCĘ", null)
+            .setPositiveButton("WYŚLIJ", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                if (syncInProgress) return@setOnClickListener
+                syncInProgress = true
+                thread {
+                    val result = try {
+                        val response = postLibrus("/v1/message-recipients", payload)
+                        val array = response.optJSONArray("recipients") ?: JSONArray()
+                        val names = mutableListOf<String>()
+                        recipients.clear()
+                        for (i in 0 until array.length()) {
+                            val item = array.optJSONObject(i) ?: continue
+                            val id = firstValue(item, "id", "recipient_id", "user_id")
+                            val name = firstValue(item, "name", "display_name", "full_name", "label")
+                            if (id.isNotBlank() && name.isNotBlank()) { recipients.add(id to name); names.add(name) }
+                        }
+                        names
+                    } catch (e: Exception) { emptyList<String>() }
+                    runOnUiThread {
+                        syncInProgress = false
+                        if (result.isEmpty()) { setLibrusStatus("Nie udało się pobrać listy odbiorców.", false); return@runOnUiThread }
+                        AlertDialog.Builder(this).setTitle("Odbiorca").setItems(result.toTypedArray()) { _, which ->
+                            recipientInput.setText(recipients[which].second)
+                            recipientInput.tag = recipients[which].first
+                        }.setNegativeButton("ANULUJ", null).show()
+                    }
+                }
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val recipientId = recipientInput.tag?.toString().orEmpty()
+                val topic = topicInput.text.toString().trim()
+                val body = bodyInput.text.toString().trim()
+                if (recipientId.isBlank() || topic.isBlank() || body.isBlank()) {
+                    setLibrusStatus("Wybierz odbiorcę i uzupełnij temat oraz treść.", false); return@setOnClickListener
+                }
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
+                thread {
+                    val result = try {
+                        val request = JSONObject(payload.toString()).apply {
+                            put("recipients", JSONArray().put(recipientId)); put("topic", topic); put("content", body)
+                        }
+                        postLibrus("/v1/message-send", request)
+                        "OK|Wiadomość została wysłana."
+                    } catch (e: Exception) { "ERR|${e.message ?: "Nie udało się potwierdzić wysyłki"}" }
+                    runOnUiThread {
+                        if (result.startsWith("OK|")) { dialog.dismiss(); setLibrusStatus(result.substringAfter("|"), true); loadMailbox("outbox") }
+                        else { dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true; setLibrusStatus(result.substringAfter("|"), false) }
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun renderMessageArray(
