@@ -4628,91 +4628,210 @@ class MainActivity : Activity() {
 
     private fun showShoppingList() {
         stopTimetableTicker()
-        val items = readLocalArray("shopping_items")
+        val lists = readLocalArray("shopping_lists")
+        if (lists.length() == 0) {
+            lists.put(JSONObject().put("id", "default").put("name", "Zakupy"))
+            saveLocalArray("shopping_lists", lists)
+        }
+        val allItems = readLocalArray("shopping_items")
+        val defaultListId = lists.optJSONObject(0)?.optString("id", "default") ?: "default"
+        for (i in 0 until allItems.length()) {
+            val item = allItems.optJSONObject(i) ?: continue
+            if (item.optString("listId").isBlank()) item.put("listId", defaultListId)
+            if (item.optString("category").isBlank()) item.put("category", "Pozostałe")
+            if (item.optString("quantity").isBlank()) item.put("quantity", "1")
+        }
+        saveLocalArray("shopping_items", allItems)
+        val activeListId = uiPrefs.getString("active_shopping_list", defaultListId) ?: defaultListId
+        val activeList = (0 until lists.length()).mapNotNull { lists.optJSONObject(it) }
+            .firstOrNull { it.optString("id") == activeListId } ?: lists.optJSONObject(0)!!
+        val activeId = activeList.optString("id", defaultListId)
+        val categories = listOf("Wszystkie", "Warzywa i owoce", "Nabiał", "Pieczywo", "Mięso i ryby", "Napoje", "Chemia", "Pozostałe")
+        var categoryFilter = "Wszystkie"
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 16, 18, 22)
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
         }
         root.addView(label("LISTA ZAKUPÓW", 11f, Color.rgb(180, 205, 239), true))
-        val remaining = (0 until items.length()).count { !items.optJSONObject(it).optBoolean("done", false) }
-        root.addView(label("$remaining produktów do kupienia", 13f, muted), params(0, 5, 0, 14))
-        root.addView(actionButton("+  DODAJ PRODUKT") { addShoppingItem() }, params(0, 0, 0, 10))
-        root.addView(actionButton("USUŃ KUPIONE") {
-            val kept = JSONArray()
-            for (i in 0 until items.length()) {
-                val item = items.optJSONObject(i) ?: continue
-                if (!item.optBoolean("done", false)) kept.put(item)
-            }
-            saveLocalArray("shopping_items", kept)
-            showShoppingList()
-        }, params(0, 0, 0, 12))
-        if (items.length() == 0) {
-            root.addView(infoCard("Lista jest pusta. Dodaj produkty, które chcesz kupić."))
-        } else {
-            for (i in 0 until items.length()) {
-                val item = items.optJSONObject(i) ?: continue
-                val id = item.optString("id")
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(12, 8, 12, 8)
-                    background = roundedBackground(Color.rgb(29, 41, 59), 14)
-                }
-                val check = CheckBox(this).apply {
-                    text = item.optString("name", "")
-                    isChecked = item.optBoolean("done", false)
-                    setTextColor(if (isChecked) muted else white)
-                    textSize = 15f
-                    setOnCheckedChangeListener { _, checked ->
-                        val fresh = readLocalArray("shopping_items")
-                        for (j in 0 until fresh.length()) {
-                            val candidate = fresh.optJSONObject(j) ?: continue
-                            if (candidate.optString("id") == id) candidate.put("done", checked)
-                        }
-                        saveLocalArray("shopping_items", fresh)
-                        showShoppingList()
-                    }
-                }
-                row.addView(check, LinearLayout.LayoutParams(0, -2, 1f))
-                row.setOnLongClickListener {
-                    AlertDialog.Builder(this@MainActivity).setTitle("Usuń produkt?")
-                        .setMessage(item.optString("name")).setNegativeButton("Anuluj", null)
-                        .setPositiveButton("Usuń") { _, _ ->
-                            val fresh = readLocalArray("shopping_items")
-                            val kept = JSONArray()
-                            for (j in 0 until fresh.length()) {
-                                val candidate = fresh.optJSONObject(j) ?: continue
-                                if (candidate.optString("id") != id) kept.put(candidate)
-                            }
-                            saveLocalArray("shopping_items", kept)
-                            showShoppingList()
-                        }.show()
-                    true
-                }
-                root.addView(row, params(0, 4, 0, 4))
-            }
+        val listTitleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        listTitleRow.addView(label(activeList.optString("name", "Zakupy"), 23f, white, true), LinearLayout.LayoutParams(0, -2, 1f))
+        listTitleRow.addView(actionButton("Zmień listę") { showShoppingLists(activeId) })
+        root.addView(listTitleRow, params(0, 4, 0, 2))
+        val summary = label("", 13f, muted)
+        root.addView(summary, params(0, 2, 0, 10))
+        root.addView(actionButton("+  DODAJ PRODUKT") { addShoppingItem(activeId, null) }, params(0, 0, 0, 8))
+        val filterScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
+        val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        categories.forEach { category ->
+            filterRow.addView(actionButton(category) {
+                categoryFilter = category
+                redrawShoppingItems(categoryFilter, activeId, summary, list)
+            }.apply {
+                textSize = 10f
+                minHeight = (38 * resources.displayMetrics.density).toInt()
+                setPadding(8, 0, 8, 0)
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() })
         }
+        filterScroll.addView(filterRow)
+        root.addView(filterScroll, params(0, 0, 0, 10))
+        root.addView(list)
+        redrawShoppingItems(categoryFilter, activeId, summary, list)
         showPersonalToolPage(root, "WIĘCEJ")
     }
 
-    private fun addShoppingItem() {
-        val input = EditText(this).apply {
-            hint = "Np. mleko, chleb, kawa…"
-            setTextColor(white)
-            setHintTextColor(muted)
-            setSingleLine(true)
+    private fun redrawShoppingItems(categoryFilter: String, activeId: String, summary: TextView, list: LinearLayout) {
+        list.removeAllViews()
+        val current = readLocalArray("shopping_items")
+        val scoped = (0 until current.length()).mapNotNull { current.optJSONObject(it) }.filter { it.optString("listId") == activeId }
+        val remaining = scoped.count { !it.optBoolean("done", false) }
+        summary.text = remaining.toString() + " do kupienia • " + (scoped.size - remaining) + " kupione • " + scoped.size + " produktów"
+        val visible = scoped.filter { categoryFilter == "Wszystkie" || it.optString("category", "Pozostałe") == categoryFilter }
+        if (visible.isEmpty()) {
+            list.addView(infoCard(if (scoped.isEmpty()) "Ta lista jest pusta. Dodaj pierwszy produkt." else "Brak produktów w kategorii: " + categoryFilter))
+            return
+        }
+        visible.sortedWith(compareBy<JSONObject> { it.optBoolean("done", false) }.thenBy { it.optString("category") }
+            .thenBy { it.optString("name").lowercase(Locale("pl", "PL")) }).forEach { item ->
+            val id = item.optString("id")
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(10, 7, 8, 7)
+                background = roundedBackground(Color.rgb(29, 41, 59), 14)
+            }
+            val check = CheckBox(this).apply {
+                text = item.optString("name", "")
+                isChecked = item.optBoolean("done", false)
+                setTextColor(if (isChecked) muted else white)
+                textSize = 14f
+                setOnCheckedChangeListener { _, checked ->
+                    val fresh = readLocalArray("shopping_items")
+                    for (j in 0 until fresh.length()) {
+                        val candidate = fresh.optJSONObject(j) ?: continue
+                        if (candidate.optString("id") == id) candidate.put("done", checked)
+                    }
+                    saveLocalArray("shopping_items", fresh)
+                    redrawShoppingItems(categoryFilter, activeId, summary, list)
+                }
+            }
+            val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            details.addView(label(item.optString("quantity", "1"), 12f, accentColor, true))
+            details.addView(label(item.optString("category", "Pozostałe"), 10f, muted))
+            row.addView(check, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(details)
+            row.setOnClickListener { addShoppingItem(activeId, item) }
+            row.setOnLongClickListener {
+                AlertDialog.Builder(this@MainActivity).setTitle("Usunąć produkt?").setMessage(item.optString("name"))
+                    .setNegativeButton("Anuluj", null).setPositiveButton("Usuń") { _, _ ->
+                        val fresh = readLocalArray("shopping_items")
+                        val kept = JSONArray()
+                        for (j in 0 until fresh.length()) {
+                            val candidate = fresh.optJSONObject(j) ?: continue
+                            if (candidate.optString("id") != id) kept.put(candidate)
+                        }
+                        saveLocalArray("shopping_items", kept)
+                        redrawShoppingItems(categoryFilter, activeId, summary, list)
+                    }.show()
+                true
+            }
+            list.addView(row, params(0, 3, 0, 3))
+        }
+        if (scoped.any { it.optBoolean("done", false) }) {
+            list.addView(actionButton("USUŃ KUPIONE Z TEJ LISTY") {
+                val fresh = readLocalArray("shopping_items")
+                val kept = JSONArray()
+                for (j in 0 until fresh.length()) {
+                    val item = fresh.optJSONObject(j) ?: continue
+                    if (item.optString("listId") != activeId || !item.optBoolean("done", false)) kept.put(item)
+                }
+                saveLocalArray("shopping_items", kept)
+                redrawShoppingItems(categoryFilter, activeId, summary, list)
+            }, params(0, 10, 0, 0))
+        }
+    }
+
+    private fun showShoppingLists(currentId: String) {
+        val lists = readLocalArray("shopping_lists")
+        val names = (0 until lists.length()).mapNotNull { lists.optJSONObject(it) }
+        AlertDialog.Builder(this).setTitle("Wybierz listę")
+            .setItems(names.map { it.optString("name", "Lista") }.toTypedArray()) { _, which ->
+                uiPrefs.edit().putString("active_shopping_list", names[which].optString("id")).apply()
+                showShoppingList()
+            }
+            .setPositiveButton("Nowa lista") { _, _ ->
+                val input = EditText(this).apply { hint = "Nazwa listy"; setTextColor(white); setHintTextColor(muted) }
+                AlertDialog.Builder(this).setTitle("Nowa lista zakupów").setView(input).setNegativeButton("Anuluj", null)
+                    .setPositiveButton("Utwórz") { _, _ ->
+                        val name = input.text.toString().trim()
+                        if (name.isNotBlank()) {
+                            val updated = readLocalArray("shopping_lists")
+                            val id = System.currentTimeMillis().toString()
+                            updated.put(JSONObject().put("id", id).put("name", name))
+                            saveLocalArray("shopping_lists", updated)
+                            uiPrefs.edit().putString("active_shopping_list", id).apply()
+                            showShoppingList()
+                        }
+                    }.show()
+            }
+            .setNeutralButton("Zmień nazwę") { _, _ ->
+                val selected = names.firstOrNull { it.optString("id") == currentId } ?: return@setNeutralButton
+                val input = EditText(this).apply { setText(selected.optString("name")); setTextColor(white) }
+                AlertDialog.Builder(this).setTitle("Zmień nazwę listy").setView(input).setNegativeButton("Anuluj", null)
+                    .setPositiveButton("Zapisz") { _, _ ->
+                        val name = input.text.toString().trim()
+                        if (name.isNotBlank()) {
+                            selected.put("name", name)
+                            saveLocalArray("shopping_lists", lists)
+                            showShoppingList()
+                        }
+                    }.show()
+            }.show()
+    }
+
+    private fun addShoppingItem(listId: String, existing: JSONObject?) {
+        val fields = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(8, 4, 8, 0) }
+        val name = EditText(this).apply {
+            hint = "Nazwa produktu"; setText(existing?.optString("name", "").orEmpty())
+            setTextColor(white); setHintTextColor(muted); setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         }
-        AlertDialog.Builder(this).setTitle("Dodaj produkt").setView(input)
-            .setNegativeButton("Anuluj", null)
-            .setPositiveButton("Dodaj") { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isNotBlank()) {
-                    val items = readLocalArray("shopping_items")
-                    items.put(JSONObject().put("id", System.currentTimeMillis().toString())
-                        .put("name", name).put("done", false))
-                    saveLocalArray("shopping_items", items)
+        val quantity = EditText(this).apply {
+            hint = "Ilość (np. 2, 1 kg, 500 g)"; setText(existing?.optString("quantity", "1") ?: "1")
+            setTextColor(white); setHintTextColor(muted); setSingleLine(true)
+        }
+        val categoryNames = arrayOf("Warzywa i owoce", "Nabiał", "Pieczywo", "Mięso i ryby", "Napoje", "Chemia", "Pozostałe")
+        var category = existing?.optString("category", "Pozostałe") ?: "Pozostałe"
+        lateinit var categoryButton: Button
+        categoryButton = actionButton("Kategoria: " + category) {
+            AlertDialog.Builder(this).setTitle("Kategoria")
+                .setSingleChoiceItems(categoryNames, categoryNames.indexOf(category).coerceAtLeast(0)) { dialog, which ->
+                    category = categoryNames[which]
+                    categoryButton.text = "Kategoria: " + category
+                    dialog.dismiss()
+                }.show()
+        }
+        fields.addView(name)
+        fields.addView(quantity, params(0, 6, 0, 6))
+        fields.addView(categoryButton, params(0, 6, 0, 0))
+        AlertDialog.Builder(this).setTitle(if (existing == null) "Dodaj produkt" else "Edytuj produkt").setView(fields)
+            .setNegativeButton("Anuluj", null).setPositiveButton("Zapisz") { _, _ ->
+                val productName = name.text.toString().trim()
+                if (productName.isBlank()) Toast.makeText(this, "Wpisz nazwę produktu.", Toast.LENGTH_SHORT).show()
+                else {
+                    val all = readLocalArray("shopping_items")
+                    val id = existing?.optString("id")?.takeIf { it.isNotBlank() } ?: System.currentTimeMillis().toString()
+                    val updated = JSONArray()
+                    for (i in 0 until all.length()) {
+                        val item = all.optJSONObject(i) ?: continue
+                        if (item.optString("id") != id) updated.put(item)
+                    }
+                    updated.put(JSONObject().put("id", id).put("listId", listId).put("name", productName)
+                        .put("quantity", quantity.text.toString().trim().ifBlank { "1" }).put("category", category)
+                        .put("done", existing?.optBoolean("done", false) ?: false))
+                    saveLocalArray("shopping_items", updated)
+                    uiPrefs.edit().putString("active_shopping_list", listId).apply()
                     showShoppingList()
                 }
             }.show()
