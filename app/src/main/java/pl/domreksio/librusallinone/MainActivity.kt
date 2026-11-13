@@ -746,18 +746,52 @@ class MainActivity : Activity() {
             val from = firstValue(obj, "hour_from", "start", "start_time")
             val to = firstValue(obj, "hour_to", "end", "end_time")
 
-            val subjectId = firstValue(obj, "subject_id", "subject")
-            val teacherId = firstValue(obj, "teacher_id", "teacher")
-            val roomId = firstValue(obj, "classroom_id", "classroom", "room")
+            // Referencje w planie mogą przyjść jako ID, tekst albo obiekt {id, name}.
+            // Nie używaj JSONObject.toString() jako identyfikatora ani etykiety.
+            val subjectObject = obj.optJSONObject("subject")
+            val subjectId = firstValue(obj, "subject_id")
+                .ifBlank { subjectObject?.let { firstValue(it, "id", "subject_id") }.orEmpty() }
+                .ifBlank { (obj.opt("subject") as? String).orEmpty() }
+            val teacherObject = obj.optJSONObject("teacher")
+            val teacherId = firstValue(obj, "teacher_id")
+                .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                .ifBlank { (obj.opt("teacher") as? String).orEmpty() }
+            val roomObject = obj.optJSONObject("classroom")
+                ?: obj.optJSONObject("room")
+            val roomId = firstValue(obj, "classroom_id", "room_id")
+                .ifBlank { roomObject?.let { firstValue(it, "id", "classroom_id", "room_id") }.orEmpty() }
+                .ifBlank {
+                    val rawRoom = obj.opt("classroom") ?: obj.opt("room")
+                    (rawRoom as? String).orEmpty()
+                }
 
-            val subject = lookupName(subjects, subjectId)
-                .ifBlank { obj.optString("subject_name").ifBlank { subjectId } }
+            val subject = firstDisplayValue(obj, "subject_name")
+                .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(subjects, subjectId) }
+                .ifBlank { (obj.opt("subject") as? String).orEmpty() }
 
-            val teacher = lookupName(teachers, teacherId)
-                .ifBlank { obj.optString("teacher_name").ifBlank { teacherId } }
+            val teacher = firstDisplayValue(obj, "teacher_name")
+                .ifBlank {
+                    teacherObject?.let {
+                        firstDisplayValue(it, "name", "full_name", "display_name", "title", "value")
+                            .ifBlank {
+                                listOf(
+                                    firstValue(it, "first_name", "firstname"),
+                                    firstValue(it, "last_name", "surname", "lastname")
+                                ).filter { part -> part.isNotBlank() }.joinToString(" ")
+                            }
+                    }.orEmpty()
+                }
+                .ifBlank { lookupName(teachers, teacherId) }
+                .ifBlank { (obj.opt("teacher") as? String).orEmpty() }
 
-            val room = lookupName(classrooms, roomId)
-                .ifBlank { obj.optString("classroom_name").ifBlank { roomId } }
+            val room = firstDisplayValue(obj, "classroom_name", "room_name")
+                .ifBlank { roomObject?.let { firstDisplayValue(it, "name", "number", "room_number", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(classrooms, roomId) }
+                .ifBlank {
+                    val rawRoom = obj.opt("classroom") ?: obj.opt("room")
+                    (rawRoom as? String).orEmpty()
+                }
 
             val canceled = obj.optBoolean("is_canceled", false)
             val substitution = obj.optBoolean("is_substitution", false)
