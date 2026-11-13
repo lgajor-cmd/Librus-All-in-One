@@ -248,8 +248,15 @@ class LibrusNotificationWorker(
             detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość")
             detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga")
             detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga")
+            val notificationStatus = applicationContext.getSharedPreferences(
+                "librus_notification_diagnostics",
+                Context.MODE_PRIVATE
+            ).getString("last_status", "")
             val failedSections = data.optJSONArray("failed_sections")
-            if (failedSections != null && failedSections.length() > 0) {
+            if (notificationStatus == "blocked") {
+                // Preserve the actionable Android permission/channel problem;
+                // do not overwrite it with a generic partial-sync status.
+            } else if (failedSections != null && failedSections.length() > 0) {
                 val names = (0 until failedSections.length())
                     .map { failedSections.optString(it) }
                     .filter { it.isNotBlank() }
@@ -260,13 +267,7 @@ class LibrusNotificationWorker(
                     "Synchronizacja częściowa. Niedostępne kategorie: ${names.joinToString(", ")}"
                 )
             } else {
-                val notificationStatus = applicationContext.getSharedPreferences(
-                    "librus_notification_diagnostics",
-                    Context.MODE_PRIVATE
-                ).getString("last_status", "")
-                if (notificationStatus != "blocked") {
-                    LibrusNotificationDiagnostics.record(applicationContext, "success")
-                }
+                LibrusNotificationDiagnostics.record(applicationContext, "success")
             }
             Result.success()
         } catch (error: Exception) {
