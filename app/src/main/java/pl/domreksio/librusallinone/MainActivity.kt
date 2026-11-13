@@ -1417,7 +1417,7 @@ class MainActivity : Activity() {
                 confirmation.setOnShowListener {
                     confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         confirmation.dismiss()
-                        submitFormalJustification(isoDate, lessonNumber, reason, date)
+                        submitFormalJustification(isoDate, lessonNumber, reason, date, subject, lesson)
                     }
                 }
                 confirmation.show()
@@ -1430,7 +1430,9 @@ class MainActivity : Activity() {
         isoDate: String,
         lessonNumber: Int,
         reason: String,
-        displayDate: String
+        displayDate: String,
+        subject: String,
+        lesson: String
     ) {
         val login = librusLoginMemory
         val password = librusPasswordMemory
