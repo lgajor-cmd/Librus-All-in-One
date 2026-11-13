@@ -230,6 +230,8 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun showHome(email: String) {
+        timetableTicker?.let { android.os.Handler(mainLooper).removeCallbacks(it) }
+        timetableTicker = null
         if (isFinishing) return
 
         val content = LinearLayout(this).apply {
