@@ -1559,8 +1559,17 @@ class MainActivity : Activity() {
                     } catch (_: Exception) { }
                     setLibrusStatus("E-Usprawiedliwienie wysłane.", true)
                     AlertDialog.Builder(this).setTitle("Zgłoszenie wysłane")
-                        .setMessage("Librus przyjął e-Usprawiedliwienie dla $displayDate, lekcje: $lesson. Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.")
-                        .setPositiveButton("OK", null).show()
+                        .setMessage(
+                            "Librus przyjął e-Usprawiedliwienie dla $displayDate, lekcje: $lesson. " +
+                                "Status początkowy to „Wysłane” — oczekuje na decyzję wychowawcy.\\n\\n" +
+                                "Możesz teraz odświeżyć frekwencję, aby pobrać aktualny status zgłoszenia."
+                        )
+                        .setNegativeButton("PÓŹNIEJ", null)
+                        .setPositiveButton("ODŚWIEŻ STATUS") { _, _ ->
+                            librusDataMemory = null
+                            loadLibrusSection("FREKWENCJA")
+                        }
+                        .show()
                     return@runOnUiThread
                 }
 
