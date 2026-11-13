@@ -124,6 +124,47 @@ class MainActivity : Activity() {
         }
     private val warningColor = Color.rgb(255, 190, 95)
 
+    // Delikatne palety tła dopasowane do wybranego motywu.
+    // Zachowujemy ciemny, czytelny interfejs — zmienia się klimat, nie kontrast tekstu.
+    private val pageGradient: IntArray
+        get() = when (uiPrefs.getString("accent", "blue")) {
+            "red" -> intArrayOf(Color.rgb(35, 19, 29), Color.rgb(19, 17, 27), Color.rgb(12, 15, 25))
+            "christmas" -> intArrayOf(Color.rgb(15, 39, 34), Color.rgb(15, 25, 29), Color.rgb(10, 16, 24))
+            "halloween" -> intArrayOf(Color.rgb(43, 29, 20), Color.rgb(23, 21, 25), Color.rgb(12, 15, 25))
+            "pink" -> intArrayOf(Color.rgb(39, 22, 38), Color.rgb(22, 19, 30), Color.rgb(12, 15, 25))
+            "spring" -> intArrayOf(Color.rgb(29, 39, 25), Color.rgb(19, 26, 27), Color.rgb(10, 16, 24))
+            "teal" -> intArrayOf(Color.rgb(17, 39, 43), Color.rgb(17, 25, 32), Color.rgb(10, 16, 24))
+            "violet" -> intArrayOf(Color.rgb(33, 25, 48), Color.rgb(21, 21, 34), Color.rgb(10, 16, 24))
+            "amber" -> intArrayOf(Color.rgb(43, 34, 23), Color.rgb(24, 24, 30), Color.rgb(10, 16, 24))
+            else -> intArrayOf(Color.rgb(15, 24, 42), bgColor, Color.rgb(10, 15, 26))
+        }
+
+    private val heroGradient: IntArray
+        get() = when (uiPrefs.getString("accent", "blue")) {
+            "red" -> intArrayOf(Color.rgb(105, 37, 51), Color.rgb(48, 29, 43), Color.rgb(27, 30, 46))
+            "christmas" -> intArrayOf(Color.rgb(28, 91, 67), Color.rgb(25, 48, 51), Color.rgb(22, 31, 48))
+            "halloween" -> intArrayOf(Color.rgb(117, 65, 29), Color.rgb(54, 38, 35), Color.rgb(27, 30, 46))
+            "pink" -> intArrayOf(Color.rgb(103, 48, 91), Color.rgb(48, 31, 54), Color.rgb(27, 30, 46))
+            "spring" -> intArrayOf(Color.rgb(66, 94, 43), Color.rgb(39, 53, 43), Color.rgb(22, 31, 48))
+            "teal" -> intArrayOf(Color.rgb(28, 91, 91), Color.rgb(25, 48, 58), Color.rgb(22, 31, 48))
+            "violet" -> intArrayOf(Color.rgb(76, 57, 120), Color.rgb(39, 35, 64), Color.rgb(22, 31, 48))
+            "amber" -> intArrayOf(Color.rgb(112, 78, 35), Color.rgb(53, 43, 39), Color.rgb(22, 31, 48))
+            else -> heroGradient
+        }
+
+    private val surfaceGradient: IntArray
+        get() = when (uiPrefs.getString("accent", "blue")) {
+            "red" -> intArrayOf(Color.rgb(58, 36, 48), Color.rgb(30, 29, 43))
+            "christmas" -> intArrayOf(Color.rgb(30, 58, 51), Color.rgb(24, 35, 43))
+            "halloween" -> intArrayOf(Color.rgb(63, 47, 36), Color.rgb(32, 30, 39))
+            "pink" -> intArrayOf(Color.rgb(58, 39, 58), Color.rgb(31, 29, 43))
+            "spring" -> intArrayOf(Color.rgb(43, 57, 39), Color.rgb(27, 36, 39))
+            "teal" -> intArrayOf(Color.rgb(31, 57, 62), Color.rgb(24, 35, 45))
+            "violet" -> intArrayOf(Color.rgb(47, 42, 67), Color.rgb(27, 29, 45))
+            "amber" -> intArrayOf(Color.rgb(59, 49, 39), Color.rgb(31, 31, 43))
+            else -> surfaceGradient
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -241,7 +282,7 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20, 24, 20, 30)
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(Color.rgb(15, 24, 42), bgColor, Color.rgb(10, 15, 26)))
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
         }
 
         val welcomeCard = LinearLayout(this).apply {
@@ -303,7 +344,7 @@ class MainActivity : Activity() {
             setPadding(18, 16, 18, 16)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(29, 48, 73), Color.rgb(22, 33, 51))
+                surfaceGradient
             ).apply {
                 cornerRadius = 20f * resources.displayMetrics.density
                 setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(58, 83, 119))
@@ -3724,7 +3765,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(17, 15, 16, 15)
             minimumHeight = (76 * resources.displayMetrics.density).toInt()
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(Color.rgb(35, 49, 72), Color.rgb(25, 35, 53))).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, surfaceGradient).apply {
                 cornerRadius = 20f * resources.displayMetrics.density
                 setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(54, 72, 100))
             }
