@@ -215,15 +215,42 @@ class MainActivity : Activity() {
 
         val welcomeCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 20, 20, 20)
-            background = roundedBackground(panelLight, 22)
-            elevation = 3f * resources.displayMetrics.density
+            setPadding(22, 22, 22, 22)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(28, 57, 104), Color.rgb(25, 34, 58), Color.rgb(22, 31, 48))
+            ).apply { cornerRadius = 24f * resources.displayMetrics.density }
+            elevation = 5f * resources.displayMetrics.density
+            alpha = 0f
+            translationY = 18f * resources.displayMetrics.density
         }
-        welcomeCard.addView(label("LIBRUS  /  ALL-IN-ONE", 12f, accentColor, true))
-        welcomeCard.addView(label("Witaj!", 32f, white, true))
-        welcomeCard.addView(label("Zalogowano jako: $email", 14f, muted))
-        welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, successColor))
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val brandMark = TextView(this).apply {
+            text = "14"
+            textSize = 23f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(7, 27, 73))
+            background = roundedBackground(Color.WHITE, 13)
+            setPadding(10, 5, 10, 5)
+        }
+        brandRow.addView(brandMark, LinearLayout.LayoutParams(48, 48))
+        val brandText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(12, 0, 0, 0)
+        }
+        brandText.addView(label("SZKOŁA PODSTAWOWA NR 14", 11f, Color.rgb(190, 211, 245), true))
+        brandText.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        brandRow.addView(brandText)
+        welcomeCard.addView(brandRow)
+        welcomeCard.addView(label("Witaj!", 32f, white, true), params(0, 14, 0, 0))
+        welcomeCard.addView(label("Zalogowano jako: $email", 14f, Color.rgb(210, 220, 237)))
+        welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)))
         content.addView(welcomeCard, params(0, 0, 0, 16))
+        welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
 
         val savedLibrus = librusVault.load()
 
@@ -1633,7 +1660,15 @@ class MainActivity : Activity() {
         card.addView(label("›", 28f, accentColor, true))
 
         card.setOnClickListener { loadLibrusSection(heading) }
+        card.alpha = 0f
+        card.translationY = 12f * resources.displayMetrics.density
         parent.addView(card, params(0, 6, 0, 6))
+        card.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setStartDelay(parent.childCount.coerceAtMost(12) * 35L)
+            .setDuration(320)
+            .start()
     }
 
     private fun card(): LinearLayout =
