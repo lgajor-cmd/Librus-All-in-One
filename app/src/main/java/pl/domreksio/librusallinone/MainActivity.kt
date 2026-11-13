@@ -2515,11 +2515,17 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     // Kalendarz miesięczny z prywatnymi wydarzeniami użytkownika.
+    // Siatka używa wymiarów dp i pełnej szerokości, aby nie ściskać dni na różnych ekranach.
     private fun renderAgendaCalendar(parent: LinearLayout) {
-        val month = Calendar.getInstance()
-        month.set(Calendar.DAY_OF_MONTH, 1)
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).toInt()
+        val month = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
         var selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
-        val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val today = selected
+        val host = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(2), dp(2), dp(8))
+        }
         parent.addView(sectionHeader("TWÓJ KALENDARZ"), params(0, 6, 0, 8))
         parent.addView(host, params(0, 0, 0, 14))
 
@@ -2530,91 +2536,155 @@ class MainActivity : Activity() {
             val header = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(2), 0, dp(8))
             }
-            header.addView(actionButton("‹") { month.add(Calendar.MONTH, -1); redraw() },
-                LinearLayout.LayoutParams(52, -2))
-            header.addView(label(title, 17f, white, true).apply { gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(0, -2, 1f))
-            header.addView(actionButton("›") { month.add(Calendar.MONTH, 1); redraw() },
-                LinearLayout.LayoutParams(52, -2))
+            header.addView(actionButton("‹") {
+                month.add(Calendar.MONTH, -1)
+                month.set(Calendar.DAY_OF_MONTH, 1)
+                selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(month.time)
+                redraw()
+            }, LinearLayout.LayoutParams(dp(48), dp(44)))
+            header.addView(label(title, 19f, white, true).apply {
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+            }, LinearLayout.LayoutParams(0, dp(44), 1f))
+            header.addView(actionButton("›") {
+                month.add(Calendar.MONTH, 1)
+                month.set(Calendar.DAY_OF_MONTH, 1)
+                selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(month.time)
+                redraw()
+            }, LinearLayout.LayoutParams(dp(48), dp(44)))
             host.addView(header)
 
-            val names = listOf("Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd")
-            val weekHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            names.forEach { name ->
-                weekHeader.addView(label(name, 11f, muted, true).apply { gravity = Gravity.CENTER },
-                    LinearLayout.LayoutParams(0, 32, 1f))
+            host.addView(actionButton("DZIŚ") {
+                month.timeInMillis = Calendar.getInstance().timeInMillis
+                month.set(Calendar.DAY_OF_MONTH, 1)
+                selected = today
+                redraw()
+            }, LinearLayout.LayoutParams(-1, dp(38)).apply {
+                bottomMargin = dp(8)
+            })
+
+            val names = listOf("PON", "WT", "ŚR", "CZW", "PT", "SOB", "ND")
+            val weekHeader = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            names.forEachIndexed { index, name ->
+                weekHeader.addView(label(name, 10f, if (index >= 5) accentColor else muted, true).apply {
+                    gravity = Gravity.CENTER
+                    textAlignment = View.TEXT_ALIGNMENT_CENTER
+                }, LinearLayout.LayoutParams(0, dp(30), 1f))
             }
             host.addView(weekHeader)
 
-            val first = month.clone() as Calendar
-            first.set(Calendar.DAY_OF_MONTH, 1)
+            val first = (month.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 12)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
             val offset = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7
             val count = first.getActualMaximum(Calendar.DAY_OF_MONTH)
             val weeks = (offset + count + 6) / 7
-            val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            var number = 1
+            val eventDates = readLocalArray("personal_events")
+            val datesWithEvents = (0 until eventDates.length()).mapNotNull { index ->
+                eventDates.optJSONObject(index)?.optString("date")?.takeIf { it.isNotBlank() }
+            }.toSet()
+            val grid = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(2), 0, dp(4))
+            }
+
             repeat(weeks) { week ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                repeat(7) { col ->
-                    val position = week * 7 + col
-                    if (position < offset || number > count) {
-                        row.addView(View(this), LinearLayout.LayoutParams(0, 42, 1f))
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                repeat(7) { column ->
+                    val position = week * 7 + column
+                    val dayNumber = position - offset + 1
+                    val cellParams = LinearLayout.LayoutParams(0, dp(62), 1f).apply {
+                        setMargins(dp(2), dp(2), dp(2), dp(2))
+                    }
+                    if (dayNumber !in 1..count) {
+                        row.addView(View(this).apply {
+                            background = roundedBackground(Color.TRANSPARENT, 12)
+                        }, cellParams)
                     } else {
-                        val day = number++
-                        val date = String.format(Locale.ROOT, "%04d-%02d-%02d",
-                            first.get(Calendar.YEAR), first.get(Calendar.MONTH) + 1, day)
-                        val today = date == SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
-                        val chosen = date == selected
-                        val eventDates = readLocalArray("personal_events")
-                        val hasEvent = (0 until eventDates.length()).any { eventIndex ->
-                            eventDates.optJSONObject(eventIndex)?.optString("date") == date
-                        }
+                        val date = String.format(
+                            Locale.ROOT, "%04d-%02d-%02d",
+                            first.get(Calendar.YEAR), first.get(Calendar.MONTH) + 1, dayNumber
+                        )
+                        val isToday = date == today
+                        val isSelected = date == selected
+                        val hasEvent = date in datesWithEvents
+                        val weekend = column >= 5
                         val cell = LinearLayout(this).apply {
                             orientation = LinearLayout.VERTICAL
                             gravity = Gravity.CENTER
+                            setPadding(dp(2), dp(4), dp(2), dp(4))
                             background = roundedBackground(
-                                if (chosen) accentColor else if (today) Color.argb(45, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) else Color.TRANSPARENT,
-                                12
+                                when {
+                                    isSelected -> accentColor
+                                    isToday -> Color.argb(48, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor))
+                                    else -> Color.argb(18, 255, 255, 255)
+                                }, 12
                             )
                             isClickable = true
                             isFocusable = true
-                            setOnClickListener { selected = date; redraw() }
+                            setOnClickListener {
+                                selected = date
+                                redraw()
+                            }
                             addView(TextView(this@MainActivity).apply {
-                                text = day.toString()
+                                text = dayNumber.toString()
                                 gravity = Gravity.CENTER
-                                textSize = 13f
-                                setTextColor(if (chosen) Color.WHITE else if (today) accentColor else white)
-                            })
-                            if (hasEvent) addView(View(this@MainActivity).apply {
-                                background = roundedBackground(if (chosen) Color.WHITE else accentColor, 4)
-                            }, LinearLayout.LayoutParams((5 * resources.displayMetrics.density).toInt(), (5 * resources.displayMetrics.density).toInt()).apply {
-                                topMargin = (2 * resources.displayMetrics.density).toInt()
-                            })
+                                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                                textSize = 15f
+                                setTypeface(typeface, if (isToday || isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                                setTextColor(when {
+                                    isSelected -> Color.WHITE
+                                    isToday -> accentColor
+                                    weekend -> Color.rgb(190, 165, 220)
+                                    else -> white
+                                })
+                            }, LinearLayout.LayoutParams(-1, dp(28)))
+                            if (hasEvent) {
+                                addView(View(this@MainActivity).apply {
+                                    background = roundedBackground(if (isSelected) Color.WHITE else accentColor, 8)
+                                }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                                    topMargin = dp(3)
+                                })
+                            } else {
+                                addView(View(this@MainActivity), LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                                    topMargin = dp(3)
+                                })
+                            }
                         }
-                        row.addView(cell, LinearLayout.LayoutParams(0, 42, 1f).apply {
-                            setMargins(2, 2, 2, 2)
-                        })
+                        row.addView(cell, cellParams)
                     }
                 }
                 grid.addView(row)
             }
             host.addView(grid)
+
+            host.addView(label("WYDARZENIA • " + selected, 11f, Color.rgb(180, 205, 239), true),
+                params(0, 8, 0, 6))
             host.addView(actionButton("+  DODAJ WYDARZENIE") {
                 addAgendaEvent(selected) { redraw() }
-            }, params(0, 10, 0, 8))
-            host.addView(label("WYDARZENIA • " + selected, 11f, Color.rgb(180, 205, 239), true),
-                params(0, 4, 0, 6))
+            }, params(0, 0, 0, 8))
 
             val events = readLocalArray("personal_events")
-            val todays = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
+            val selectedEvents = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
                 .filter { it.optString("date") == selected }
-            if (todays.isEmpty()) {
+            if (selectedEvents.isEmpty()) {
                 host.addView(infoCard("Brak prywatnych wydarzeń w tym dniu. Wydarzenia szkolne znajdziesz poniżej."))
             } else {
-                todays.forEach { event ->
+                selectedEvents.forEach { event ->
                     val itemCard = card()
-                    itemCard.addView(label(event.optString("title"), 14f, white, true))
+                    itemCard.addView(label(event.optString("title"), 15f, white, true))
                     if (event.optString("description").isNotBlank()) {
                         itemCard.addView(label(event.optString("description"), 12f, muted), params(0, 4, 0, 0))
                     }
@@ -2635,7 +2705,7 @@ class MainActivity : Activity() {
                                 redraw()
                             }.show()
                     })
-                    host.addView(itemCard, params(0, 0, 0, 6))
+                    host.addView(itemCard, params(0, 0, 0, 8))
                 }
             }
         }
