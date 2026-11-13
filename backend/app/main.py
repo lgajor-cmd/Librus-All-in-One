@@ -801,11 +801,9 @@ async def sync(
                 # those separately and merge them into the same response.
                 data = await librus.fetch_changes()
                 feeds, failed_grade_feeds = await _fetch_notification_grade_feeds(librus)
-                # Keep the established API shape: descriptive and partial
-                # grades are combined for the app's grade notification parser.
-                data.descriptive_grades = (
-                    feeds["descriptive_grades"] + feeds["partial_grades"]
-                )
+                # Keep each feed separate in the notification payload so a
+                # failed descriptive feed cannot hide a successful partial feed.
+                data.descriptive_grades = feeds["descriptive_grades"]
                 data.point_grades = feeds["point_grades"]
                 data.text_grades = feeds["text_grades"]
                 data.behaviour_grades = feeds["behaviour_grades"]
@@ -819,6 +817,7 @@ async def sync(
             # The Android worker must distinguish an unavailable feed from an
             # empty feed; otherwise a transient Librus error could create
             # false "new grade" alerts on the next successful poll.
+            serialized_data["partial_grades"] = feeds["partial_grades"]
             serialized_data["failed_sections"] = failed_grade_feeds
 
         return jsonable_encoder({
