@@ -2460,12 +2460,52 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun renderMessagesSection(parent: LinearLayout, data: JSONObject) {
-        parent.addView(
-            actionButton("NAPISZ WIADOMOŚĆ") { openNewMessageComposer() },
-            params(0, 0, 0, 10)
-        )
-        renderMessageArray(parent, data.optJSONArray("messages"), "Wiadomości")
-        renderMessageArray(parent, data.optJSONArray("announcements"), "Ogłoszenia")
+        parent.addView(actionButton("NAPISZ WIADOMOŚĆ") { openNewMessageComposer() }, params(0, 0, 0, 10))
+        val search = EditText(this).apply {
+            hint = "Szukaj po temacie, nadawcy lub treści…"
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(16, 12, 16, 12)
+            background = roundedBackground(panelLight, 14)
+        }
+        parent.addView(search, params(0, 0, 0, 12))
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        parent.addView(results)
+        fun renderFiltered(query: String) {
+            results.removeAllViews()
+            val needle = query.trim().lowercase(Locale.ROOT)
+            fun filtered(source: JSONArray?): JSONArray {
+                val output = JSONArray()
+                if (source == null) return output
+                for (i in 0 until source.length()) {
+                    val item = source.optJSONObject(i) ?: continue
+                    val searchable = listOf(
+                        firstValue(item, "title", "subject", "topic"),
+                        firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"),
+                        firstValue(item, "send_date", "date", "created_at", "sent_at"),
+                        firstValue(item, "content", "message", "body", "text", "content_html", "message_content", "description")
+                    ).joinToString(" ").lowercase(Locale.ROOT)
+                    if (needle.isBlank() || searchable.contains(needle)) output.put(item)
+                }
+                return output
+            }
+            val messages = filtered(data.optJSONArray("messages"))
+            val announcements = filtered(data.optJSONArray("announcements"))
+            if (needle.isNotBlank() && messages.length() + announcements.length() == 0) {
+                results.addView(infoCard("Nie znaleziono wiadomości pasujących do: $query"))
+            } else {
+                renderMessageArray(results, messages, "Wiadomości")
+                renderMessageArray(results, announcements, "Ogłoszenia")
+            }
+        }
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderFiltered(s?.toString().orEmpty()) }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        renderFiltered("")
     }
 
     private fun openNewMessageComposer() {
