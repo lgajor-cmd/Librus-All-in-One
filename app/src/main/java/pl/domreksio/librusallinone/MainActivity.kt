@@ -42,7 +42,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -1964,7 +1963,7 @@ class MainActivity : Activity() {
                         setTypeface(null, if (isSelected || isToday || hasEntries) Typeface.BOLD else Typeface.NORMAL)
                         setTextColor(when {
                             isSelected -> Color.WHITE
-                            hasEntries -> attendanceStatusColor(typeOf(byDate[dateKey]!!.first().first))
+                            hasEntries -> byDate[dateKey]?.firstOrNull()?.first?.let { attendanceStatusColor(typeOf(it)) } ?: muted
                             isToday -> accentColor
                             else -> muted
                         })
@@ -5338,7 +5337,7 @@ class MainActivity : Activity() {
         saveLocalArray("shopping_items", allItems)
         val activeListId = uiPrefs.getString("active_shopping_list", defaultListId) ?: defaultListId
         val activeList = (0 until lists.length()).mapNotNull { lists.optJSONObject(it) }
-            .firstOrNull { it.optString("id") == activeListId } ?: lists.optJSONObject(0)!!
+            .firstOrNull { it.optString("id") == activeListId } ?: lists.optJSONObject(0) ?: JSONObject().put("id", defaultListId).put("name", "Zakupy")
         val activeId = activeList.optString("id", defaultListId)
         val categories = listOf("Wszystkie", "Warzywa i owoce", "Nabiał", "Pieczywo", "Mięso i ryby", "Napoje", "Chemia", "Pozostałe")
         var categoryFilter = "Wszystkie"
