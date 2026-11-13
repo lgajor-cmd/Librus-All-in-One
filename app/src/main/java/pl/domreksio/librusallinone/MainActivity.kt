@@ -1695,15 +1695,27 @@ class MainActivity : Activity() {
         if (total == 0) parent.addView(infoCard("Brak ocen do wyświetlenia."))
     }
 
-    private fun showGradeSimulator(subject: String, currentGrades: List<Int>) {
+    private fun showGradeSimulator(subject: String, currentGrades: List<Double>) {
         val currentAverage = currentGrades.average()
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 0)
         }
         fields.addView(label("Przedmiot: " + subject, 13f, muted))
-        fields.addView(label("Uwzględnione oceny liczbowe: " + currentGrades.joinToString(", "), 13f, white))
-        fields.addView(label("Obecna średnia arytmetyczna: " + String.format(Locale.US, "%.2f", currentAverage), 18f, accentColor, true))
+        fields.addView(label(
+            "Uwzględnione oceny (plus/minus liczone po 0,5): " +
+                currentGrades.joinToString(", ") { GradeAverageParser.format(it) },
+            13f, white
+        ))
+        fields.addView(label(
+            "Obecna średnia arytmetyczna: " +
+                String.format(Locale("pl", "PL"), "%.2f", currentAverage),
+            18f, accentColor, true
+        ))
+        fields.addView(label(
+            "Założenie symulacji: 4+ = 4,5 i 4- = 3,5. Szkoła może stosować własne zasady liczenia średniej.",
+            11f, muted
+        ), params(0, 5, 0, 0))
         val proposed = EditText(this).apply {
             hint = "Wpisz proponowaną ocenę 1–6"
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -1724,10 +1736,10 @@ class MainActivity : Activity() {
                     result.text = getString(R.string.grade_input_error)
                     result.setTextColor(errorColor)
                 } else {
-                    val projected = (currentGrades.sum() + value).toDouble() / (currentGrades.size + 1)
+                    val projected = (currentGrades.sum() + value) / (currentGrades.size + 1)
                     result.text = getString(
                         R.string.grade_average_result,
-                        value,
+                        value.toString(),
                         String.format(Locale("pl", "PL"), "%.2f", projected),
                         currentGrades.size + 1
                     )
@@ -1829,7 +1841,7 @@ class MainActivity : Activity() {
                         grade,
                         "value", "grade", "symbol", "grade_value", "mark"
                     ).trim()
-                    raw.toIntOrNull()?.takeIf { it in 1..6 }
+                    GradeAverageParser.parse(raw)
                 }
             } else {
                 emptyList()
