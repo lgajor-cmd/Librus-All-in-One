@@ -27,6 +27,10 @@ Audyt wykazał, że backend weryfikował token Supabase przed sprawdzeniem limit
 - Dane Librusa pozostają lokalnie szyfrowane przez AES-GCM i Android Keystore.
 - Aplikacja nadal nie zezwala na ruch cleartext HTTP.
 
+### Znacznik aktualnej lekcji
+
+Naprawiono indeksowanie znacznika czasu w planie lekcji: po zakończeniu ostatniej lekcji linia „TERAZ” była ograniczana do indeksu przed ostatnią kartą. Teraz może zostać umieszczona za wszystkimi lekcjami.
+
 ### Dodatkowa kontrola nawigacji motywów
 
 Naprawiono przypadek, w którym zmiana motywu otwarta z sekcji „Więcej” (np. z notatek lub listy zakupów) próbowała otworzyć nieistniejącą sekcję Librusa zamiast wrócić do pulpitu.
