@@ -1,11 +1,10 @@
-import base64
-
 """Stateless HTTPS adapter for Librus Synergia.
 Supabase access tokens are verified against the Supabase Auth server.
 Librus credentials and session cookies are never stored on the server.
 """
 from __future__ import annotations
 
+import base64
 import asyncio
 import os
 import secrets
