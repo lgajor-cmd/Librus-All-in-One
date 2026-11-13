@@ -579,10 +579,38 @@ class MainActivity : Activity() {
             else -> "Dane z Librusa"
         }
 
-        root.addView(label(subtitle, 14f, muted))
-        root.addView(actionButton("POWRÓT DO EKRANU GŁÓWNEGO") {
+        val density = resources.displayMetrics.density
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 20, 20, 18)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(35, 78, 139), Color.rgb(27, 43, 70), Color.rgb(24, 34, 53))
+            ).apply {
+                cornerRadius = 24f * density
+                setStroke((1 * density).toInt(), Color.rgb(73, 105, 151))
+            }
+            elevation = 4f * density
+        }
+        hero.addView(label("LIBRUS  /  CENTRUM UCZNIA", 10f, Color.rgb(181, 211, 255), true))
+        hero.addView(label(section, 25f, white, true), params(0, 5, 0, 0))
+        hero.addView(label(subtitle, 13f, Color.rgb(202, 215, 235)))
+        root.addView(hero, params(0, 8, 0, 16))
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val back = actionButton("‹  PULPIT") {
             showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
-        }, params(0, 8, 0, 8))
+        }
+        val refresh = actionButton("ODŚWIEŻ  ↻") {
+            librusDataMemory = null
+            loadLibrusSection(section)
+        }
+        actions.addView(back, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * density).toInt() })
+        actions.addView(refresh, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = (6 * density).toInt() })
+        root.addView(actions, params(0, 0, 0, 14))
 
         val subjects = data.optJSONObject("subjects")
         val teachers = data.optJSONObject("teachers")
@@ -603,25 +631,14 @@ class MainActivity : Activity() {
 
         val scroll = ScrollView(this).apply {
             setBackgroundColor(bgColor)
+            clipToPadding = false
+            setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
             addView(root)
         }
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(section)
-            .setView(scroll)
-            .setPositiveButton("ZAMKNIJ", null)
-            .setNeutralButton("ODŚWIEŻ", null)
-            .create()
-
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                librusDataMemory = null
-                dialog.dismiss()
-                loadLibrusSection(section)
-            }
-        }
-
-        dialog.show()
+        setContentView(scroll)
+        root.alpha = 0f
+        root.translationY = 12f * resources.displayMetrics.density
+        root.animate().alpha(1f).translationY(0f).setDuration(280).start()
     }
 
     // ---------------------------------------------------------
