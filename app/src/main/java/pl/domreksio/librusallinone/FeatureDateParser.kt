@@ -20,7 +20,7 @@ internal object FeatureDateParser {
 
     fun parseIsoDateOnly(raw: String): LocalDate? {
         val value = raw.trim()
-        if (!Regex("^\\\\d{4}-\\\\d{2}-\\\\d{2}$").matches(value)) return null
+        if (!Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(value)) return null
         return try {
             LocalDate.parse(value, DateTimeFormatter.ISO_LOCAL_DATE)
         } catch (_: DateTimeParseException) {
