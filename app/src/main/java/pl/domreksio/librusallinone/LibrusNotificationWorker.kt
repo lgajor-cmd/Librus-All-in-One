@@ -26,7 +26,76 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+
+internal object LibrusNotificationDiagnostics {
+    private const val PREFS = "librus_notification_diagnostics"
+
+    fun record(context: Context, status: String, detail: String = "") {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val edit = prefs.edit()
+            .putLong("last_attempt", System.currentTimeMillis())
+            .putString("last_status", status)
+            .putString("last_detail", detail.take(400))
+        if (status == "success") {
+            edit.putLong("last_success", System.currentTimeMillis())
+                .putLong("success_count", prefs.getLong("success_count", 0L) + 1L)
+        }
+        if (status == "error" || status == "auth_required" || status == "blocked") {
+            edit.putLong("error_count", prefs.getLong("error_count", 0L) + 1L)
+        }
+        edit.commit()
+    }
+
+    fun summary(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        fun time(key: String): String {
+            val value = prefs.getLong(key, 0L)
+            return if (value == 0L) "brak" else
+                java.text.SimpleDateFormat("dd.MM.yyyy HH:mm:ss", java.util.Locale.getDefault())
+                    .format(java.util.Date(value))
+        }
+        val status = prefs.getString("last_status", "jeszcze_nie_sprawdzano")
+        val detail = prefs.getString("last_detail", "").orEmpty()
+        return "Ostatnia próba: ${time("last_attempt")}\n" +
+            "Ostatnie udane sprawdzenie: ${time("last_success")}\n" +
+            "Status: $status\n" +
+            "Udane sprawdzenia: ${prefs.getLong("success_count", 0L)}\n" +
+            "Błędy: ${prefs.getLong("error_count", 0L)}" +
+            if (detail.isBlank()) "" else "\nSzczegóły: $detail"
+    }
+
+    fun sendTest(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+        ) {
+            record(context, "blocked", "Brak uprawnienia Android POST_NOTIFICATIONS.")
+            return false
+        }
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(
+            NotificationChannel("librus_updates", "Aktualizacje Librus", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled() ||
+            (Build.VERSION.SDK_INT >= 26 &&
+                manager.getNotificationChannel("librus_updates")?.importance == NotificationManager.IMPORTANCE_NONE)
+        ) {
+            record(context, "blocked", "Powiadomienia aplikacji lub kanał Aktualizacje Librus są wyłączone w Androidzie.")
+            return false
+        }
+        val notification = NotificationCompat.Builder(context, "librus_updates")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Librus – test powiadomień")
+            .setContentText("Powiadomienia na tym urządzeniu działają poprawnie.")
+            .setAutoCancel(true)
+            .build()
+        NotificationManagerCompat.from(context).notify(41001, notification)
+        record(context, "test_sent", "Wysłano test lokalny; nie sprawdza on jeszcze synchronizacji Librusa.")
+        return true
+    }
+}
 
 object LibrusNotificationScheduler {
     private const val UNIQUE_WORK = "librus-background-notifications"
@@ -58,8 +127,12 @@ class LibrusNotificationWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        LibrusNotificationDiagnostics.record(applicationContext, "running")
         val credentials = LibrusCredentialVault(applicationContext).load()
-            ?: return Result.success()
+            ?: run {
+                LibrusNotificationDiagnostics.record(applicationContext, "not_configured", "Brak zapisanych danych logowania Librusa.")
+                return Result.success()
+            }
 
         var connection: HttpURLConnection? = null
         return try {
@@ -69,11 +142,20 @@ class LibrusNotificationWorker(
                 supabase.auth.sessionStatus.first {
                     it !is SessionStatus.Initializing
                 }
-            } ?: return Result.retry()
-            if (sessionState !is SessionStatus.Authenticated) return Result.success()
+            } ?: run {
+                LibrusNotificationDiagnostics.record(applicationContext, "error", "Przekroczono czas oczekiwania na sesję aplikacji.")
+                return Result.retry()
+            }
+            if (sessionState !is SessionStatus.Authenticated) {
+                LibrusNotificationDiagnostics.record(applicationContext, "auth_required", "Brak aktywnej sesji Supabase. Otwórz aplikację i ponów sprawdzanie.")
+                return Result.retry()
+            }
 
             val accessToken = supabase.auth.currentAccessTokenOrNull()
-                ?: return Result.retry()
+                ?: run {
+                    LibrusNotificationDiagnostics.record(applicationContext, "auth_required", "Sesja Supabase nie udostępniła tokenu dostępu.")
+                    return Result.retry()
+                }
 
             val activeConnection = (URL("$BACKEND_URL/v1/sync").openConnection()
                 as HttpURLConnection).apply {
@@ -102,11 +184,29 @@ class LibrusNotificationWorker(
             val body = (if (code in 200..299) activeConnection.inputStream
                 else activeConnection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
 
-            if (code == 401 || code == 428 || code == 409) return Result.success()
-            if (code !in 200..299) return if (code >= 500 || code == 429) Result.retry() else Result.success()
+            if (code == 401 || code == 428 || code == 409) {
+                val detail = body.take(300).ifBlank { "HTTP $code" }
+                LibrusNotificationDiagnostics.record(applicationContext, "auth_required", detail)
+                postNotification(
+                    "Wymagane działanie w Librusie",
+                    "Otwórz aplikację i sprawdź połączenie z Librusem. $detail",
+                    "START"
+                )
+                return Result.success()
+            }
+            if (code !in 200..299) {
+                LibrusNotificationDiagnostics.record(applicationContext, "error", "Backend zwrócił HTTP $code: ${body.take(250)}")
+                return if (code >= 500 || code == 429) Result.retry() else Result.success()
+            }
 
-            val response = JSONObject(body)
-            val data = response.optJSONObject("data") ?: return Result.retry()
+            val response = runCatching { JSONObject(body) }.getOrElse {
+                LibrusNotificationDiagnostics.record(applicationContext, "error", "Backend zwrócił nieprawidłowy JSON.")
+                return Result.retry()
+            }
+            val data = response.optJSONObject("data") ?: run {
+                LibrusNotificationDiagnostics.record(applicationContext, "error", "Odpowiedź backendu nie zawiera sekcji data.")
+                return Result.retry()
+            }
             response.optJSONObject("session")?.let {
                 LibrusCredentialVault(applicationContext).updateSession(it.toString())
             }
@@ -121,8 +221,14 @@ class LibrusNotificationWorker(
             detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość")
             detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga")
             detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga")
+            LibrusNotificationDiagnostics.record(applicationContext, "success")
             Result.success()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            LibrusNotificationDiagnostics.record(
+                applicationContext,
+                "error",
+                "${error.javaClass.simpleName}: ${error.message.orEmpty()}"
+            )
             Result.retry()
         } finally {
             connection?.disconnect()
@@ -164,7 +270,9 @@ class LibrusNotificationWorker(
                 val item = array.optJSONObject(i) ?: continue
                 val id = item.opt("id")?.toString()?.takeIf {
                     it.isNotBlank() && it != "null"
-                } ?: item.toString().hashCode().toString()
+                } ?: MessageDigest.getInstance("SHA-256")
+                    .digest(item.toString().toByteArray(Charsets.UTF_8))
+                    .joinToString("") { byte -> "%02x".format(byte) }
                 val identity = "$sourceKey:$id"
                 current.add(identity)
                 items.add(identity to item)
@@ -181,7 +289,7 @@ class LibrusNotificationWorker(
             ?.toSet()
 
         if (previous == null) {
-            prefs.edit().putString(prefKey, current.joinToString("|")).apply()
+            prefs.edit().putString(prefKey, current.joinToString("|")).commit()
             return
         }
 
@@ -206,13 +314,21 @@ class LibrusNotificationWorker(
                         it.optString(field).takeIf(String::isNotBlank)
                     }
             }.orEmpty()
-            postNotification(
+            val posted = postNotification(
                 title,
                 if (detail.isBlank()) "Otwórz aplikację, aby zobaczyć szczegóły." else detail,
                 section
             )
+            if (!posted) {
+                LibrusNotificationDiagnostics.record(
+                    applicationContext,
+                    "blocked",
+                    "Wykryto nowe dane, ale Android blokuje wyświetlanie powiadomień."
+                )
+                return
+            }
         }
-        prefs.edit().putString(prefKey, current.joinToString("|")).apply()
+        prefs.edit().putString(prefKey, current.joinToString("|")).commit()
     }
 
     private fun notificationsEnabled(key: String): Boolean {
@@ -220,16 +336,20 @@ class LibrusNotificationWorker(
         return prefs.getBoolean(key, true)
     }
 
-    private fun postNotification(title: String, text: String, section: String) {
+    private fun postNotification(title: String, text: String, section: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
-        ) return
+        ) return false
 
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
             NotificationChannel("librus_updates", "Aktualizacje Librus", NotificationManager.IMPORTANCE_DEFAULT)
         )
+        if (!NotificationManagerCompat.from(applicationContext).areNotificationsEnabled() ||
+            (Build.VERSION.SDK_INT >= 26 &&
+                manager.getNotificationChannel("librus_updates")?.importance == NotificationManager.IMPORTANCE_NONE)
+        ) return false
 
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -250,5 +370,6 @@ class LibrusNotificationWorker(
         NotificationManagerCompat.from(applicationContext).notify(
             (section + title + System.currentTimeMillis()).hashCode(), notification
         )
+        return true
     }
 }
