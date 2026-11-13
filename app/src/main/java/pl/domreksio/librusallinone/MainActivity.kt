@@ -492,7 +492,7 @@ class MainActivity : Activity() {
         quickTile("Frekwencja", "Obecności", "◷", Color.rgb(67, 66, 112), "FREKWENCJA")
         content.addView(quickAccess, params(0, 0, 0, 12))
 
-        addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
+        addHomeSection(content, "PROFILE", "Dane konta, przedmioty, nauczyciele i sale lekcyjne", "🏫")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
         addHomeSection(content, "FREKWENCJA", "Obecności, nieobecności i spóźnienia", "📅")
         addHomeSection(content, "PLAN LEKCJI", "Tygodniowy harmonogram zajęć", "🗓")
@@ -753,7 +753,7 @@ class MainActivity : Activity() {
             "TERMINARZ" -> "Sprawdziany, wydarzenia i wycieczki"
             "UWAGI" -> "Uwagi dotyczące zachowania"
             "SZCZĘŚLIWY NUMEREK" -> "Szczęśliwy numerek"
-            "PROFILE" -> "Dane ucznia i informacje szkolne"
+            "PROFILE" -> "Dane konta i informacje szkolne"
             "NAUCZYCIELE" -> "Katalog nauczycieli i wyszukiwarka kontaktów"
             else -> "Dane z Librusa"
         }
@@ -4099,7 +4099,7 @@ class MainActivity : Activity() {
 
     private fun showMoreMenu(activeSection: String) {
         val labels = arrayOf(
-            "Profile i dane ucznia",
+            "Dane konta i szkoły",
             "Frekwencja",
             "Zadania domowe",
             "Terminarz",
@@ -4178,7 +4178,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, (3 * density).toInt(), (8 * density).toInt(), (3 * density).toInt())
         }
-        texts.addView(label(heading, 15f, white, true))
+        texts.addView(label(if (heading == "PROFILE") "Dane konta i szkoły" else heading, 15f, white, true))
         texts.addView(label(description, 12f, Color.rgb(205, 218, 237)).apply {
             setLineSpacing(1f, 1.04f)
             maxLines = 2
