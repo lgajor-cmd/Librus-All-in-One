@@ -49,6 +49,33 @@ class NotificationStateTrackerTest {
     }
 
     @Test
+    fun legacyMigrationCanDeferNewFeedsUntilTheirFirstSuccessfulRead() {
+        val migrated = NotificationStateTracker.update(
+            previousKnownIds = setOf("grades:g1"),
+            currentIdsBySource = mapOf("grades" to setOf("grades:g1")),
+            allSourceKeys = sources,
+            pendingBaselineKeys = setOf("descriptive_grades", "partial_grades")
+        )
+
+        assertTrue(migrated.newIds.isEmpty())
+        assertEquals(setOf("descriptive_grades", "partial_grades"), migrated.pendingBaselineKeys)
+
+        val recovered = NotificationStateTracker.update(
+            previousKnownIds = migrated.knownIds,
+            currentIdsBySource = mapOf(
+                "grades" to setOf("grades:g1"),
+                "descriptive_grades" to setOf("descriptive_grades:d-old"),
+                "partial_grades" to emptySet()
+            ),
+            allSourceKeys = sources,
+            pendingBaselineKeys = migrated.pendingBaselineKeys
+        )
+
+        assertTrue(recovered.newIds.isEmpty())
+        assertTrue(recovered.pendingBaselineKeys.isEmpty())
+    }
+
+    @Test
     fun newGradesInAvailableFeedAreStillDetectedDuringPartialBaseline() {
         val first = NotificationStateTracker.update(
             previousKnownIds = null,
