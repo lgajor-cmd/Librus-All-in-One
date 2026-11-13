@@ -16,8 +16,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import 
-io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.handleDeeplinks
@@ -26,8 +25,7 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import 
-kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -44,8 +42,7 @@ private const val SUPABASE_URL =
     "https://alegkhpqxdzuqjuuoawp.supabase.co"
 
 private const val SUPABASE_PUBLISHABLE_KEY =
-    
-"sb_publishable_gchAnvMxlFgvzdenD0QqWg_YoOtsTPe"
+    "sb_publishable_gchAnvMxlFgvzdenD0QqWg_YoOtsTPe"
 
 private const val AUTH_REDIRECT =
     "pl.domreksio.librusallinone://login-callback"
@@ -59,8 +56,7 @@ private val supabase = createSupabaseClient(
 ) {
     install(Auth) {
         host = "login-callback"
-        scheme = 
-"pl.domreksio.librusallinone"
+        scheme = "pl.domreksio.librusallinone"
         flowType = FlowType.PKCE
     }
 }
@@ -75,8 +71,7 @@ class MainActivity : Activity() {
     private lateinit var statusText: TextView
     private lateinit var backendStatusText: TextView
 
-    private lateinit var 
-librusLoginInput: EditText
+    private lateinit var librusLoginInput: EditText
     private lateinit var librusPasswordInput: EditText
     private lateinit var librusStatusText: TextView
     private lateinit var librusConnectButton: Button
@@ -88,8 +83,7 @@ librusLoginInput: EditText
     private var librusSessionMemory: JSONObject? = null
     private var librusDataMemory: JSONObject? = null
 
-    private var syncInProgress = 
-false
+    private var syncInProgress = false
     private var autoRestoreStarted = false
 
     private val white = Color.rgb(242, 245, 250)
@@ -100,8 +94,7 @@ false
     private val successColor = Color.rgb(100, 210, 140)
     private val errorColor = Color.rgb(255, 125, 125)
     private val accentColor = Color.rgb(105, 165, 255)
-    private val warningColor = 
-Color.rgb(255, 190, 95)
+    private val warningColor = Color.rgb(255, 190, 95)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,8 +105,7 @@ Color.rgb(255, 190, 95)
         activityScope.launch {
             supabase.auth.sessionStatus.collect { state ->
                 when (state) {
-                    is SessionStatus.Authenticated 
-->
+                    is SessionStatus.Authenticated ->
                         showHome(state.session.user?.email.orEmpty())
 
                     SessionStatus.Initializing ->
@@ -126,8 +118,7 @@ Color.rgb(255, 190, 95)
                         showLogin("Sesja wygasła. Zaloguj się ponownie.")
                 }
             }
-        
-}
+        }
 
         try {
             supabase.handleDeeplinks(intent)
@@ -143,8 +134,7 @@ Color.rgb(255, 190, 95)
         try {
             supabase.handleDeeplinks(intent)
         } catch (e: Exception) {
-            showLogin("Błąd linku 
-logowania: ${e.message}")
+            showLogin("Błąd linku logowania: ${e.message}")
         }
     }
 
@@ -159,8 +149,7 @@ logowania: ${e.message}")
             orientation = LinearLayout.VERTICAL
             setPadding(24, 36, 24, 28)
             setBackgroundColor(bgColor)
-        
-}
+        }
 
         content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
         content.addView(label("Twoje konto\nw jednym miejscu", 30f, white, true))
@@ -175,8 +164,7 @@ logowania: ${e.message}")
         emailInput = inputField(
             "Adres e-mail",
             InputType.TYPE_CLASS_TEXT or
-                
-InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+                InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         )
         content.addView(emailInput, params(0, 18, 0, 8))
 
@@ -189,8 +177,7 @@ InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
 
         content.addView(actionButton("ZAREJESTRUJ KONTO") {
             authenticate(true)
-        }, params(0, 4, 0, 
-6))
+        }, params(0, 4, 0, 6))
 
         content.addView(actionButton("ZALOGUJ SIĘ") {
             authenticate(false)
@@ -204,8 +191,7 @@ InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
                 "Po rejestracji potwierdź adres e-mail. Po zalogowaniu otworzy się ekran główny.",
                 13f,
                 muted
-            
-)
+            )
         )
 
         setContentView(ScrollView(this).apply {
@@ -232,8 +218,7 @@ InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         content.addView(label("Zalogowano jako: $email", 14f, muted))
         content.addView(label("Konto aplikacji działa.", 15f, successColor))
 
-        val savedLibrus = 
-librusVault.load()
+        val savedLibrus = librusVault.load()
 
         if (savedLibrus != null) {
             librusLoginMemory = savedLibrus.login
@@ -248,8 +233,7 @@ librusVault.load()
             }
         }
 
-        content.addView(sectionHeader("POŁĄCZENIE Z BACKENDEM"), params(0, 
-20, 0, 5))
+        content.addView(sectionHeader("POŁĄCZENIE Z BACKENDEM"), params(0, 20, 0, 5))
 
         backendStatusText = label("Nie sprawdzono jeszcze połączenia.", 14f, muted)
         content.addView(backendStatusText)
@@ -261,8 +245,7 @@ librusVault.load()
         content.addView(sectionHeader("KONTO LIBRUS"), params(0, 16, 0, 5))
         content.addView(
             label(
-                "Wybierz konto rodzica i podaj dane logowania do Librus 
-Synergia.",
+                "Wybierz konto rodzica i podaj dane logowania do Librus Synergia.",
                 14f,
                 muted
             )
@@ -276,8 +259,7 @@ Synergia.",
             "Hasło do Librusa",
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         )
-        content.addView(librusPasswordInput, 
-params(0, 0, 0, 8))
+        content.addView(librusPasswordInput, params(0, 0, 0, 8))
 
         librusConnectButton = actionButton("POŁĄCZ Z LIBRUSEM") {
             connectLibrus()
@@ -305,8 +287,7 @@ params(0, 0, 0, 8))
 
         content.addView(sectionHeader("DANE UCZNIA"), params(0, 14, 0, 8))
 
-        addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", 
-"👤")
+        addHomeSection(content, "PROFILE", "Profile rodzica i ucznia", "👤")
         addHomeSection(content, "OCENY", "Oceny i postępy ucznia", "📊")
         addHomeSection(content, "FREKWENCJA", "Obecności, nieobecności i spóźnienia", "📅")
         addHomeSection(content, "PLAN LEKCJI", "Tygodniowy harmonogram zajęć", "🗓")
@@ -382,8 +363,7 @@ params(0, 0, 0, 8))
                 }
 
                 val code = connection.responseCode
-                val body = 
-readResponse(connection, code)
+                val body = readResponse(connection, code)
 
                 if (code in 200..299) {
                     val json = JSONObject(body)
@@ -396,8 +376,7 @@ readResponse(connection, code)
 
                         librusVault.save(login, password, librusSessionMemory?.toString())
 
-                        "SUCCESS|Połączono z 
-Librusem. Dane można teraz pobrać."
+                        "SUCCESS|Połączono z Librusem. Dane można teraz pobrać."
                     } else {
                         "ERROR|Serwer nie zwrócił profilu lub sesji Librusa."
                     }
@@ -424,8 +403,7 @@ Librusem. Dane można teraz pobrać."
 
     // ---------------------------------------------------------
     // SYNCHRONIZACJA
-    // 
----------------------------------------------------------
+    // ---------------------------------------------------------
 
     private fun loadLibrusSection(section: String) {
         val login = librusLoginMemory
@@ -468,8 +446,7 @@ Librusem. Dane można teraz pobrać."
                 connection.readTimeout = 120000
                 connection.doOutput = true
                 connection.setRequestProperty("Authorization", "Bearer $token")
-                connection.setRequestProper
-ty("Content-Type", "application/json; charset=utf-8")
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
@@ -537,8 +514,7 @@ ty("Content-Type", "application/json; charset=utf-8")
             "OCENY" -> "Oceny i postępy ucznia"
             "FREKWENCJA" -> "Obecności, nieobecności i spóźnienia"
             "PLAN LEKCJI" -> "Harmonogram zajęć"
-            "WIADOMOŚCI" -> "Wiadomości 
-oraz ogłoszenia"
+            "WIADOMOŚCI" -> "Wiadomości oraz ogłoszenia"
             "PROFILE" -> "Dane ucznia, przedmioty i nauczyciele"
             else -> "Dane z Librusa"
         }
@@ -611,8 +587,7 @@ oraz ogłoszenia"
         val raw = data.opt("timetable")
 
         if (raw == null || raw == JSONObject.NULL) {
-            parent.addView(infoCard("Brak 
-danych planu lekcji."))
+            parent.addView(infoCard("Brak danych planu lekcji."))
             return
         }
 
@@ -665,8 +640,7 @@ danych planu lekcji."))
                 }
 
                 is JSONObject -> {
-                    if (value.has("lesson_no") || 
-value.has("hour_from")) {
+                    if (value.has("lesson_no") || value.has("hour_from")) {
                         addLesson(date, value)
                     } else {
                         val nested = value.optJSONArray("lessons")
@@ -694,8 +668,7 @@ value.has("hour_from")) {
                     val item = raw.optJSONObject(i) ?: continue
                     val date = firstValue(item, "date", "lesson_date", "day")
                     val nested = item.optJSONArray("lessons")
-                        ?: 
-item.optJSONArray("items")
+                        ?: item.optJSONArray("items")
 
                     if (nested != null) {
                         parseDay(date, nested)
@@ -743,8 +716,7 @@ item.optJSONArray("items")
             val dayTitle = dateLabel(date)
             dayCard.addView(label(dayTitle, 18f, white, true))
             dayCard.addView(
-                label("${dayLessons.size} 
-zaplanowanych lekcji", 12f, muted)
+                label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
 
             for (lesson in dayLessons.sortedWith(
@@ -977,8 +949,7 @@ zaplanowanych lekcji", 12f, muted)
         val types = data.optJSONObject("attendance_types")
         val array = data.optJSONArray("attendances")
 
-        if (array == null || array.length() 
-== 0) {
+        if (array == null || array.length() == 0) {
             parent.addView(infoCard("Brak wpisów frekwencji."))
             return
         }
@@ -991,8 +962,7 @@ zaplanowanych lekcji", 12f, muted)
 
         for (item in sorted) {
             val date = firstValue(item, "date", "lesson_date")
-            val typeId = firstValue(item, 
-"type_id", "attendance_type_id", "type")
+            val typeId = firstValue(item, "type_id", "attendance_type_id", "type")
             val type = lookupName(types, typeId)
                 .ifBlank { item.optString("type_name").ifBlank { typeId } }
 
@@ -1026,8 +996,7 @@ zaplanowanych lekcji", 12f, muted)
         heading: String
     ) {
         if (array == null || array.length() == 0) {
-            parent.addView(infoCard("Brak 
-wiadomości do wyświetlenia: $heading."))
+            parent.addView(infoCard("Brak wiadomości do wyświetlenia: $heading."))
             return
         }
 
@@ -1038,8 +1007,7 @@ wiadomości do wyświetlenia: $heading."))
             val title = firstValue(item, "title", "subject", "topic")
                 .ifBlank { heading.removeSuffix("i") }
             val sender = firstValue(item, "sender", "author", "teacher_name", "from")
-            val date = firstValue(item, 
-"date", "created_at", "send_date")
+            val date = firstValue(item, "date", "created_at", "send_date")
             val body = firstValue(
                 item,
                 "content", "message", "body", "text",
@@ -1184,8 +1152,7 @@ wiadomości do wyświetlenia: $heading."))
             }
         }
 
-        if (!found) parent.addView(infoCard("Brak 
-danych profilu."))
+        if (!found) parent.addView(infoCard("Brak danych profilu."))
     }
 
     // ---------------------------------------------------------
@@ -1275,8 +1242,7 @@ danych profilu."))
     // ---------------------------------------------------------
 
     private fun checkBackendConnection() {
-        if (!::backendStatusText.isInitialized) 
-return
+        if (!::backendStatusText.isInitialized) return
 
         backendStatusText.text = "Sprawdzam sesję Supabase i połączenie z serwerem…"
         backendStatusText.setTextColor(muted)
@@ -1286,8 +1252,7 @@ return
         if (accessToken.isNullOrBlank()) {
             backendStatusText.text = "Brak aktywnego tokenu. Zaloguj się ponownie."
             backendStatusText.setTextColor(errorColor)
-            
-return
+            return
         }
 
         thread {
@@ -1300,8 +1265,7 @@ return
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 20000
                 connection.readTimeout = 20000
-                
-connection.setRequestProperty("Authorization", "Bearer $accessToken")
+                connection.setRequestProperty("Authorization", "Bearer $accessToken")
                 connection.setRequestProperty("Accept", "application/json")
 
                 val code = connection.responseCode
@@ -1339,8 +1303,7 @@ connection.setRequestProperty("Authorization", "Bearer $accessToken")
     }
 
     // ---------------------------------------------------------
-    // LOGOWANIE I WYLOGOWANIE 
-SUPABASE
+    // LOGOWANIE I WYLOGOWANIE SUPABASE
     // ---------------------------------------------------------
 
     private fun authenticate(register: Boolean) {
@@ -1368,8 +1331,7 @@ SUPABASE
                             redirectUrl = AUTH_REDIRECT
                         ) {
                             this.email = email
-                            this.password = 
-password
+                            this.password = password
                         }
                         "Konto utworzone. Sprawdź pocztę i potwierdź adres e-mail."
                     } else {
@@ -1474,8 +1436,7 @@ password
 
     private fun sectionHeader(title: String): TextView =
         TextView(this).apply {
-            text = 
-title.uppercase(Locale("pl", "PL"))
+            text = title.uppercase(Locale("pl", "PL"))
             textSize = 13f
             setTextColor(successColor)
             setTypeface(null, Typeface.BOLD)
@@ -1600,8 +1561,7 @@ title.uppercase(Locale("pl", "PL"))
                 val iterator = dictionary.keys()
                 while (iterator.hasNext()) {
                     val key = iterator.next()
-                    val item = 
-dictionary.optJSONObject(key) ?: continue
+                    val item = dictionary.optJSONObject(key) ?: continue
                     val itemId = firstValue(item, "id", "subject_id", "teacher_id", "classroom_id")
                     if (itemId == id) {
                         found = firstValue(item, "name", "title", "value")
@@ -1654,4 +1614,5 @@ dictionary.optJSONObject(key) ?: continue
         activityScope.cancel()
         super.onDestroy()
     }
-                                            }
+
+}
