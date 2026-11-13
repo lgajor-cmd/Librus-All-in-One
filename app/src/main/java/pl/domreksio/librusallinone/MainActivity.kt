@@ -2773,38 +2773,7 @@ class MainActivity : Activity() {
     // Siatka używa wymiarów dp i pełnej szerokości, aby nie ściskać dni na różnych ekranach.
     private fun renderAgendaCalendar(parent: LinearLayout, data: JSONObject) {
         val density = resources.displayMetrics.density
-        // Librus may expose the school calendar under either "agenda" or "events".
-        // Merge both sources for the month markers and selected-day preview.
-        val schoolEvents = listOf("agenda", "events").flatMap { sourceKey ->
-            val raw = data.opt(sourceKey)
-            val items = when (raw) {
-                is JSONArray -> raw
-                is JSONObject -> raw.optJSONArray("items")
-                    ?: raw.optJSONArray("entries")
-                    ?: JSONArray().apply { put(raw) }
-                else -> JSONArray()
-            }
-            (0 until items.length()).mapNotNull { index ->
-                val item = items.optJSONObject(index) ?: return@mapNotNull null
-                val rawDate = firstValue(
-                    item, "date", "event_date", "start_date", "date_from",
-                    "due_date", "deadline", "start"
-                )
-                val parsed = parseFeatureDate(rawDate) ?: return@mapNotNull null
-                val dateKey = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply {
-                    timeZone = java.util.TimeZone.getTimeZone("UTC")
-                }.format(parsed)
-                Triple(sourceKey, item, dateKey)
-            }
-        }.distinctBy { (_, item, dateKey) ->
-            val id = firstValue(item, "id", "event_id", "agenda_id")
-            if (id.isNotBlank()) "id:$id"
-            else listOf(
-                dateKey,
-                firstValue(item, "title", "topic", "name", "subject"),
-                firstValue(item, "description", "content", "details")
-            ).joinToString("|")
-        }
+        val schoolEvents = AgendaCalendarParser.parse(data)
         fun dp(value: Int): Int = (value * density).toInt()
         val month = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
         var selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
@@ -2907,7 +2876,7 @@ class MainActivity : Activity() {
                         val isToday = date == today
                         val isSelected = date == selected
                         val hasPersonalEvent = date in datesWithEvents
-                        val hasSchoolEvent = schoolEvents.any { it.third == date }
+                        val hasSchoolEvent = schoolEvents.any { it.date == date }
                         val weekend = column >= 5
                         val cell = LinearLayout(this).apply {
                             orientation = LinearLayout.VERTICAL
@@ -3005,7 +2974,7 @@ class MainActivity : Activity() {
                 }
             }
 
-            val selectedSchoolEvents = schoolEvents.filter { it.third == selected }
+            val selectedSchoolEvents = schoolEvents.filter { it.date == selected }
             if (selectedSchoolEvents.isNotEmpty()) {
                 host.addView(label("WYDARZENIA SZKOLNE Z LIBRUSA", 11f, Color.rgb(83, 190, 255), true),
                     params(0, 10, 0, 6))
