@@ -903,6 +903,17 @@ class MainActivity : Activity() {
                 label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
 
+            val sortedDayLessons = dayLessons.sortedWith(
+                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
+                    .thenBy { it.number }
+            )
+            val timelineList = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            sortedDayLessons.forEach { lesson ->
+                timelineList.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
+            }
+
             val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
             if (date == todayKey) {
                 val livePanel = LinearLayout(this).apply {
@@ -971,6 +982,26 @@ class MainActivity : Activity() {
                 }
                 livePanel.addView(bellSync)
                 dayCard.addView(livePanel, params(0, 10, 0, 2))
+
+                // Znacznik czasu na osi planu: przemieszcza się nad trwającą
+                // lekcję, nad następną lekcję podczas przerwy albo na koniec dnia.
+                val timelineMarker = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, (7 * resources.displayMetrics.density).toInt(),
+                        0, (3 * resources.displayMetrics.density).toInt())
+                }
+                val timelineMarkerLabel = TextView(this).apply {
+                    textSize = 10f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(accentColor)
+                    setPadding(0, 0, (9 * resources.displayMetrics.density).toInt(), 0)
+                }
+                timelineMarker.addView(timelineMarkerLabel)
+                timelineMarker.addView(View(this).apply {
+                    background = roundedBackground(accentColor, 2)
+                }, LinearLayout.LayoutParams(0, (2 * resources.displayMetrics.density).toInt(), 1f))
+                timelineList.addView(timelineMarker)
 
                 var previousLiveState = ""
                 val handler = android.os.Handler(mainLooper)
@@ -1042,6 +1073,16 @@ class MainActivity : Activity() {
                                 .withEndAction { bellIcon.animate().rotation(0f).setDuration(130).start() }
                                 .start()
                         }
+                        timelineMarkerLabel.text = "TERAZ • " +
+                            SimpleDateFormat("HH:mm", Locale.getDefault()).format(now.time)
+                        val markerTarget = when {
+                            activeLesson != null -> sortedDayLessons.indexOf(activeLesson)
+                            nextLesson != null -> sortedDayLessons.indexOf(nextLesson)
+                            else -> sortedDayLessons.size
+                        }.coerceIn(0, timelineList.childCount - 1)
+                        timelineList.removeView(timelineMarker)
+                        timelineList.addView(timelineMarker, markerTarget)
+
                         previousLiveState = stateKey
                         handler.postDelayed(this, 30_000L)
                     }
@@ -1050,12 +1091,7 @@ class MainActivity : Activity() {
                 ticker.run()
             }
 
-            for (lesson in dayLessons.sortedWith(
-                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
-                    .thenBy { it.number }
-            )) {
-                dayCard.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
-            }
+            dayCard.addView(timelineList, params(0, 4, 0, 0))
             dayContent.addView(dayCard, params(0, 8, 0, 4))
         }
 
