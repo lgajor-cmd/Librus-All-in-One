@@ -721,9 +721,11 @@ class MainActivity : Activity() {
         ))
         sectionPage.addView(buildBottomNavigation(section))
         setContentView(sectionPage)
-        root.alpha = 0f
-        root.translationY = 12f * resources.displayMetrics.density
-        root.animate().alpha(1f).translationY(0f).setDuration(280).start()
+        if (uiPrefs.getBoolean("motion", true)) {
+            root.alpha = 0f
+            root.translationY = 12f * resources.displayMetrics.density
+            root.animate().alpha(1f).translationY(0f).setDuration(280).start()
+        }
     }
 
     // ---------------------------------------------------------
@@ -953,6 +955,14 @@ class MainActivity : Activity() {
                     selectedDate = date
                     refreshDaySelection()
                     renderSelectedDay(date)
+                    if (uiPrefs.getBoolean("motion", true)) {
+                        dayContent.alpha = 0f
+                        dayContent.translationY = 8f * resources.displayMetrics.density
+                        dayContent.animate().alpha(1f).translationY(0f).setDuration(190).start()
+                        button.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120)
+                            .withEndAction { button.animate().scaleX(1f).scaleY(1f).setDuration(120).start() }
+                            .start()
+                    }
                 }
             }
             dayButtons[date] = button
@@ -1204,6 +1214,13 @@ class MainActivity : Activity() {
             }
 
             parent.addView(subjectCard, params(0, 0, 0, 10))
+            if (uiPrefs.getBoolean("motion", true)) {
+                subjectCard.alpha = 0f
+                subjectCard.translationY = 10f * resources.displayMetrics.density
+                subjectCard.animate().alpha(1f).translationY(0f)
+                    .setStartDelay((parent.childCount.coerceAtMost(8) * 35L))
+                    .setDuration(240).start()
+            }
         }
     }
 
@@ -1831,6 +1848,31 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun showAppearanceSettings(activeSection: String) {
+        val options = arrayOf("Niebieski — klasyczny", "Turkusowy — świeży", "Fioletowy — nowoczesny", "Bursztynowy — ciepły")
+        val keys = arrayOf("blue", "teal", "violet", "amber")
+        val selected = keys.indexOf(uiPrefs.getString("accent", "blue")).coerceAtLeast(0)
+        val motionEnabled = uiPrefs.getBoolean("motion", true)
+
+        AlertDialog.Builder(this)
+            .setTitle("Wygląd aplikacji")
+            .setSingleChoiceItems(options, selected) { dialog, which ->
+                uiPrefs.edit().putString("accent", keys[which]).apply()
+                dialog.dismiss()
+                if (activeSection == "START") {
+                    showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                } else {
+                    loadLibrusSection(activeSection)
+                }
+            }
+            .setNeutralButton(if (motionEnabled) "Wyłącz animacje" else "Włącz animacje") { _, _ ->
+                uiPrefs.edit().putBoolean("motion", !motionEnabled).apply()
+                showAppearanceSettings(activeSection)
+            }
+            .setNegativeButton("Zamknij", null)
+            .show()
+    }
+
     private fun signOut() {
         LibrusNotificationScheduler.cancel(applicationContext)
         thread {
@@ -1898,17 +1940,30 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 setPadding((2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt(), (3 * density).toInt())
                 background = roundedBackground(
-                    if (selected) Color.rgb(39, 65, 101) else Color.TRANSPARENT,
+                    if (selected) Color.argb(48, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) else Color.TRANSPARENT,
                     13
                 )
                 isClickable = true
                 isFocusable = true
+                alpha = if (selected) 1f else 0.82f
+                scaleX = if (selected) 1.03f else 1f
+                scaleY = if (selected) 1.03f else 1f
+            }
+            if (selected) {
+                val indicator = View(this).apply {
+                    background = roundedBackground(accentColor, 4)
+                }
+                tile.addView(indicator, LinearLayout.LayoutParams((22 * density).toInt(), (3 * density).toInt()).apply {
+                    bottomMargin = (2 * density).toInt()
+                })
+            } else {
+                tile.addView(View(this), LinearLayout.LayoutParams(1, (5 * density).toInt()))
             }
             tile.addView(TextView(this).apply {
                 text = item.icon
                 textSize = if (item.key == "WIĘCEJ") 17f else 21f
                 gravity = Gravity.CENTER
-                setTextColor(if (selected) Color.rgb(145, 190, 255) else muted)
+                setTextColor(if (selected) accentColor else muted)
                 setTypeface(null, Typeface.BOLD)
             })
             tile.addView(TextView(this).apply {
@@ -1920,9 +1975,15 @@ class MainActivity : Activity() {
                 maxLines = 1
             })
             tile.setOnClickListener {
+                if (uiPrefs.getBoolean("motion", true)) {
+                    tile.animate().cancel()
+                    tile.scaleX = 0.96f
+                    tile.scaleY = 0.96f
+                    tile.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
+                }
                 when (item.key) {
                     "START" -> showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
-                    "WIĘCEJ" -> showMoreMenu()
+                    "WIĘCEJ" -> showMoreMenu(active)
                     else -> loadLibrusSection(item.key)
                 }
             }
@@ -1934,7 +1995,7 @@ class MainActivity : Activity() {
         return nav
     }
 
-    private fun showMoreMenu() {
+    private fun showMoreMenu(activeSection: String) {
         val labels = arrayOf(
             "Profile i nauczyciele",
             "Frekwencja",
@@ -1942,7 +2003,8 @@ class MainActivity : Activity() {
             "Terminarz",
             "Uwagi",
             "Szczęśliwy numerek",
-            "Ustawienia powiadomień"
+            "Ustawienia powiadomień",
+            "Wygląd aplikacji"
         )
         val sections = arrayOf(
             "PROFILE",
@@ -1955,10 +2017,10 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Więcej modułów")
             .setItems(labels) { _, which ->
-                if (which == labels.lastIndex) {
-                    showNotificationSettings()
-                } else {
-                    loadLibrusSection(sections[which])
+                when (which) {
+                    6 -> showNotificationSettings()
+                    7 -> showAppearanceSettings(activeSection)
+                    else -> loadLibrusSection(sections[which])
                 }
             }
             .show()
@@ -2043,7 +2105,7 @@ class MainActivity : Activity() {
         TextView(this).apply {
             text = title.uppercase(Locale("pl", "PL"))
             textSize = 13f
-            setTextColor(successColor)
+            setTextColor(accentColor)
             setTypeface(null, Typeface.BOLD)
             setPadding(2, 8, 2, 5)
         }
@@ -2060,7 +2122,7 @@ class MainActivity : Activity() {
                 intArrayOf(Color.rgb(33, 51, 77), Color.rgb(25, 38, 59))
             ).apply {
                 cornerRadius = 16f * resources.displayMetrics.density
-                setStroke((1 * resources.displayMetrics.density).toInt(), Color.rgb(61, 85, 119))
+                setStroke((1 * resources.displayMetrics.density).toInt(), blendColor(accentColor, Color.rgb(61, 85, 119), 0.62f))
             }
         }
 
@@ -2100,10 +2162,19 @@ class MainActivity : Activity() {
         minHeight = (48 * resources.displayMetrics.density).toInt()
         background = GradientDrawable(
             GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(Color.rgb(56, 112, 194), Color.rgb(43, 83, 145))
+            intArrayOf(accentColor, blendColor(accentColor, Color.rgb(30, 48, 78), 0.55f))
         ).apply { cornerRadius = 14f * resources.displayMetrics.density }
         elevation = 2f * resources.displayMetrics.density
         setOnClickListener { action() }
+    }
+
+    private fun blendColor(from: Int, to: Int, ratio: Float): Int {
+        val inverse = 1f - ratio
+        return Color.rgb(
+            (Color.red(from) * inverse + Color.red(to) * ratio).toInt(),
+            (Color.green(from) * inverse + Color.green(to) * ratio).toInt(),
+            (Color.blue(from) * inverse + Color.blue(to) * ratio).toInt()
+        )
     }
 
     private fun roundedBackground(color: Int, radiusDp: Int): GradientDrawable =
