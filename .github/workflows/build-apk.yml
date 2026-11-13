@@ -56,6 +56,20 @@ jobs:
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/pl/domreksio/librusallinone/MainActivity.kt
 
+      - name: Run Android lint
+        run: gradle --no-daemon lintDebug --stacktrace
+
+      - name: Run Android unit tests
+        run: gradle --no-daemon testDebugUnitTest --stacktrace
+
+      - name: Upload Android lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Lint-Report
+          path: app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
       - name: Build APK
         run: gradle --no-daemon assembleDebug --stacktrace --info
 

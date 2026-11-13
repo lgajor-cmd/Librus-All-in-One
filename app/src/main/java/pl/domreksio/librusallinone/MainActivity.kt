@@ -1458,8 +1458,8 @@ class MainActivity : Activity() {
                                 val endMinute = minuteOf(activeLesson.to) ?: correctedMinute
                                 val remaining = (endMinute - correctedMinute).coerceAtLeast(0)
                                 stateKey = "lesson-${activeLesson.number}"
-                                liveStatus.text = "TERAZ: ${activeLesson.subject}"
-                                liveDetail.text = "Lekcja ${activeLesson.number} • ${activeLesson.from}–${activeLesson.to} • koniec za ${remaining} min"
+                                liveStatus.text = getString(R.string.timetable_now, activeLesson.subject)
+                                liveDetail.text = getString(R.string.timetable_lesson_detail, activeLesson.number, activeLesson.from, activeLesson.to, remaining)
                                 val startMinute = minuteOf(activeLesson.from) ?: correctedMinute
                                 val duration = (endMinute - startMinute).coerceAtLeast(1)
                                 liveProgress.progress = (((correctedMinute - startMinute).toFloat() / duration) * 100).toInt().coerceIn(0, 100)
@@ -1469,8 +1469,8 @@ class MainActivity : Activity() {
                                 val endMinute = minuteOf(previousLesson.to) ?: correctedMinute
                                 val remaining = (startMinute - correctedMinute).coerceAtLeast(0)
                                 stateKey = "break-${nextLesson.number}"
-                                liveStatus.text = "PRZERWA"
-                                liveDetail.text = "Do lekcji ${nextLesson.number} (${nextLesson.subject}) zostało ${remaining} min"
+                                liveStatus.text = getString(R.string.timetable_break)
+                                liveDetail.text = getString(R.string.timetable_next_lesson, nextLesson.number, nextLesson.subject, remaining)
                                 liveProgress.progress = if (startMinute > endMinute)
                                     (((correctedMinute - endMinute).toFloat() / (startMinute - endMinute)) * 100).toInt().coerceIn(0, 100)
                                 else 0
@@ -1478,14 +1478,14 @@ class MainActivity : Activity() {
                             nextLesson != null -> {
                                 val startMinute = minuteOf(nextLesson.from) ?: correctedMinute
                                 stateKey = "before"
-                                liveStatus.text = "PRZED LEKCJAMI"
-                                liveDetail.text = "Pierwsza lekcja: ${nextLesson.subject} o ${nextLesson.from} • za ${(startMinute - correctedMinute).coerceAtLeast(0)} min"
+                                liveStatus.text = getString(R.string.timetable_before_lessons)
+                                liveDetail.text = getString(R.string.timetable_first_lesson, nextLesson.subject, nextLesson.from, (startMinute - correctedMinute).coerceAtLeast(0))
                                 liveProgress.progress = 0
                             }
                             else -> {
                                 stateKey = "after"
-                                liveStatus.text = "KONIEC LEKCJI NA DZIŚ"
-                                liveDetail.text = "Plan na dziś został zrealizowany."
+                                liveStatus.text = getString(R.string.timetable_day_complete)
+                                liveDetail.text = getString(R.string.timetable_done)
                                 liveProgress.progress = 100
                             }
                         }
@@ -1724,13 +1724,16 @@ class MainActivity : Activity() {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val value = proposed.text.toString().toIntOrNull()
                 if (value == null || value !in 1..6) {
-                    result.text = "Wpisz ocenę całkowitą od 1 do 6."
+                    result.text = getString(R.string.grade_input_error)
                     result.setTextColor(errorColor)
                 } else {
                     val projected = (currentGrades.sum() + value).toDouble() / (currentGrades.size + 1)
-                    result.text = "Po dodaniu oceny $value średnia wyniosłaby " +
-                        String.format(Locale("pl", "PL"), "%.2f", projected) +
-                        " (z " + (currentGrades.size + 1) + " ocen)."
+                    result.text = getString(
+                        R.string.grade_average_result,
+                        value,
+                        String.format(Locale("pl", "PL"), "%.2f", projected),
+                        currentGrades.size + 1
+                    )
                     result.setTextColor(successColor)
                 }
             }
@@ -3443,7 +3446,7 @@ class MainActivity : Activity() {
                     card.addView(actionButton("OTWÓRZ CAŁĄ WIADOMOŚĆ") {
                         fetchFullMessage(messageId, title, sender, date) {
                             item.put("read_date", "read")
-                            readChip.text = "PRZECZYTANA"
+                            readChip.text = getString(R.string.message_read)
                             readChip.setTextColor(successColor)
                         }
                     })
@@ -4688,7 +4691,7 @@ class MainActivity : Activity() {
                 val completed = completedKeys()
                 val done = sorted.count { localKey(it) in completed }
                 val open = sorted.size - done
-                summaryText.text = "Wszystkie: ${sorted.size}  •  Do zrobienia: $open  •  Wykonane: $done"
+                summaryText.text = getString(R.string.homework_summary, sorted.size, open, done)
                 progress.text = if (sorted.isEmpty()) "0%" else "${(done * 100) / sorted.size}%"
                 filters.removeAllViews()
                 val choices = listOf("all" to "WSZYSTKIE", "open" to "DO ZROBIENIA", "done" to "WYKONANE")
@@ -4992,13 +4995,13 @@ class MainActivity : Activity() {
     private fun checkBackendConnection() {
         if (!::backendStatusText.isInitialized) return
 
-        backendStatusText.text = "Sprawdzam sesję Supabase i połączenie z serwerem…"
+        backendStatusText.text = getString(R.string.backend_checking_session)
         backendStatusText.setTextColor(muted)
 
         val accessToken = supabase.auth.currentAccessTokenOrNull()
 
         if (accessToken.isNullOrBlank()) {
-            backendStatusText.text = "Brak aktywnego tokenu. Zaloguj się ponownie."
+            backendStatusText.text = getString(R.string.backend_no_active_token)
             backendStatusText.setTextColor(errorColor)
             return
         }
@@ -5361,6 +5364,19 @@ class MainActivity : Activity() {
 
     private inner class TechAboutArtView(context: android.content.Context) : View(context) {
         private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val tracePath = android.graphics.Path()
+        private val traces = arrayOf(
+            floatArrayOf(8f, 34f, 65f, 34f, 65f, 52f, 108f, 52f),
+            floatArrayOf(16f, 112f, 72f, 112f, 72f, 94f, 116f, 94f),
+            floatArrayOf(245f, 38f, 300f, 38f, 300f, 58f, 350f, 58f),
+            floatArrayOf(235f, 126f, 292f, 126f, 292f, 105f, 352f, 105f),
+            floatArrayOf(130f, 12f, 130f, 30f, 158f, 30f),
+            floatArrayOf(208f, 12f, 208f, 29f, 184f, 29f)
+        )
+        private val traceDots = arrayOf(
+            65f to 34f, 108f to 52f, 72f to 112f, 116f to 94f,
+            300f to 38f, 350f to 58f, 292f to 126f, 352f to 105f
+        )
 
         override fun onDraw(canvas: android.graphics.Canvas) {
             super.onDraw(canvas)
@@ -5372,26 +5388,19 @@ class MainActivity : Activity() {
             p.strokeWidth = 1.8f
             p.strokeCap = android.graphics.Paint.Cap.ROUND
             p.color = Color.argb(100, 83, 174, 255)
-            val traces = listOf(
-                listOf(8f, 34f, 65f, 34f, 65f, 52f, 108f, 52f),
-                listOf(16f, 112f, 72f, 112f, 72f, 94f, 116f, 94f),
-                listOf(245f, 38f, 300f, 38f, 300f, 58f, 350f, 58f),
-                listOf(235f, 126f, 292f, 126f, 292f, 105f, 352f, 105f),
-                listOf(130f, 12f, 130f, 30f, 158f, 30f),
-                listOf(208f, 12f, 208f, 29f, 184f, 29f)
-            )
             traces.forEach { pts ->
-                val path = android.graphics.Path().apply {
-                    moveTo(pts[0], pts[1])
-                    var n = 2
-                    while (n < pts.size) { lineTo(pts[n], pts[n + 1]); n += 2 }
+                tracePath.reset()
+                tracePath.moveTo(pts[0], pts[1])
+                var n = 2
+                while (n < pts.size) {
+                    tracePath.lineTo(pts[n], pts[n + 1])
+                    n += 2
                 }
-                canvas.drawPath(path, p)
+                canvas.drawPath(tracePath, p)
             }
             p.style = android.graphics.Paint.Style.FILL
             p.color = Color.rgb(95, 185, 255)
-            listOf(65f to 34f, 108f to 52f, 72f to 112f, 116f to 94f,
-                300f to 38f, 350f to 58f, 292f to 126f, 352f to 105f).forEach {
+            traceDots.forEach {
                 canvas.drawCircle(it.first, it.second, 3.2f, p)
             }
 
@@ -5706,7 +5715,7 @@ class MainActivity : Activity() {
         val current = readLocalArray("shopping_items")
         val scoped = (0 until current.length()).mapNotNull { current.optJSONObject(it) }.filter { it.optString("listId") == activeId }
         val remaining = scoped.count { !it.optBoolean("done", false) }
-        summary.text = remaining.toString() + " do kupienia • " + (scoped.size - remaining) + " kupione • " + scoped.size + " produktów"
+        summary.text = getString(R.string.shopping_summary, remaining, scoped.size - remaining, scoped.size)
         val visible = scoped.filter { categoryFilter == "Wszystkie" || it.optString("category", "Pozostałe") == categoryFilter }
         if (visible.isEmpty()) {
             list.addView(infoCard(if (scoped.isEmpty()) "Ta lista jest pusta. Dodaj pierwszy produkt." else "Brak produktów w kategorii: " + categoryFilter))
@@ -5828,7 +5837,7 @@ class MainActivity : Activity() {
             AlertDialog.Builder(this).setTitle("Kategoria")
                 .setSingleChoiceItems(categoryNames, categoryNames.indexOf(category).coerceAtLeast(0)) { dialog, which ->
                     category = categoryNames[which]
-                    categoryButton.text = "Kategoria: " + category
+                    categoryButton.text = getString(R.string.shopping_category, category)
                     dialog.dismiss()
                 }.show()
         }
@@ -5999,6 +6008,7 @@ class MainActivity : Activity() {
     // Rysowana lokalnie na Canvas — bez bitmap, emoji i zasobów pobieranych z internetu.
     private inner class SeasonalBannerOverlayView(context: android.content.Context) : View(context) {
         private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val shapePath = android.graphics.Path()
 
         private fun fill(canvas: android.graphics.Canvas, c: Int) {
             p.color = c
@@ -6034,13 +6044,12 @@ class MainActivity : Activity() {
 
         private fun heart(canvas: android.graphics.Canvas, x: Float, y: Float, size: Float, c: Int) {
             fill(canvas, c)
-            val path = android.graphics.Path().apply {
-                moveTo(x, y + size * 0.42f)
-                cubicTo(x-size*0.95f, y-size*0.18f, x-size*0.62f, y-size*0.82f, x, y-size*0.28f)
-                cubicTo(x+size*0.62f, y-size*0.82f, x+size*0.95f, y-size*0.18f, x, y+size*0.42f)
-                close()
-            }
-            canvas.drawPath(path, p)
+            shapePath.reset()
+            shapePath.moveTo(x, y + size * 0.42f)
+            shapePath.cubicTo(x-size*0.95f, y-size*0.18f, x-size*0.62f, y-size*0.82f, x, y-size*0.28f)
+            shapePath.cubicTo(x+size*0.62f, y-size*0.82f, x+size*0.95f, y-size*0.18f, x, y+size*0.42f)
+            shapePath.close()
+            canvas.drawPath(shapePath, p)
         }
 
         private fun flower(canvas: android.graphics.Canvas, x: Float, y: Float, r: Float, petal: Int, center: Int) {
@@ -6063,11 +6072,10 @@ class MainActivity : Activity() {
                 "red" -> {
                     // Mikołajki: czapka Mikołaja i śnieżynki.
                     fill(canvas, Color.rgb(225, 66, 78))
-                    val hat = android.graphics.Path().apply {
-                        moveTo(69f, 27f); quadTo(76f, 9f, 91f, 14f)
-                        lineTo(84f, 30f); close()
-                    }
-                    canvas.drawPath(hat, p)
+                    shapePath.reset()
+                    shapePath.moveTo(69f, 27f); shapePath.quadTo(76f, 9f, 91f, 14f)
+                    shapePath.lineTo(84f, 30f); shapePath.close()
+                    canvas.drawPath(shapePath, p)
                     fill(canvas, Color.rgb(250, 248, 242))
                     canvas.drawRoundRect(67f, 25f, 88f, 31f, 3f, 3f, p)
                     canvas.drawCircle(92f, 13f, 4f, p)
@@ -6081,34 +6089,34 @@ class MainActivity : Activity() {
                     fill(canvas, Color.rgb(244, 193, 92)); canvas.drawCircle(15f, 79f, 5f, p)
                     fill(canvas, Color.rgb(106, 198, 145)); canvas.drawCircle(87f, 82f, 4f, p)
                     fill(canvas, Color.rgb(255, 224, 150))
-                    val star = android.graphics.Path().apply {
-                        for (i in 0..9) {
-                            val a = -Math.PI/2 + i*Math.PI/5
-                            val r = if (i % 2 == 0) 7.0 else 3.0
-                            val px = 13 + kotlin.math.cos(a)*r
-                            val py = 22 + kotlin.math.sin(a)*r
-                            if (i == 0) moveTo(px.toFloat(), py.toFloat()) else lineTo(px.toFloat(), py.toFloat())
-                        }
-                        close()
+                    shapePath.reset()
+                    for (i in 0..9) {
+                        val a = -Math.PI/2 + i*Math.PI/5
+                        val r = if (i % 2 == 0) 7.0 else 3.0
+                        val px = 13 + kotlin.math.cos(a)*r
+                        val py = 22 + kotlin.math.sin(a)*r
+                        if (i == 0) shapePath.moveTo(px.toFloat(), py.toFloat())
+                        else shapePath.lineTo(px.toFloat(), py.toFloat())
                     }
-                    canvas.drawPath(star, p)
+                    shapePath.close()
+                    canvas.drawPath(shapePath, p)
                 }
                 "halloween" -> {
                     // Halloween: nietoperz i mała dynia.
                     fill(canvas, Color.rgb(111, 75, 132))
-                    val bat = android.graphics.Path().apply {
-                        moveTo(10f, 24f); lineTo(17f, 17f); lineTo(23f, 24f); lineTo(29f, 17f)
-                        lineTo(35f, 24f); lineTo(29f, 29f); lineTo(23f, 26f); lineTo(17f, 29f); close()
-                    }
-                    canvas.drawPath(bat, p)
+                    shapePath.reset()
+                    shapePath.moveTo(10f, 24f); shapePath.lineTo(17f, 17f); shapePath.lineTo(23f, 24f); shapePath.lineTo(29f, 17f)
+                    shapePath.lineTo(35f, 24f); shapePath.lineTo(29f, 29f); shapePath.lineTo(23f, 26f); shapePath.lineTo(17f, 29f); shapePath.close()
+                    canvas.drawPath(shapePath, p)
                     fill(canvas, Color.rgb(239, 135, 49))
                     canvas.drawOval(70f, 70f, 94f, 91f, p)
                     stroke(canvas, Color.rgb(105, 73, 47), 2f)
                     canvas.drawLine(82f, 71f, 83f, 66f, p)
                     fill(canvas, Color.rgb(45, 35, 39))
                     canvas.drawCircle(77f, 79f, 2f, p); canvas.drawCircle(87f, 79f, 2f, p)
-                    val grin = android.graphics.Path().apply { moveTo(77f, 85f); quadTo(82f, 89f, 88f, 84f) }
-                    stroke(canvas, Color.rgb(45, 35, 39), 1.8f); canvas.drawPath(grin, p)
+                    shapePath.reset()
+                    shapePath.moveTo(77f, 85f); shapePath.quadTo(82f, 89f, 88f, 84f)
+                    stroke(canvas, Color.rgb(45, 35, 39), 1.8f); canvas.drawPath(shapePath, p)
                 }
                 "pink" -> {
                     // Walentynki: serca w dwóch rozmiarach, bez przesadnego zagęszczenia.
@@ -6121,10 +6129,9 @@ class MainActivity : Activity() {
                     flower(canvas, 14f, 19f, 7f, Color.rgb(255, 190, 207), Color.rgb(255, 220, 125))
                     flower(canvas, 87f, 82f, 6f, Color.rgb(255, 231, 145), Color.rgb(239, 153, 103))
                     fill(canvas, Color.rgb(139, 211, 143))
-                    val leaf = android.graphics.Path().apply {
-                        moveTo(83f, 17f); quadTo(96f, 10f, 94f, 25f); quadTo(85f, 27f, 83f, 17f); close()
-                    }
-                    canvas.drawPath(leaf, p)
+                    shapePath.reset()
+                    shapePath.moveTo(83f, 17f); shapePath.quadTo(96f, 10f, 94f, 25f); shapePath.quadTo(85f, 27f, 83f, 17f); shapePath.close()
+                    canvas.drawPath(shapePath, p)
                     stroke(canvas, Color.rgb(87, 159, 104), 1.5f); canvas.drawLine(84f, 22f, 92f, 16f, p)
                 }
             }
@@ -6137,6 +6144,7 @@ class MainActivity : Activity() {
         private val section: String
     ) : View(context) {
         private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        private val shapePath = android.graphics.Path()
 
         private fun color(value: Int) { paint.color = value; paint.style = android.graphics.Paint.Style.FILL }
         private fun line(value: Int, width: Float = 5f) {
@@ -6163,8 +6171,9 @@ class MainActivity : Activity() {
                     color(whiteSoft); canvas.drawRoundRect(17f, 39f, 83f, 83f, 6f, 6f, paint)
                     color(accent); canvas.drawRect(12f, 34f, 88f, 42f, paint)
                     color(warm)
-                    val roof = android.graphics.Path().apply { moveTo(10f, 36f); lineTo(50f, 10f); lineTo(90f, 36f); close() }
-                    canvas.drawPath(roof, paint)
+                    shapePath.reset()
+                    shapePath.moveTo(10f, 36f); shapePath.lineTo(50f, 10f); shapePath.lineTo(90f, 36f); shapePath.close()
+                    canvas.drawPath(shapePath, paint)
                     color(navy); canvas.drawRoundRect(42f, 58f, 58f, 83f, 3f, 3f, paint)
                     color(accent)
                     for (x in listOf(25f, 64f)) for (y in listOf(49f, 66f)) canvas.drawRoundRect(x, y, x+10f, y+9f, 2f, 2f, paint)
@@ -6182,21 +6191,26 @@ class MainActivity : Activity() {
                 }
                 "OCENY" -> {
                     color(whiteSoft)
-                    val book = android.graphics.Path().apply { moveTo(12f, 29f); quadTo(32f, 20f, 49f, 34f); lineTo(49f, 83f); quadTo(29f, 69f, 12f, 78f); close() }
-                    canvas.drawPath(book, paint)
-                    val page = android.graphics.Path().apply { moveTo(51f, 34f); quadTo(70f, 20f, 88f, 29f); lineTo(88f, 78f); quadTo(68f, 69f, 51f, 83f); close() }
-                    canvas.drawPath(page, paint)
+                    shapePath.reset()
+                    shapePath.moveTo(12f, 29f); shapePath.quadTo(32f, 20f, 49f, 34f); shapePath.lineTo(49f, 83f); shapePath.quadTo(29f, 69f, 12f, 78f); shapePath.close()
+                    canvas.drawPath(shapePath, paint)
+                    shapePath.reset()
+                    shapePath.moveTo(51f, 34f); shapePath.quadTo(70f, 20f, 88f, 29f); shapePath.lineTo(88f, 78f); shapePath.quadTo(68f, 69f, 51f, 83f); shapePath.close()
+                    canvas.drawPath(shapePath, paint)
                     line(accent, 3f); canvas.drawLine(50f, 35f, 50f, 83f, paint)
                     color(warm); canvas.drawCircle(69f, 47f, 13f, paint)
-                    val star = android.graphics.Path().apply { for(i in 0..9){ val a=(-Math.PI/2+i*Math.PI/5); val r=if(i%2==0)8.0 else 3.5; val x=69+Math.cos(a)*r; val y=47+Math.sin(a)*r; if(i==0)moveTo(x.toFloat(),y.toFloat()) else lineTo(x.toFloat(),y.toFloat()) }; close() }
-                    color(navy); canvas.drawPath(star, paint)
+                    shapePath.reset()
+                    for(i in 0..9){ val a=(-Math.PI/2+i*Math.PI/5); val r=if(i%2==0)8.0 else 3.5; val x=69+Math.cos(a)*r; val y=47+Math.sin(a)*r; if(i==0)shapePath.moveTo(x.toFloat(),y.toFloat()) else shapePath.lineTo(x.toFloat(),y.toFloat()) }
+                    shapePath.close()
+                    color(navy); canvas.drawPath(shapePath, paint)
                     line(Color.rgb(74, 115, 151), 2.5f); canvas.drawLine(21f, 48f, 39f, 48f, paint); canvas.drawLine(21f, 58f, 39f, 58f, paint)
                 }
                 "WIADOMOŚCI" -> {
                     color(whiteSoft); canvas.drawRoundRect(11f, 26f, 89f, 76f, 9f, 9f, paint)
                     color(accent)
-                    val flap=android.graphics.Path().apply { moveTo(13f,29f); lineTo(50f,58f); lineTo(87f,29f); close() }
-                    canvas.drawPath(flap, paint)
+                    shapePath.reset()
+                    shapePath.moveTo(13f,29f); shapePath.lineTo(50f,58f); shapePath.lineTo(87f,29f); shapePath.close()
+                    canvas.drawPath(shapePath, paint)
                     line(Color.rgb(79, 115, 157), 4f); canvas.drawLine(14f,72f,39f,51f,paint); canvas.drawLine(86f,72f,61f,51f,paint)
                     color(warm); canvas.drawCircle(77f, 19f, 10f, paint)
                     color(navy); canvas.drawCircle(74f,17f,1.7f,paint); canvas.drawCircle(80f,17f,1.7f,paint)
@@ -6228,7 +6242,9 @@ class MainActivity : Activity() {
                     color(whiteSoft); canvas.drawRoundRect(24f,13f,77f,86f,6f,6f,paint)
                     color(accent); canvas.drawRect(35f,25f,67f,31f,paint)
                     line(Color.rgb(75,111,148),3f); canvas.drawLine(35f,43f,66f,43f,paint); canvas.drawLine(35f,54f,66f,54f,paint); canvas.drawLine(35f,65f,55f,65f,paint)
-                    color(warm); val pencil=android.graphics.Path().apply { moveTo(66f,72f); lineTo(81f,57f); lineTo(88f,64f); lineTo(73f,79f); close() }; canvas.drawPath(pencil,paint)
+                    color(warm); shapePath.reset()
+                    shapePath.moveTo(66f,72f); shapePath.lineTo(81f,57f); shapePath.lineTo(88f,64f); shapePath.lineTo(73f,79f); shapePath.close()
+                    canvas.drawPath(shapePath,paint)
                 }
                 "SZCZĘŚLIWY NUMEREK" -> {
                     color(warm); canvas.drawCircle(50f,50f,29f,paint)
