@@ -305,6 +305,12 @@ class MessageSendRequest(Credentials):
     text: str = Field(min_length=1, max_length=10000)
 
 
+class MessageReplyRequest(Credentials):
+    message_id: str = Field(min_length=1, max_length=128)
+    mailbox: str = Field(default="inbox", pattern="^(inbox|archive/inbox)$")
+    text: str = Field(min_length=1, max_length=10000)
+
+
 @app.post("/v1/message/recipients")
 async def get_message_recipients(
     payload: Credentials,
@@ -394,6 +400,62 @@ async def send_message(
             400,
             {
                 "message": "Librus nie wysłał wiadomości.",
+                "sent": False,
+            },
+        ) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
+@app.post("/v1/message/reply")
+async def reply_to_message(
+    payload: MessageReplyRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Odpowiadanie na wiadomości jest dostępne wyłącznie z konta rodzica.")
+
+    user = await require_user(authorization)
+    check_rate_limit(request)
+
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            sent = await librus.reply_to_message(
+                payload.message_id,
+                payload.text,
+                mailbox=payload.mailbox,
+            )
+            state = asdict(librus.session_data)
+
+        return jsonable_encoder({
+            "ok": True,
+            "user_id": user["id"],
+            "profile": payload.profile,
+            "sent": asdict(sent),
+            "session": state,
+        })
+
+    except LibrusMessageSendError as error:
+        if error.sent is None:
+            raise HTTPException(
+                502,
+                {
+                    "message": "Librus nie potwierdził, czy odpowiedź została wysłana. Sprawdź folder Wysłane przed ponowną próbą.",
+                    "sent": None,
+                },
+            ) from None
+        raise HTTPException(
+            400,
+            {
+                "message": "Librus nie wysłał odpowiedzi. Sprawdź, czy wiadomość przyjmuje odpowiedzi.",
                 "sent": False,
             },
         ) from None
