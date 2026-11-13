@@ -962,7 +962,9 @@ class MainActivity : Activity() {
             scroll.post {
                 val target = root.findViewWithTag<View>("timeline_target:$targetKey")
                 if (target != null) {
-                    scroll.smoothScrollTo(0, (target.top + root.top - 24 * density).coerceAtLeast(0))
+                    val targetBounds = android.graphics.Rect()
+                    root.offsetDescendantRectToMyCoords(target, targetBounds)
+                    scroll.smoothScrollTo(0, (targetBounds.top - (24 * density).toInt()).coerceAtLeast(0))
                 }
                 pendingTimelineTargetKey = null
             }
@@ -4197,7 +4199,7 @@ class MainActivity : Activity() {
                         val identity = firstValue(item, "id", "message_id", "messageId", "announcement_id")
                             .ifBlank { listOf(title, firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"), date).joinToString("|") }
                         "$messageCategory:$identity"
-                    } else featureFocusKey(keys.first(), item)
+                    } else featureFocusKey(key, item)
                     entries.add(TimelineEntry(section, category, title, detail, date, icon, targetKey))
                 }
             }
@@ -4221,7 +4223,8 @@ class MainActivity : Activity() {
                     "grade_value", "grade_text", "mark", "grade_description", "skill", "name")
                     .ifBlank { "Ocena opisowa" }
                 val description = firstDisplayValue(grade, "description", "skill_description", "comment",
-                    "teacher_comment", "feedback", "note", "details")
+                    "teacher_comment", "feedback", "note", "details", "category_name", "type_name", "grade_type")
+                    .ifBlank { firstDisplayValue(grade, "comments", "requirements", "criteria", "skills") }
                 val date = firstValue(grade, "date", "grade_date", "add_date", "created_at", "modified_at")
                 val category = when (sourceKey) {
                     "descriptive_grades" -> "Ocena opisowa"
