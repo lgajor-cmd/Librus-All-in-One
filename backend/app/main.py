@@ -293,6 +293,47 @@ async def connect(
         raise _safe_error(error) from None
 
 
+class MessageRequest(Credentials):
+    message_id: str = Field(min_length=1, max_length=128)
+    mailbox: str = Field(default="inbox", pattern="^(inbox|outbox|archive/inbox|archive/outbox)$")
+
+
+@app.post("/v1/message")
+async def get_message(
+    payload: MessageRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    user = await require_user(authorization)
+    check_rate_limit(request)
+
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            message = await librus.message(payload.message_id, payload.mailbox)
+            state = asdict(librus.session_data)
+
+        if message is None:
+            raise HTTPException(404, "Nie znaleziono wiadomości w Librusie.")
+
+        return jsonable_encoder({
+            "ok": True,
+            "user_id": user["id"],
+            "profile": payload.profile,
+            "message": asdict(message),
+            "session": state,
+        })
+
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
 @app.post("/v1/sync")
 async def sync(
     payload: Credentials,
