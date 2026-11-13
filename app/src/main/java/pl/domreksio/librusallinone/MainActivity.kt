@@ -3914,6 +3914,29 @@ class MainActivity : Activity() {
             if (teacher.isNotBlank()) itemCard.addView(label("Nauczyciel: $teacher", 12f, muted))
             if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
             if (heading == "Zadania domowe") {
+                val localKey = firstValue(item, "id", "assignment_id", "homework_id")
+                    .ifBlank { "$title|$date|$subject" }
+                val completedKeys = readLocalArray("homework_done")
+                val isLocallyDone = (0 until completedKeys.length()).any { completedKeys.optString(it) == localKey }
+                val completion = CheckBox(this).apply {
+                    text = if (isLocallyDone) "Oznaczono jako wykonane (tylko na tym urządzeniu)" else "Oznacz jako wykonane"
+                    isChecked = isLocallyDone
+                    setTextColor(if (isLocallyDone) successColor else muted)
+                    textSize = 12f
+                    setOnCheckedChangeListener { _, checked ->
+                        val saved = readLocalArray("homework_done")
+                        val updated = JSONArray()
+                        for (index in 0 until saved.length()) {
+                            val value = saved.optString(index)
+                            if (value != localKey) updated.put(value)
+                        }
+                        if (checked) updated.put(localKey)
+                        saveLocalArray("homework_done", updated)
+                        text = if (checked) "Oznaczono jako wykonane (tylko na tym urządzeniu)" else "Oznacz jako wykonane"
+                        setTextColor(if (checked) successColor else muted)
+                    }
+                }
+                itemCard.addView(completion, params(0, 8, 0, 4))
                 val attachments = item.optJSONArray("attachments")
                 if (attachments != null && attachments.length() > 0) {
                     itemCard.addView(sectionHeader("ZAŁĄCZNIKI"), params(0, 8, 0, 4))
