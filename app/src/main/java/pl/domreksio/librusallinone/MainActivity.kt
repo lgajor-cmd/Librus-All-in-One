@@ -1351,7 +1351,6 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
     private fun normalizeLibrusDate(value: String): String {
         val trimmed = value.trim()
-        if (Regex("^\\\\d{4}-\\\\d{2}-\\\\d{2}$").matches(trimmed)) return trimmed
         val parsed = parseFeatureDate(trimmed) ?: return ""
         return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(parsed)
     }
