@@ -88,17 +88,19 @@ internal object AgendaCalendarParser {
             }
         }
 
-        val formats = listOf(
-            DateTimeFormatter.ofPattern("dd.MM.uuuu"),
+        val legacyDate = Regex("^(\\d{2}\\.\\d{2}\\.\\d{4})").find(value)
+            ?.groupValues?.get(1)
+            ?: Regex("^(\\d{2}-\\d{2}-\\d{4})").find(value)?.groupValues?.get(1)
+            ?: return null
+        val format = if (legacyDate.contains(".")) {
+            DateTimeFormatter.ofPattern("dd.MM.uuuu")
+        } else {
             DateTimeFormatter.ofPattern("dd-MM-uuuu")
-        )
-        for (format in formats) {
-            try {
-                return LocalDate.parse(value, format).toString()
-            } catch (_: DateTimeParseException) {
-                // Try the next explicitly supported Librus date format.
-            }
         }
-        return null
+        return try {
+            LocalDate.parse(legacyDate, format).toString()
+        } catch (_: DateTimeParseException) {
+            null
+        }
     }
 }
