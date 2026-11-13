@@ -24,9 +24,12 @@ Aplikacja Android z własnym backendem FastAPI, automatyczną anonimową sesją 
 
 Niektóre sekcje mogą być puste, jeśli Librus nie udostępnia ich na danym koncie. Pełna treść wiadomości może zostać oznaczona jako przeczytana przez Librusa.
 
-## Budowanie
+## Budowanie i kontrola jakości
 
-GitHub Actions uruchamia `gradle assembleDebug` i publikuje APK jako artefakt workflow.
+GitHub Actions uruchamia Android Lint, testy jednostkowe Androida, budowanie APK i weryfikację stałego podpisu wydawniczego. Backend ma osobny workflow: kontrolę zależności, `pip-audit`, kompilację i testy regresyjne `unittest`.
+
+Szczegóły zmian niezawodności oraz znane ograniczenia opisuje [audyt techniczny](docs/AUDIT-RELIABILITY.md).
+
 
 ## Informacje o źródłach
 
