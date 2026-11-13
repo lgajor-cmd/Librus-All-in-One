@@ -5080,8 +5080,36 @@ class MainActivity : Activity() {
                     keys.forEachIndexed { index, key -> putBoolean(key, checked[index]) }
                 }.apply()
             }
-            .setNegativeButton("Anuluj", null)
+            .setNegativeButton("Diagnostyka") { _, _ -> showNotificationDiagnostics() }
             .setNeutralButton("Uprawnienia") { _, _ -> requestNotificationPermissionIfNeeded() }
+            .show()
+    }
+
+    private fun showNotificationDiagnostics() {
+        val message = LibrusNotificationDiagnostics.summary(applicationContext)
+        AlertDialog.Builder(this)
+            .setTitle("Diagnostyka powiadomień")
+            .setMessage(message)
+            .setPositiveButton("Odśwież") { _, _ -> showNotificationDiagnostics() }
+            .setNeutralButton("Test lokalny") { _, _ ->
+                val sent = LibrusNotificationDiagnostics.sendTest(applicationContext)
+                val explanation = if (sent) {
+                    "Wysłano testowe powiadomienie. Jeśli go nie widzisz, sprawdź ustawienia kanału „Aktualizacje Librus” i tryb Nie przeszkadzać."
+                } else {
+                    "Android blokuje powiadomienia aplikacji. Sprawdź uprawnienie i kanał „Aktualizacje Librus” w ustawieniach systemowych."
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("Test powiadomień")
+                    .setMessage(explanation)
+                    .setPositiveButton("OK", null)
+                    .show()
+                if (!sent && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    requestNotificationPermissionIfNeeded()
+                }
+            }
+            .setNegativeButton("Zamknij", null)
             .show()
     }
 
