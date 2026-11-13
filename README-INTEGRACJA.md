@@ -1,6 +1,6 @@
 # Librus All-in-One — backend integracyjny
 
-To jest pierwszy, tylko do odczytu adapter HTTPS oparty na nieoficjalnej bibliotece `librus-synergia`.
+To jest lekki, bezstanowy adapter HTTPS oparty na nieoficjalnej bibliotece `librus-synergia`.
 
 ## Ważne zasady bezpieczeństwa
 
@@ -8,13 +8,15 @@ To jest pierwszy, tylko do odczytu adapter HTTPS oparty na nieoficjalnej bibliot
 - Aplikacja Android musi przechowywać login/hasło i osobną sesję każdego profilu lokalnie, z szyfrowaniem opartym o Android Keystore.
 - Każde żądanie wysyła dane profilu i jego sesję przez HTTPS. Hasło jest potrzebne, bo Librus może wymagać ponownego logowania po wygaśnięciu sesji.
 - Profil rodzica i ucznia nie mogą współdzielić ciasteczek.
-- Pierwsza wersja tylko odczytuje dane. Nie wysyła wiadomości, nie usprawiedliwia nieobecności i niczego nie zmienia w dzienniku.
+- Adapter umożliwia odczyt danych oraz wysyłanie zwykłych wiadomości przez moduł Wiadomości. Nie zmienia wpisów frekwencji i nie wysyła formalnych e-Usprawiedliwień — to odrębny moduł Librusa, zależny od konfiguracji szkoły. Wiadomość do wychowawcy może służyć jako prośba o usprawiedliwienie, ale jej wysłanie nie zmienia statusu nieobecności.
 
 ## Endpointy
 
 - `GET /health`
 - `POST /v1/connect` — sprawdza logowanie i zwraca dane konta oraz sesję.
 - `POST /v1/sync` — pobiera dostępny zestaw danych i zwraca odświeżoną sesję.
+- `POST /v1/message/recipients` — pobiera odbiorców dostępnych dla konta (w tym wychowawcę).
+- `POST /v1/message/send` — wysyła wiadomość do wskazanych odbiorców. Wysyłka jest wykonywana tylko raz; przy niejednoznacznej odpowiedzi Librusa aplikacja nie może ponawiać jej automatycznie.
 
 Przykładowe żądanie:
 

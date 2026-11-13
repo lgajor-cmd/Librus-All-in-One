@@ -28,6 +28,7 @@ from librus_synergia import (
     LibrusCaptchaRequiredError,
     LibrusConnectionError,
     LibrusInvalidCredentialsError,
+    LibrusMessageSendError,
     LibrusSessionData,
 )
 
@@ -296,6 +297,110 @@ async def connect(
 class MessageRequest(Credentials):
     message_id: str = Field(min_length=1, max_length=128)
     mailbox: str = Field(default="inbox", pattern="^(inbox|outbox|archive/inbox|archive/outbox)$")
+
+
+class MessageSendRequest(Credentials):
+    recipient_ids: list[str] = Field(min_length=1, max_length=10)
+    topic: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1, max_length=10000)
+
+
+@app.post("/v1/message/recipients")
+async def get_message_recipients(
+    payload: Credentials,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Lista odbiorców wiadomości jest dostępna wyłącznie z konta rodzica.")
+
+    user = await require_user(authorization)
+    check_rate_limit(request)
+
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            recipients = await librus.message_recipients()
+            state = asdict(librus.session_data)
+
+        return jsonable_encoder({
+            "ok": True,
+            "user_id": user["id"],
+            "profile": payload.profile,
+            "recipients": [asdict(item) for item in recipients],
+            "session": state,
+        })
+
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
+@app.post("/v1/message/send")
+async def send_message(
+    payload: MessageSendRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Wysyłanie wiadomości jest dostępne wyłącznie z konta rodzica.")
+
+    user = await require_user(authorization)
+    check_rate_limit(request)
+
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            available_ids = {item.account_id for item in (await librus.message_recipients())}
+            if any(recipient_id not in available_ids for recipient_id in payload.recipient_ids):
+                raise HTTPException(422, "Odbiorca nie znajduje się na aktualnej liście odbiorców Librusa.")
+
+            sent = await librus.send_message(
+                payload.recipient_ids,
+                payload.topic,
+                payload.text,
+            )
+            state = asdict(librus.session_data)
+
+        return jsonable_encoder({
+            "ok": True,
+            "user_id": user["id"],
+            "profile": payload.profile,
+            "sent": asdict(sent),
+            "session": state,
+        })
+
+    except HTTPException:
+        raise
+    except LibrusMessageSendError as error:
+        # Librus sends exactly once. Unknown outcomes must never be retried
+        # automatically; the parent should check the Sent mailbox first.
+        if error.sent is None:
+            raise HTTPException(
+                502,
+                {
+                    "message": "Librus nie potwierdził, czy wiadomość została wysłana. Sprawdź folder Wysłane przed ponowną próbą.",
+                    "sent": None,
+                },
+            ) from None
+        raise HTTPException(
+            400,
+            {
+                "message": "Librus nie wysłał wiadomości.",
+                "sent": False,
+            },
+        ) from None
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    except Exception as error:
+        raise _safe_error(error) from None
 
 
 @app.post("/v1/message")
