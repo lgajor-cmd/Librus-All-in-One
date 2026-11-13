@@ -334,11 +334,12 @@ class LibrusNotificationWorker(
             "librus_notification_state",
             Context.MODE_PRIVATE
         )
-        val current = linkedSetOf<String>()
         val items = mutableListOf<Pair<String, JSONObject>>()
+        val currentIdsBySource = linkedMapOf<String, MutableSet<String>>()
 
         for (sourceKey in availableKeys) {
             val array = data.optJSONArray(sourceKey) ?: continue
+            val sourceIds = currentIdsBySource.getOrPut(sourceKey) { linkedSetOf() }
             for (i in 0 until array.length()) {
                 val item = array.optJSONObject(i) ?: continue
                 val id = item.opt("id")?.toString()?.takeIf {
@@ -347,12 +348,13 @@ class LibrusNotificationWorker(
                     .digest(item.toString().toByteArray(Charsets.UTF_8))
                     .joinToString("") { byte -> "%02x".format(byte) }
                 val identity = "$sourceKey:$id"
-                current.add(identity)
+                sourceIds.add(identity)
                 items.add(identity to item)
             }
         }
 
         val prefKey = "known_$notificationKey"
+        val pendingBaselinePrefKey = "pending_baseline_$notificationKey"
         val legacyPrefix = sourceKeys.first()
         val previousRaw = prefs.getString(prefKey, null)
         val previousValues = previousRaw?.split("|")?.filter { it.isNotBlank() }
@@ -360,24 +362,23 @@ class LibrusNotificationWorker(
         val previous = previousValues
             ?.map { if (it.contains(":")) it else "$legacyPrefix:$it" }
             ?.toSet()
+        val pendingBaseline = prefs.getString(pendingBaselinePrefKey, null)
+            ?.split("|")?.filter { it.isNotBlank() }?.toSet().orEmpty()
 
-        if (previous == null) {
-            prefs.edit().putString(prefKey, current.joinToString("|")).commit()
-            return
-        }
-
-        val unavailableKeys = sourceKeys - availableKeys.toSet()
-        unavailableKeys.forEach { unavailableKey ->
-            previous.filterTo(current) { it.startsWith("$unavailableKey:") }
-        }
+        val stateUpdate = NotificationStateTracker.update(
+            previousKnownIds = previous,
+            currentIdsBySource = currentIdsBySource.mapValues { it.value.toSet() },
+            allSourceKeys = sourceKeys.toSet(),
+            pendingBaselineKeys = pendingBaseline
+        )
 
         // Before this update only ordinary "grades" were monitored. During
         // migration, seed newly supported grade types without announcing
         // every historical descriptive/partial/point grade as if it were new.
         val newIds = if (legacyState && notificationKey == "grades") {
-            current.filterTo(linkedSetOf()) { it.startsWith("grades:") } - previous
+            stateUpdate.newIds.filterTo(linkedSetOf()) { it.startsWith("grades:") }
         } else {
-            current - previous
+            stateUpdate.newIds
         }
         if (newIds.isNotEmpty() && notificationsEnabled(notificationKey)) {
             val newest = items.firstOrNull { it.first in newIds }?.second
@@ -401,7 +402,10 @@ class LibrusNotificationWorker(
                 return
             }
         }
-        prefs.edit().putString(prefKey, current.joinToString("|")).commit()
+        prefs.edit()
+            .putString(prefKey, stateUpdate.knownIds.joinToString("|"))
+            .putString(pendingBaselinePrefKey, stateUpdate.pendingBaselineKeys.joinToString("|"))
+            .commit()
     }
 
     private fun notificationsEnabled(key: String): Boolean {
