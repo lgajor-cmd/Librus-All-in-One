@@ -1737,8 +1737,13 @@ class MainActivity : Activity() {
         val selected = BooleanArray(recipients.size)
         val dialog = AlertDialog.Builder(this)
             .setTitle("Wybierz odbiorców")
-            .setMultiChoiceItems(labels, selected) { _, which, checked ->
-                selected[which] = checked
+            .setMultiChoiceItems(labels, selected) { dialogInterface, which, checked ->
+                if (checked && selected.count { it } >= 10) {
+                    (dialogInterface as? AlertDialog)?.listView?.setItemChecked(which, false)
+                    Toast.makeText(this, "Możesz wybrać maksymalnie 10 odbiorców.", Toast.LENGTH_SHORT).show()
+                } else {
+                    selected[which] = checked
+                }
             }
             .setNegativeButton("ANULUJ", null)
             .setPositiveButton("DALEJ", null)
