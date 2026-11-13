@@ -1344,14 +1344,18 @@ class MainActivity : Activity() {
                     .filter { it in 1..20 }
                     .distinct()
                     .sorted()
+                val openJustification = {
+                    showFormalJustificationComposer(
+                        date, subject, lesson, lessonsForDay.ifEmpty {
+                            lesson.toIntOrNull()?.let { listOf(it) } ?: emptyList()
+                        }
+                    )
+                }
+                attendanceCard.isClickable = true
+                attendanceCard.isFocusable = true
+                attendanceCard.setOnClickListener { openJustification() }
                 attendanceCard.addView(
-                    actionButton("ZŁÓŻ E-USPRAWIEDLIWIENIE") {
-                        showFormalJustificationComposer(
-                            date, subject, lesson, lessonsForDay.ifEmpty {
-                                lesson.toIntOrNull()?.let { listOf(it) } ?: emptyList()
-                            }
-                        )
-                    },
+                    actionButton("ZŁÓŻ E-USPRAWIEDLIWIENIE", openJustification),
                     params(0, 8, 0, 0)
                 )
             }
