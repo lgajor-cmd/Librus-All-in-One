@@ -1365,9 +1365,9 @@ class MainActivity : Activity() {
                 }
                 connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
-                "$status|\${readResponse(connection, status)}"
+                "$status|${readResponse(connection, status)}"
             } catch (e: Exception) {
-                "ERROR|\${e.message ?: e.javaClass.simpleName}"
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
             } finally {
                 connection?.disconnect()
             }
@@ -1376,7 +1376,7 @@ class MainActivity : Activity() {
                 syncInProgress = false
                 if (isFinishing) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
-                    setLibrusStatus("Nie udało się pobrać wychowawcy: \${result.substringAfter("|")}", false)
+                    setLibrusStatus("Nie udało się pobrać wychowawcy: ${result.substringAfter("|")}", false)
                     return@runOnUiThread
                 }
                 val status = result.substringBefore("|").toIntOrNull() ?: 0
@@ -1416,7 +1416,7 @@ class MainActivity : Activity() {
                     }
                     showJustificationComposer(recipientId, recipientName, date, subject, lesson)
                 } catch (e: Exception) {
-                    setLibrusStatus("Nieprawidłowa odpowiedź Librusa: \${e.message}", false)
+                    setLibrusStatus("Nieprawidłowa odpowiedź Librusa: ${e.message}", false)
                 }
             }
         }
@@ -1524,9 +1524,9 @@ class MainActivity : Activity() {
                 }
                 connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
-                "$status|\${readResponse(connection, status)}"
+                "$status|${readResponse(connection, status)}"
             } catch (e: Exception) {
-                "ERROR|\${e.message ?: e.javaClass.simpleName}"
+                "ERROR|${e.message ?: e.javaClass.simpleName}"
             } finally {
                 connection?.disconnect()
             }
@@ -1535,7 +1535,7 @@ class MainActivity : Activity() {
                 syncInProgress = false
                 if (isFinishing) return@runOnUiThread
                 if (result.startsWith("ERROR|")) {
-                    setLibrusStatus("Nie udało się potwierdzić wysyłki: \${result.substringAfter("|")}", false)
+                    setLibrusStatus("Nie udało się potwierdzić wysyłki: ${result.substringAfter("|")}", false)
                     AlertDialog.Builder(this).setTitle("Nieznany wynik wysyłki")
                         .setMessage("Nie ponawiaj teraz wysyłania. Sprawdź folder Wysłane w Librusie.")
                         .setPositiveButton("OK", null).show()
