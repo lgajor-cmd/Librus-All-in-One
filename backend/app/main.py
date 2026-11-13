@@ -311,6 +311,9 @@ async def get_message_recipients(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Lista odbiorców wiadomości jest dostępna wyłącznie z konta rodzica.")
+
     user = await require_user(authorization)
     check_rate_limit(request)
 
@@ -342,6 +345,9 @@ async def send_message(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Wysyłanie wiadomości jest dostępne wyłącznie z konta rodzica.")
+
     user = await require_user(authorization)
     check_rate_limit(request)
 
@@ -352,6 +358,10 @@ async def send_message(
             session_data=_session_data(payload.session),
             cache_reference_data=True,
         ) as librus:
+            available_ids = {item.account_id for item in await librus.message_recipients()}
+            if any(recipient_id not in available_ids for recipient_id in payload.recipient_ids):
+                raise HTTPException(422, "Odbiorca nie znajduje się na aktualnej liście odbiorców Librusa.")
+
             sent = await librus.send_message(
                 payload.recipient_ids,
                 payload.topic,
@@ -367,6 +377,8 @@ async def send_message(
             "session": state,
         })
 
+    except HTTPException:
+        raise
     except LibrusMessageSendError as error:
         # Librus sends exactly once. Unknown outcomes must never be retried
         # automatically; the parent should check the Sent mailbox first.
