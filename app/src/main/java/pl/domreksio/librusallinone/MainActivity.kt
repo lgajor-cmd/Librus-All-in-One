@@ -1303,12 +1303,12 @@ class MainActivity : Activity() {
             if (description.isNotBlank()) attendanceCard.addView(label(description, 12f, muted))
 
             val normalizedType = type.lowercase(Locale("pl", "PL"))
-            val isUnexcusedAbsence = category == "Nieobecności" &&
-                !normalizedType.contains("uspr") &&
-                !normalizedType.contains("uspraw")
+            val isExcusedAbsence = (normalizedType.contains("uspr") ||
+                normalizedType.contains("uspraw")) && !normalizedType.contains("nieuspr")
+            val isUnexcusedAbsence = category == "Nieobecności" && !isExcusedAbsence
             if (isUnexcusedAbsence && date.isNotBlank()) {
                 attendanceCard.addView(
-                    actionButton("USPRAWIEDLIW NIEOBECNOŚĆ") {
+                    actionButton("NAPISZ PROŚBĘ O USPRAWIEDLIWIENIE") {
                         requestJustificationToTutor(date, subject, lesson)
                     },
                     params(0, 8, 0, 0)
