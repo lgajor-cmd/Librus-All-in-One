@@ -1795,7 +1795,8 @@ class MainActivity : Activity() {
                     val messageJson = JSONObject(result.substringAfter("|"))
                     val fullBody = firstValue(messageJson, "content", "message", "body", "text")
                     val mailbox = firstValue(messageJson, "mailbox").ifBlank { "inbox" }
-                    val noReply = messageJson.optBoolean("no_reply", false)
+                    val noReply = messageJson.optBoolean("no_reply", false) ||
+                        firstValue(messageJson, "sender_id", "senderId").isBlank()
                     showMessageDetails(title, sender, date, fullBody, messageId, mailbox, noReply)
                 } else {
                     setLibrusStatus(result.substringAfter("|"), false)
