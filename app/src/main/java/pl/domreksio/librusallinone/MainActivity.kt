@@ -2983,7 +2983,7 @@ class MainActivity : Activity() {
                     val title = firstValue(event, "title", "topic", "name", "subject")
                         .ifBlank { "Wydarzenie szkolne" }
                     eventCard.addView(label(title, 15f, white, true))
-                    val time = firstValue(event, "time", "start_time", "hour_from", "start")
+                    val time = firstValue(event, "time", "start_time", "hour_from")
                     if (time.isNotBlank() && time != eventDate) {
                         eventCard.addView(label(time, 12f, accentColor), params(0, 3, 0, 0))
                     }
