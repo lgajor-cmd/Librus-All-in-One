@@ -27,6 +27,10 @@ Audyt wykazał, że backend weryfikował token Supabase przed sprawdzeniem limit
 - Dane Librusa pozostają lokalnie szyfrowane przez AES-GCM i Android Keystore.
 - Aplikacja nadal nie zezwala na ruch cleartext HTTP.
 
+### Dodatkowa kontrola nawigacji motywów
+
+Naprawiono przypadek, w którym zmiana motywu otwarta z sekcji „Więcej” (np. z notatek lub listy zakupów) próbowała otworzyć nieistniejącą sekcję Librusa zamiast wrócić do pulpitu.
+
 ## Ograniczenia audytu
 
 - Brak automatycznych testów UI/E2E na rzeczywistym urządzeniu i koncie Librusa.
