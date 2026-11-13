@@ -297,8 +297,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(14, 0, 0, 0)
         }
-        school.addView(label("SZKOŁA PODSTAWOWA NR 14", 12f, Color.rgb(190, 211, 245), true))
-        school.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        val schoolName = currentSchoolName()
+        school.addView(label(schoolName.ifBlank { "Szkoła z konta Librus" }, 12f, Color.rgb(190, 211, 245), true))
+        school.addView(label(
+            if (schoolName.isBlank()) "Nazwa szkoły pojawi się po synchronizacji konta" else "Dane szkoły pobrane z Librusa",
+            11f, muted
+        ))
         brand.addView(school, LinearLayout.LayoutParams(0, -2, 1f))
         seasonalDecorationText(27f)?.let { decoration ->
             brand.addView(decoration, LinearLayout.LayoutParams(-2, 56))
@@ -348,6 +352,95 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun currentSchoolName(): String {
+        val dataName = librusDataMemory?.let { extractSchoolName(it) }.orEmpty()
+        if (dataName.isNotBlank()) {
+            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                .putString("school_name", dataName).apply()
+            return dataName
+        }
+        val savedName = getSharedPreferences("librus_school_profile", MODE_PRIVATE)
+            .getString("school_name", "").orEmpty()
+        return savedName
+    }
+
+    private fun schoolBadge(name: String): String {
+        if (name.isBlank()) return "L"
+        val normalized = name.trim()
+        val match = Regex("(?i)(?:nr|numer)\\s*(\\d+)").find(normalized)
+            ?: Regex("\\b(\\d{1,3})\\b").find(normalized)
+        return match?.groupValues?.getOrNull(1) ?: normalized.split(Regex("\\s+"))
+            .take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("")
+            .take(2).ifBlank { "L" }
+    }
+
+    private fun extractSchoolName(data: JSONObject): String {
+        val directKeys = listOf("school_name", "schoolName", "institution_name", "institutionName")
+        fun readName(value: Any?): String {
+            return when (value) {
+                is String -> value.trim().takeIf { it.isNotBlank() && it.lowercase() != "null" }.orEmpty()
+                is JSONObject -> {
+                    for (key in listOf("name", "full_name", "school_name", "institution_name", "title", "display_name")) {
+                        val candidate = readName(value.opt(key))
+                        if (candidate.isNotBlank()) return candidate
+                    }
+                    ""
+                }
+                is JSONArray -> {
+                    for (index in 0 until value.length()) {
+                        val candidate = readName(value.opt(index))
+                        if (candidate.isNotBlank()) return candidate
+                    }
+                    ""
+                }
+                else -> ""
+            }
+        }
+        for (key in directKeys) {
+            val candidate = readName(data.opt(key))
+            if (candidate.isNotBlank()) return candidate
+        }
+        for (key in listOf("school", "institution", "student", "me", "profile", "account", "user")) {
+            val candidate = readName(data.opt(key)?.let { value ->
+                if (value is JSONObject && value.has("school")) value.opt("school")
+                else if (key == "school" || key == "institution") value
+                else null
+            })
+            if (candidate.isNotBlank()) return candidate
+            val nested = data.optJSONObject(key)
+            if (nested != null) {
+                for (schoolKey in listOf("school", "institution", "school_name", "schoolName", "institution_name")) {
+                    val nestedName = readName(nested.opt(schoolKey))
+                    if (nestedName.isNotBlank()) return nestedName
+                }
+            }
+        }
+        fun searchNested(value: Any?, depth: Int): String {
+            if (depth > 4) return ""
+            when (value) {
+                is JSONObject -> {
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val child = value.opt(key)
+                        if (key.lowercase() in setOf("school", "institution", "school_name", "schoolname", "institution_name")) {
+                            val candidate = readName(child)
+                            if (candidate.isNotBlank()) return candidate
+                        }
+                        val nested = searchNested(child, depth + 1)
+                        if (nested.isNotBlank()) return nested
+                    }
+                }
+                is JSONArray -> for (index in 0 until value.length()) {
+                    val nested = searchNested(value.opt(index), depth + 1)
+                    if (nested.isNotBlank()) return nested
+                }
+            }
+            return ""
+        }
+        return searchNested(data, 0)
+    }
+
     // EKRAN GŁÓWNY
     // ---------------------------------------------------------
 
@@ -376,9 +469,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        val schoolName = currentSchoolName()
         val brandMark = TextView(this).apply {
-            text = "14"
-            textSize = 23f
+            text = schoolBadge(schoolName)
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(7, 27, 73))
@@ -390,8 +484,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(12, 0, 0, 0)
         }
-        brandText.addView(label("SZKOŁA PODSTAWOWA NR 14", 11f, Color.rgb(190, 211, 245), true))
-        brandText.addView(label("im. Polskich Olimpijczyków • Krosno", 11f, muted))
+        brandText.addView(label(schoolName.ifBlank { "Szkoła z konta Librus" }, 11f, Color.rgb(190, 211, 245), true))
+        brandText.addView(label(
+            if (schoolName.isBlank()) "Nazwa zostanie uzupełniona po pobraniu danych konta" else "Dane szkoły pobrane z Librusa",
+            11f, muted
+        ))
         brandRow.addView(brandText, LinearLayout.LayoutParams(0, -2, 1f))
         welcomeCard.addView(brandRow)
 
@@ -964,7 +1061,7 @@ class MainActivity : Activity() {
                 if (target != null) {
                     val targetBounds = android.graphics.Rect()
                     root.offsetDescendantRectToMyCoords(target, targetBounds)
-                    scroll.smoothScrollTo(0, (targetBounds.top - (24 * density).toInt()).coerceAtLeast(0))
+                    scroll.smoothScrollTo(0, (targetBounds.top - (24f * density).toInt()).coerceAtLeast(0))
                 }
                 pendingTimelineTargetKey = null
             }
