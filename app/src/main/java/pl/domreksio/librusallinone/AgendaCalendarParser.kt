@@ -41,7 +41,10 @@ internal object AgendaCalendarParser {
         return parsed.filter { event ->
             val id = firstNonBlank(event.item, arrayOf("id", "event_id", "agenda_id"))
             val identity = if (id.isNotBlank()) {
-                "id:$id"
+                // IDs may be scoped to a feed; include date and title to avoid
+                // merging unrelated records that happen to reuse the same ID.
+                listOf("id:$id", event.date, firstNonBlank(event.item, titleFields))
+                    .joinToString("|")
             } else {
                 listOf(
                     event.date,
