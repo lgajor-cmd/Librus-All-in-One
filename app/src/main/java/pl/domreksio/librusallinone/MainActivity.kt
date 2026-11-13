@@ -1469,7 +1469,7 @@ class MainActivity : Activity() {
         parent.addView(summary, params(0, 0, 0, 12))
 
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
-        var selectedDate = if (byDate.containsKey(today)) today else byDate.keys.first()
+        var selectedDate = if (byDate.containsKey(today)) today else entries.first().second
         val monthCursor = java.util.Calendar.getInstance()
         val initial = try {
             SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(selectedDate)
