@@ -93,6 +93,7 @@ class MainActivity : Activity() {
     private var initialRouteHandled = false
     private var pendingNotificationSection: String? = null
     private var anonymousSignInInProgress = false
+    private var pendingTimelineTargetKey: String? = null
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(155, 169, 190)
@@ -957,6 +958,17 @@ class MainActivity : Activity() {
         ))
         sectionPage.addView(buildBottomNavigation(section))
         setContentView(sectionPage)
+        pendingTimelineTargetKey?.let { targetKey ->
+            scroll.post {
+                val target = root.findViewWithTag<View>("timeline_target:$targetKey")
+                if (target != null) {
+                    val targetBounds = android.graphics.Rect()
+                    root.offsetDescendantRectToMyCoords(target, targetBounds)
+                    scroll.smoothScrollTo(0, (targetBounds.top - (24 * density).toInt()).coerceAtLeast(0))
+                }
+                pendingTimelineTargetKey = null
+            }
+        }
         if (uiPrefs.getBoolean("motion", true)) {
             root.alpha = 0f
             root.translationY = 12f * resources.displayMetrics.density
@@ -1554,7 +1566,7 @@ class MainActivity : Activity() {
             if (array.length() == 0) continue
 
             parent.addView(sectionHeader(headings[key] ?: key), params(0, 18, 0, 8))
-            renderGradeItems(parent, array, subjects, teachers)
+            renderGradeItems(parent, array, subjects, teachers, key)
         }
 
         data.optJSONObject("grading_system")?.let {
@@ -1614,7 +1626,8 @@ class MainActivity : Activity() {
         parent: LinearLayout,
         items: JSONArray,
         subjects: JSONObject?,
-        teachers: JSONObject?
+        teachers: JSONObject?,
+        sourceKey: String = "grades"
     ) {
         val grouped = linkedMapOf<String, MutableList<JSONObject>>()
 
@@ -1707,6 +1720,8 @@ class MainActivity : Activity() {
                 val numericGrade = value.trim().matches(Regex("^[1-6][+-]?$"))
                 val valueColor = gradeColor(value)
                 val row = LinearLayout(this).apply {
+                    val focusKey = gradeFocusKey(grade, sourceKey)
+                    if (pendingTimelineTargetKey == focusKey) tag = "timeline_target:$focusKey"
                     orientation = if (numericGrade) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
                     gravity = if (numericGrade) Gravity.CENTER_VERTICAL else Gravity.START
                     setPadding(0, 10, 0, 10)
@@ -3241,6 +3256,8 @@ class MainActivity : Activity() {
             val pinned = key in pinnedKeys
             val archived = key in archivedKeys
             val card = card()
+            val focusKey = messageKey(item, heading)
+            if (pendingTimelineTargetKey == focusKey) card.tag = "timeline_target:$focusKey"
             card.addView(label(title, 15f, white, true))
             if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
             if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
@@ -4120,6 +4137,34 @@ class MainActivity : Activity() {
     // FUNKCJE SZKOLNE: ZADANIA, TERMINARZ, UWAGI I NUMEREK
     // ---------------------------------------------------------
 
+    private fun gradeFocusKey(item: JSONObject, sourceKey: String): String {
+        val id = firstValue(item, "id", "grade_id", "gradeId", "assessment_id")
+        val identity = id.ifBlank {
+            listOf(
+                firstValue(item, "subject_id", "subject_name", "subject"),
+                firstValue(item, "date", "grade_date", "add_date", "created_at", "modified_at"),
+                firstDisplayValue(item, "value", "grade", "symbol", "text", "result", "assessment",
+                    "grade_value", "grade_text", "mark", "grade_description", "skill", "name"),
+                firstDisplayValue(item, "description", "skill_description", "comment",
+                    "teacher_comment", "feedback", "note", "details")
+            ).joinToString("|")
+        }
+        return "grade:$sourceKey:$identity"
+    }
+
+    private fun featureFocusKey(sourceKey: String, item: JSONObject): String {
+        val id = firstValue(item, "id", "assignment_id", "homework_id", "event_id", "note_id")
+        val identity = id.ifBlank {
+            listOf(
+                firstValue(item, "title", "topic", "name", "subject", "text"),
+                firstValue(item, "due_date", "deadline", "date", "start_date", "event_date"),
+                firstValue(item, "subject_name", "subject"),
+                firstValue(item, "description", "content", "details", "comment")
+            ).joinToString("|")
+        }
+        return "feature:$sourceKey:$identity"
+    }
+
     private fun renderSchoolTimeline(parent: LinearLayout, data: JSONObject) {
         data class TimelineEntry(
             val section: String,
@@ -4127,7 +4172,8 @@ class MainActivity : Activity() {
             val title: String,
             val detail: String,
             val date: String,
-            val icon: String
+            val icon: String,
+            val targetKey: String
         )
 
         val entries = mutableListOf<TimelineEntry>()
@@ -4148,18 +4194,51 @@ class MainActivity : Activity() {
                     val date = firstValue(item, *dateKeys)
                     val title = firstValue(item, *titleKeys).ifBlank { category }
                     val detail = firstValue(item, *detailKeys)
-                    entries.add(TimelineEntry(section, category, title, detail, date, icon))
+                    val targetKey = if (section == "WIADOMOŚCI") {
+                        val messageCategory = if (key == "announcements") "Ogłoszenia" else "Wiadomości"
+                        val identity = firstValue(item, "id", "message_id", "messageId", "announcement_id")
+                            .ifBlank { listOf(title, firstValue(item, "sender_name", "sender", "author", "teacher_name", "from"), date).joinToString("|") }
+                        "$messageCategory:$identity"
+                    } else featureFocusKey(key, item)
+                    entries.add(TimelineEntry(section, category, title, detail, date, icon, targetKey))
                 }
             }
         }
 
-        collect(
-            listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades"),
-            "OCENY", "Ocena", "✦",
-            arrayOf("date", "grade_date", "created_at", "modified_at"),
-            arrayOf("grade", "value", "grade_value", "symbol", "mark", "text", "name"),
-            arrayOf("subject_name", "subject", "teacher_name", "comment", "description")
-        )
+        val subjects = data.optJSONObject("subjects")
+        val gradeSources = listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades")
+        gradeSources.forEach { sourceKey ->
+            val array = data.optJSONArray(sourceKey) ?: return@forEach
+            for (index in 0 until array.length()) {
+                val grade = array.optJSONObject(index) ?: continue
+                val subjectObject = grade.optJSONObject("subject")
+                val subjectId = firstValue(grade, "subject_id")
+                    .ifBlank { subjectObject?.let { firstValue(it, "id", "subject_id") }.orEmpty() }
+                val subject = firstDisplayValue(grade, "subject_name")
+                    .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                    .ifBlank { lookupName(subjects, subjectId) }
+                    .ifBlank { (grade.opt("subject") as? String).orEmpty() }
+                    .ifBlank { "Przedmiot nieokreślony" }
+                val value = firstDisplayValue(grade, "value", "grade", "symbol", "text", "result", "assessment",
+                    "grade_value", "grade_text", "mark", "grade_description", "skill", "name")
+                    .ifBlank { "Ocena opisowa" }
+                val description = firstDisplayValue(grade, "description", "skill_description", "comment",
+                    "teacher_comment", "feedback", "note", "details", "category_name", "type_name", "grade_type")
+                    .ifBlank { firstDisplayValue(grade, "comments", "requirements", "criteria", "skills") }
+                val date = firstValue(grade, "date", "grade_date", "add_date", "created_at", "modified_at")
+                val category = when (sourceKey) {
+                    "descriptive_grades" -> "Ocena opisowa"
+                    "partial_grades" -> "Ocena cząstkowa"
+                    "point_grades" -> "Ocena punktowa"
+                    "text_grades" -> "Ocena tekstowa"
+                    "behaviour_grades" -> "Ocena zachowania"
+                    else -> "Ocena"
+                }
+                entries.add(TimelineEntry("OCENY", category, "$value • $subject",
+                    description.takeIf { it.isNotBlank() }?.let { "Za co: $it" }.orEmpty(),
+                    date, "✦", gradeFocusKey(grade, sourceKey)))
+            }
+        }
         collect(
             listOf("messages", "announcements"),
             "WIADOMOŚCI", "Wiadomość", "✉",
@@ -4167,22 +4246,34 @@ class MainActivity : Activity() {
             arrayOf("title", "subject", "topic", "name"),
             arrayOf("sender_name", "sender", "author", "teacher_name", "from")
         )
+        val homeworkSource = if ((data.optJSONArray("homework_assignments")?.length() ?: 0) > 0) {
+            "homework_assignments"
+        } else {
+            listOf("homework", "homeworks").firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
+                ?: "homework"
+        }
         collect(
-            listOf("homework_assignments", "homework", "homeworks"),
+            listOf(homeworkSource),
             "ZADANIA DOMOWE", "Zadanie domowe", "▤",
             arrayOf("due_date", "deadline", "date", "created_at", "start_date"),
             arrayOf("title", "topic", "name", "subject_name"),
             arrayOf("description", "content", "teacher_name", "subject_name", "status")
         )
+        val agendaSource = listOf("agenda", "events").firstOrNull {
+            data.has(it) && data.opt(it) != JSONObject.NULL
+        } ?: "agenda"
         collect(
-            listOf("agenda", "events", "calendar_events"),
+            listOf(agendaSource),
             "TERMINARZ", "Wydarzenie", "▦",
             arrayOf("start_date", "date", "event_date", "due_date"),
             arrayOf("title", "name", "topic", "subject"),
             arrayOf("description", "details", "type", "location")
         )
+        val notesSource = listOf("notes", "behaviour_notes").firstOrNull {
+            data.has(it) && data.opt(it) != JSONObject.NULL
+        } ?: "notes"
         collect(
-            listOf("notes", "behaviour_notes"),
+            listOf(notesSource),
             "UWAGI", "Uwaga", "✎",
             arrayOf("date", "created_at", "added_at"),
             arrayOf("title", "content", "text", "description", "type"),
@@ -4240,7 +4331,10 @@ class MainActivity : Activity() {
                     }
                     isClickable = true
                     isFocusable = true
-                    setOnClickListener { loadLibrusSection(entry.section) }
+                    setOnClickListener {
+                        pendingTimelineTargetKey = entry.targetKey
+                        loadLibrusSection(entry.section)
+                    }
                 }
                 val icon = TextView(this).apply {
                     text = entry.icon
@@ -4416,7 +4510,7 @@ class MainActivity : Activity() {
 
         parent.addView(infoCard("Liczba wpisów: ${items.length()}" +
             if (datedItems > 0) " • z terminem: $datedItems" else ""))
-        renderFeatureItems(parent, data, sorted, heading, now, ::localKey, null)
+        renderFeatureItems(parent, data, sorted, heading, now, ::localKey, null, key.orEmpty())
     }
 
     private fun renderFeatureItems(
@@ -4426,7 +4520,8 @@ class MainActivity : Activity() {
         heading: String,
         now: java.util.Date,
         localKey: (JSONObject) -> String,
-        onHomeworkChanged: (() -> Unit)?
+        onHomeworkChanged: (() -> Unit)?,
+        sourceKey: String = "homework"
     ) {
         // Odczyt i parsowanie lokalnego stanu tylko raz na render listy,
         // zamiast ponownego parsowania całego JSON dla każdego zadania.
@@ -4449,6 +4544,8 @@ class MainActivity : Activity() {
             val state = firstValue(item, "status", "state", "completion_status", "is_done")
             val dueState = featureDueState(date, now)
             val itemCard = card()
+            val focusKey = featureFocusKey(sourceKey, item)
+            if (pendingTimelineTargetKey == focusKey) itemCard.tag = "timeline_target:$focusKey"
             itemCard.addView(label(title, 15f, white, true))
             if (date.isNotBlank()) {
                 val dueColor = when (dueState) {
