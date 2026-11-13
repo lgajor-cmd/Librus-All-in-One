@@ -1,18 +1,21 @@
 # Librus All-in-One
 
-Aplikacja Android z własnym backendem FastAPI, logowaniem użytkownika przez Supabase i bezstanową komunikacją z Librus Synergia przez Render.
+Aplikacja Android z własnym backendem FastAPI, automatyczną anonimową sesją urządzenia przez Supabase i bezstanową komunikacją z Librus Synergia przez Render.
 
 ## Architektura
 
 - Android: natywna aplikacja Kotlin.
-- Uwierzytelnianie aplikacji: Supabase Auth (PKCE).
+- Uwierzytelnianie techniczne: anonimowa sesja Supabase Auth — użytkownik nie rejestruje się e-mailem ani nie potwierdza adresu.
+- Backend nadal weryfikuje token Supabase; endpointy API nie są publicznie dostępne bez sesji.
+- W panelu Supabase musi być włączona opcja Anonymous Sign-Ins (Authentication → Sign In / Providers → Anonymous).
 - Backend: FastAPI na Render.
 - Librus: `librus-synergia` 0.3.30; sesja Librusa przekazywana przez klienta i nieprzechowywana po stronie serwera.
 - Dane dostępne po synchronizacji: profil, oceny, frekwencja, plan lekcji, wiadomości, ogłoszenia, zadania domowe, terminarz, uwagi i szczęśliwy numerek — zależnie od uprawnień konta i dostępności sekcji w Librusie.
 
 ## Funkcje aplikacji
 
-- Konto aplikacji i oddzielne połączenie z kontem Librus.
+- Brak osobnej rejestracji i logowania e-mail; połączenie bezpośrednio danymi Librusa.
+- Supabase tworzy w tle anonimową sesję urządzenia. Po wyczyszczeniu danych aplikacji lub reinstalacji sesja nie może zostać odzyskana — użytkownik tworzy nową i ponownie łączy Librusa.
 - Bezpieczne lokalne przechowywanie poświadczeń Librusa.
 - Synchronizacja danych i aktualizacja zapisanej sesji.
 - Oceny, frekwencja, plan lekcji i wiadomości.

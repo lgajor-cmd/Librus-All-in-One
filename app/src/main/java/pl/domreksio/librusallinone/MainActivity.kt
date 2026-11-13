@@ -16,6 +16,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.FileProvider
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -30,10 +32,7 @@ import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
 import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.handleDeeplinks
-import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
 import kotlinx.coroutines.CoroutineScope
@@ -58,9 +57,6 @@ private const val SUPABASE_URL =
 private const val SUPABASE_PUBLISHABLE_KEY =
     "sb_publishable_gchAnvMxlFgvzdenD0QqWg_YoOtsTPe"
 
-private const val AUTH_REDIRECT =
-    "pl.domreksio.librusallinone://login-callback"
-
 internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
 
@@ -68,11 +64,7 @@ internal val supabase = createSupabaseClient(
     supabaseUrl = SUPABASE_URL,
     supabaseKey = SUPABASE_PUBLISHABLE_KEY
 ) {
-    install(Auth) {
-        host = "login-callback"
-        scheme = "pl.domreksio.librusallinone"
-        flowType = FlowType.PKCE
-    }
+    install(Auth) {}
 }
 
 class MainActivity : Activity() {
@@ -80,9 +72,6 @@ class MainActivity : Activity() {
     private val activityScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private lateinit var emailInput: EditText
-    private lateinit var passwordInput: EditText
-    private lateinit var statusText: TextView
     private lateinit var backendStatusText: TextView
 
     private lateinit var librusLoginInput: EditText
@@ -101,6 +90,7 @@ class MainActivity : Activity() {
     private var timetableTicker: Runnable? = null
     private var autoRestoreStarted = false
     private var pendingNotificationSection: String? = null
+    private var anonymousSignInInProgress = false
 
     private val white = Color.rgb(242, 245, 250)
     private val muted = Color.rgb(155, 169, 190)
@@ -171,42 +161,23 @@ class MainActivity : Activity() {
         librusVault = LibrusCredentialVault(applicationContext)
         pendingNotificationSection = intent?.getStringExtra("open_librus_section")
         requestNotificationPermissionIfNeeded()
-        showLogin("Sprawdzam sesję konta…")
-
+        showLogin("Uruchamiam bezpieczną sesję urządzenia…")
         activityScope.launch {
             supabase.auth.sessionStatus.collect { state ->
                 when (state) {
-                    is SessionStatus.Authenticated ->
-                        showHome(state.session.user?.email.orEmpty())
-
-                    SessionStatus.Initializing ->
-                        showLogin("Sprawdzam zapisane konto…")
-
-                    is SessionStatus.NotAuthenticated ->
-                        showLogin("Zaloguj się, aby otworzyć aplikację.")
-
-                    is SessionStatus.RefreshFailure ->
-                        showLogin("Sesja wygasła. Zaloguj się ponownie.")
+                    is SessionStatus.Authenticated -> showHome()
+                    SessionStatus.Initializing -> showLogin("Sprawdzam bezpieczną sesję urządzenia…")
+                    is SessionStatus.NotAuthenticated -> ensureAnonymousSession()
+                    is SessionStatus.RefreshFailure -> ensureAnonymousSession(replaceExisting = true)
                 }
             }
-        }
-
-        try {
-            supabase.handleDeeplinks(intent)
-        } catch (e: Exception) {
-            showLogin("Błąd linku: ${e.message ?: "nieznany błąd"}")
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-
-        try {
-            supabase.handleDeeplinks(intent)
-        } catch (e: Exception) {
-            showLogin("Błąd linku logowania: ${e.message}")
-        }
+        pendingNotificationSection = intent.getStringExtra("open_librus_section")
     }
 
     // ---------------------------------------------------------
@@ -215,67 +186,46 @@ class MainActivity : Activity() {
 
     private fun showLogin(message: String) {
         if (isFinishing) return
-
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 36, 24, 28)
+            gravity = Gravity.CENTER
+            setPadding(28, 40, 28, 40)
             setBackgroundColor(bgColor)
         }
-
         content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
-        content.addView(label("Twoje konto\nw jednym miejscu", 30f, white, true))
-        content.addView(
-            label(
-                "Zaloguj się do konta aplikacji. To konto jest oddzielne od danych Librusa.",
-                15f,
-                muted
-            )
-        )
-
-        emailInput = inputField(
-            "Adres e-mail",
-            InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-        )
-        content.addView(emailInput, params(0, 18, 0, 8))
-
-        passwordInput = inputField(
-            "Hasło do konta aplikacji",
-            InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
-        content.addView(passwordInput, params(0, 0, 0, 12))
-
-        content.addView(actionButton("ZAREJESTRUJ KONTO") {
-            authenticate(true)
-        }, params(0, 4, 0, 6))
-
-        content.addView(actionButton("ZALOGUJ SIĘ") {
-            authenticate(false)
-        }, params(0, 4, 0, 6))
-
-        statusText = label(message, 14f, muted)
-        content.addView(statusText, params(0, 14, 0, 4))
-
-        content.addView(
-            label(
-                "Po rejestracji potwierdź adres e-mail. Po zalogowaniu otworzy się ekran główny.",
-                13f,
-                muted
-            )
-        )
-
+        content.addView(label("Witaj!", 32f, white, true), params(0, 12, 0, 8))
+        content.addView(label("Nie potrzebujesz osobnego konta ani adresu e-mail. Aplikacja tworzy bezpieczną sesję urządzenia, a następnie połączysz ją z Librusem.", 15f, muted))
+        content.addView(label(message, 14f, muted), params(0, 18, 0, 8))
+        content.addView(actionButton("SPRÓBUJ PONOWNIE") {
+            ensureAnonymousSession()
+        }, params(0, 12, 0, 0))
         setContentView(ScrollView(this).apply {
             setBackgroundColor(bgColor)
             addView(content)
         })
     }
 
-    // ---------------------------------------------------------
+    private fun ensureAnonymousSession(replaceExisting: Boolean = false) {
+        if (anonymousSignInInProgress || isFinishing) return
+        anonymousSignInInProgress = true
+        showLogin("Tworzę bezpieczną sesję urządzenia…")
+        activityScope.launch {
+            try {
+                if (replaceExisting) runCatching { supabase.auth.signOut() }
+                supabase.auth.signInAnonymously()
+            } catch (error: Exception) {
+                anonymousSignInInProgress = false
+                showLogin("Nie udało się uruchomić sesji. Sprawdź internet i ustawienie logowania anonimowego w Supabase. ${error.message.orEmpty()}")
+                return@launch
+            }
+            anonymousSignInInProgress = false
+        }
+    }
+
     // EKRAN GŁÓWNY
     // ---------------------------------------------------------
 
-    private fun showHome(email: String) {
+    private fun showHome() {
         stopTimetableTicker()
         if (isFinishing) return
 
@@ -319,7 +269,7 @@ class MainActivity : Activity() {
         brandRow.addView(brandText)
         welcomeCard.addView(brandRow)
         welcomeCard.addView(label("Witaj!", 32f, white, true), params(0, 14, 0, 0))
-        welcomeCard.addView(label("Zalogowano jako: $email", 14f, Color.rgb(210, 220, 237)))
+        welcomeCard.addView(label("Bezpieczna sesja urządzenia aktywna", 14f, Color.rgb(210, 220, 237)))
         welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)))
         content.addView(welcomeCard, params(0, 0, 0, 16))
         welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
@@ -468,8 +418,8 @@ class MainActivity : Activity() {
             showNotificationSettings()
         }, params(0, 12, 0, 8))
 
-        content.addView(actionButton("WYLOGUJ") {
-            signOut()
+        content.addView(actionButton("ODŁĄCZ KONTO LIBRUS") {
+            disconnectLibrus()
         }, params(0, 24, 0, 8))
 
         val homeScroll = ScrollView(this).apply {
@@ -586,6 +536,14 @@ class MainActivity : Activity() {
                 setLibrusStatus(result.substringAfter("|"), ok)
                 librusConnectButton.isEnabled = true
                 librusPasswordInput.text.clear()
+
+                if (ok) {
+                    // Po pierwszym poprawnym połączeniu pobierz dane od razu,
+                    // tak samo jak przy automatycznym przywracaniu zapisanej sesji.
+                    val requestedSection = pendingNotificationSection ?: "PROFILE"
+                    pendingNotificationSection = null
+                    loadLibrusSection(requestedSection)
+                }
             }
         }
     }
@@ -711,7 +669,8 @@ class MainActivity : Activity() {
             "TERMINARZ" -> "Sprawdziany, wydarzenia i wycieczki"
             "UWAGI" -> "Uwagi dotyczące zachowania"
             "SZCZĘŚLIWY NUMEREK" -> "Szczęśliwy numerek"
-            "PROFILE" -> "Dane ucznia, przedmioty i nauczyciele"
+            "PROFILE" -> "Dane ucznia i informacje szkolne"
+            "NAUCZYCIELE" -> "Katalog nauczycieli i wyszukiwarka kontaktów"
             else -> "Dane z Librusa"
         }
 
@@ -738,7 +697,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val back = actionButton("‹  PULPIT") {
-            showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+            showHome()
         }
         val refresh = actionButton("ODŚWIEŻ  ↻") {
             librusDataMemory = null
@@ -769,6 +728,7 @@ class MainActivity : Activity() {
             "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
+            "NAUCZYCIELE" -> renderTeachersDirectory(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
         }
 
@@ -832,18 +792,52 @@ class MainActivity : Activity() {
             val from = firstValue(obj, "hour_from", "start", "start_time")
             val to = firstValue(obj, "hour_to", "end", "end_time")
 
-            val subjectId = firstValue(obj, "subject_id", "subject")
-            val teacherId = firstValue(obj, "teacher_id", "teacher")
-            val roomId = firstValue(obj, "classroom_id", "classroom", "room")
+            // Referencje w planie mogą przyjść jako ID, tekst albo obiekt {id, name}.
+            // Nie używaj JSONObject.toString() jako identyfikatora ani etykiety.
+            val subjectObject = obj.optJSONObject("subject")
+            val subjectId = firstValue(obj, "subject_id")
+                .ifBlank { subjectObject?.let { firstValue(it, "id", "subject_id") }.orEmpty() }
+                .ifBlank { (obj.opt("subject") as? String).orEmpty() }
+            val teacherObject = obj.optJSONObject("teacher")
+            val teacherId = firstValue(obj, "teacher_id")
+                .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                .ifBlank { (obj.opt("teacher") as? String).orEmpty() }
+            val roomObject = obj.optJSONObject("classroom")
+                ?: obj.optJSONObject("room")
+            val roomId = firstValue(obj, "classroom_id", "room_id")
+                .ifBlank { roomObject?.let { firstValue(it, "id", "classroom_id", "room_id") }.orEmpty() }
+                .ifBlank {
+                    val rawRoom = obj.opt("classroom") ?: obj.opt("room")
+                    (rawRoom as? String).orEmpty()
+                }
 
-            val subject = lookupName(subjects, subjectId)
-                .ifBlank { obj.optString("subject_name").ifBlank { subjectId } }
+            val subject = firstDisplayValue(obj, "subject_name")
+                .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(subjects, subjectId) }
+                .ifBlank { (obj.opt("subject") as? String).orEmpty() }
 
-            val teacher = lookupName(teachers, teacherId)
-                .ifBlank { obj.optString("teacher_name").ifBlank { teacherId } }
+            val teacher = firstDisplayValue(obj, "teacher_name")
+                .ifBlank {
+                    teacherObject?.let {
+                        firstDisplayValue(it, "name", "full_name", "display_name", "title", "value")
+                            .ifBlank {
+                                listOf(
+                                    firstValue(it, "first_name", "firstname"),
+                                    firstValue(it, "last_name", "surname", "lastname")
+                                ).filter { part -> part.isNotBlank() }.joinToString(" ")
+                            }
+                    }.orEmpty()
+                }
+                .ifBlank { lookupName(teachers, teacherId) }
+                .ifBlank { (obj.opt("teacher") as? String).orEmpty() }
 
-            val room = lookupName(classrooms, roomId)
-                .ifBlank { obj.optString("classroom_name").ifBlank { roomId } }
+            val room = firstDisplayValue(obj, "classroom_name", "room_name")
+                .ifBlank { roomObject?.let { firstDisplayValue(it, "name", "number", "room_number", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(classrooms, roomId) }
+                .ifBlank {
+                    val rawRoom = obj.opt("classroom") ?: obj.opt("room")
+                    (rawRoom as? String).orEmpty()
+                }
 
             val canceled = obj.optBoolean("is_canceled", false)
             val substitution = obj.optBoolean("is_substitution", false)
@@ -989,6 +983,17 @@ class MainActivity : Activity() {
                 label("${dayLessons.size} zaplanowanych lekcji", 12f, muted)
             )
 
+            val sortedDayLessons = dayLessons.sortedWith(
+                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
+                    .thenBy { it.number }
+            )
+            val timelineList = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            sortedDayLessons.forEach { lesson ->
+                timelineList.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
+            }
+
             val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
             if (date == todayKey) {
                 val livePanel = LinearLayout(this).apply {
@@ -1057,6 +1062,26 @@ class MainActivity : Activity() {
                 }
                 livePanel.addView(bellSync)
                 dayCard.addView(livePanel, params(0, 10, 0, 2))
+
+                // Znacznik czasu na osi planu: przemieszcza się nad trwającą
+                // lekcję, nad następną lekcję podczas przerwy albo na koniec dnia.
+                val timelineMarker = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, (7 * resources.displayMetrics.density).toInt(),
+                        0, (3 * resources.displayMetrics.density).toInt())
+                }
+                val timelineMarkerLabel = TextView(this).apply {
+                    textSize = 10f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(accentColor)
+                    setPadding(0, 0, (9 * resources.displayMetrics.density).toInt(), 0)
+                }
+                timelineMarker.addView(timelineMarkerLabel)
+                timelineMarker.addView(View(this).apply {
+                    background = roundedBackground(accentColor, 2)
+                }, LinearLayout.LayoutParams(0, (2 * resources.displayMetrics.density).toInt(), 1f))
+                timelineList.addView(timelineMarker)
 
                 var previousLiveState = ""
                 val handler = android.os.Handler(mainLooper)
@@ -1128,6 +1153,16 @@ class MainActivity : Activity() {
                                 .withEndAction { bellIcon.animate().rotation(0f).setDuration(130).start() }
                                 .start()
                         }
+                        timelineMarkerLabel.text = "TERAZ • " +
+                            SimpleDateFormat("HH:mm", Locale.getDefault()).format(now.time)
+                        val markerTarget = when {
+                            activeLesson != null -> sortedDayLessons.indexOf(activeLesson)
+                            nextLesson != null -> sortedDayLessons.indexOf(nextLesson)
+                            else -> sortedDayLessons.size
+                        }.coerceIn(0, timelineList.childCount - 1)
+                        timelineList.removeView(timelineMarker)
+                        timelineList.addView(timelineMarker, markerTarget)
+
                         previousLiveState = stateKey
                         handler.postDelayed(this, 30_000L)
                     }
@@ -1136,12 +1171,7 @@ class MainActivity : Activity() {
                 ticker.run()
             }
 
-            for (lesson in dayLessons.sortedWith(
-                compareBy<TimetableLesson> { it.from.ifBlank { "99:99" } }
-                    .thenBy { it.number }
-            )) {
-                dayCard.addView(renderLessonCard(lesson), params(0, 10, 0, 0))
-            }
+            dayCard.addView(timelineList, params(0, 4, 0, 0))
             dayContent.addView(dayCard, params(0, 8, 0, 4))
         }
 
@@ -1340,9 +1370,21 @@ class MainActivity : Activity() {
 
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
-            val sid = firstValue(item, "subject_id", "subject")
-            val subject = lookupName(subjects, sid)
-                .ifBlank { item.optString("subject_name").ifBlank { "Pozostałe" } }
+            // W zależności od wersji danych Librus zwraca przedmiot jako ID,
+            // tekst albo zagnieżdżony obiekt { id, name }. Obsłuż wszystkie
+            // warianty bez wyświetlania surowego JSON jako nazwy przedmiotu.
+            val subjectObject = item.optJSONObject("subject")
+            val sid = firstValue(item, "subject_id")
+                .ifBlank { subjectObject?.let { firstValue(it, "id", "subject_id") }.orEmpty() }
+            val subject = firstDisplayValue(item, "subject_name")
+                .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                .ifBlank { lookupName(subjects, sid) }
+                .ifBlank {
+                    val rawSubject = item.opt("subject")
+                    if (rawSubject is String) lookupName(subjects, rawSubject).ifBlank { rawSubject }
+                    else ""
+                }
+                .ifBlank { "Pozostałe" }
 
             grouped.getOrPut(subject) { mutableListOf() }.add(item)
         }
@@ -1390,9 +1432,17 @@ class MainActivity : Activity() {
                     "description", "skill_description", "comment",
                     "teacher_comment", "feedback", "note", "details"
                 )
+                val teacherObject = grade.optJSONObject("teacher")
                 val teacherId = firstValue(grade, "teacher_id")
-                val teacher = lookupName(teachers, teacherId)
-                    .ifBlank { firstDisplayValue(grade, "teacher_name", "teacher") }
+                    .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                val teacher = firstDisplayValue(grade, "teacher_name")
+                    .ifBlank { teacherObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                    .ifBlank { lookupName(teachers, teacherId) }
+                    .ifBlank {
+                        val rawTeacher = grade.opt("teacher")
+                        if (rawTeacher is String) lookupName(teachers, rawTeacher).ifBlank { rawTeacher }
+                        else ""
+                    }
 
                 val numericGrade = value.trim().matches(Regex("^[1-6][+-]?$"))
                 val valueColor = gradeColor(value)
@@ -1700,6 +1750,9 @@ class MainActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener {
+                // Zawsze zmieniaj miesiąc od jego pierwszego dnia.
+                // Zapobiega to przesuwaniu daty (np. 31 stycznia → 28 lutego → 28 marca).
+                monthCursor.set(java.util.Calendar.DAY_OF_MONTH, 1)
                 monthCursor.add(java.util.Calendar.MONTH, delta)
                 val prefix = SimpleDateFormat("yyyy-MM", Locale.US).format(monthCursor.time)
                 selectedDate = if (today.startsWith(prefix)) today else
@@ -1709,8 +1762,30 @@ class MainActivity : Activity() {
                 renderSelectedDay()
             }
         }
+        val todayButton = TextView(this).apply {
+            text = "DZIŚ"
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(accentColor)
+            gravity = Gravity.CENTER
+            setPadding((9 * resources.displayMetrics.density).toInt(), 0,
+                (9 * resources.displayMetrics.density).toInt(), 0)
+            background = roundedBackground(panelLight, 10)
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Przejdź do dzisiejszej daty"
+            setOnClickListener {
+                monthCursor.timeInMillis = java.util.Calendar.getInstance().timeInMillis
+                selectedDate = today
+                renderCalendar()
+                renderSelectedDay()
+            }
+        }
         monthControls.addView(monthButton("‹", -1), LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (42 * resources.displayMetrics.density).toInt()))
         monthControls.addView(monthTitle, LinearLayout.LayoutParams(0, -2, 1f))
+        monthControls.addView(todayButton, LinearLayout.LayoutParams(-2, (34 * resources.displayMetrics.density).toInt()).apply {
+            marginEnd = (5 * resources.displayMetrics.density).toInt()
+        })
         monthControls.addView(monthButton("›", 1), LinearLayout.LayoutParams((44 * resources.displayMetrics.density).toInt(), (42 * resources.displayMetrics.density).toInt()))
         parent.addView(sectionHeader("FREKWENCJA • KALENDARZ"), params(0, 4, 0, 4))
         parent.addView(monthControls)
@@ -3140,6 +3215,285 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------
+    // KATALOG NAUCZYCIELI
+    // ---------------------------------------------------------
+
+    private data class TeacherDirectoryEntry(
+        val id: String,
+        val name: String,
+        val subjects: Set<String>,
+        val email: String,
+        val phone: String,
+        val room: String,
+        val searchable: String
+    )
+
+    private fun renderTeachersDirectory(parent: LinearLayout, data: JSONObject) {
+        val rawTeachers = data.opt("teachers")
+        val teachers = rawTeachers as? JSONObject
+        val subjects = data.optJSONObject("subjects")
+        val byId = linkedMapOf<String, MutableMap<String, Any>>()
+
+        fun scalarField(obj: JSONObject, vararg keys: String): String {
+            for (key in keys) {
+                val raw = obj.opt(key)
+                if (raw == null || raw == JSONObject.NULL || raw is JSONObject || raw is JSONArray) continue
+                val value = raw.toString().trim()
+                if (value.isNotBlank() && value != "null") return value
+            }
+            return ""
+        }
+
+        fun addTeacher(
+            id: String,
+            name: String,
+            subject: String = "",
+            email: String = "",
+            phone: String = "",
+            room: String = ""
+        ) {
+            val key = id.ifBlank { name.lowercase(Locale("pl", "PL")) }
+            if (key.isBlank() && name.isBlank()) return
+            val entry = byId.getOrPut(key) {
+                mutableMapOf(
+                    "name" to name.ifBlank { "Nauczyciel" },
+                    "subjects" to linkedSetOf<String>(),
+                    "email" to email,
+                    "phone" to phone,
+                    "room" to room
+                )
+            }
+            if (name.isNotBlank() && (
+                    (entry["name"] as? String).isNullOrBlank() ||
+                        entry["name"] == "Nauczyciel"
+                    )
+            ) {
+                entry["name"] = name
+            }
+            if (subject.isNotBlank()) (entry["subjects"] as MutableSet<String>).add(subject)
+            if (email.isNotBlank() && (entry["email"] as? String).isNullOrBlank()) entry["email"] = email
+            if (phone.isNotBlank() && (entry["phone"] as? String).isNullOrBlank()) entry["phone"] = phone
+            if (room.isNotBlank() && (entry["room"] as? String).isNullOrBlank()) entry["room"] = room
+        }
+
+        fun readTeacher(idHint: String, value: Any?) {
+            when (value) {
+                is String -> addTeacher(idHint, value)
+                is JSONObject -> {
+                    val id = firstValue(value, "id", "teacher_id", "user_id").ifBlank { idHint }
+                    val first = firstValue(value, "first_name", "firstname", "given_name")
+                    val last = firstValue(value, "last_name", "surname", "lastname", "family_name")
+                    val fullName = firstDisplayValue(
+                        value, "name", "full_name", "teacher_name", "display_name", "title"
+                    ).ifBlank { listOf(first, last).filter { it.isNotBlank() }.joinToString(" ") }
+                    val subject = firstDisplayValue(
+                        value, "subject_name", "subject", "subjects", "teaching_subjects"
+                    )
+                    addTeacher(
+                        id,
+                        fullName.ifBlank { "Nauczyciel" },
+                        subject,
+                        firstValue(value, "email", "mail", "email_address"),
+                        firstValue(value, "phone", "phone_number", "telephone", "mobile"),
+                        firstValue(value, "room", "room_number", "classroom")
+                    )
+                }
+                is JSONArray -> {
+                    for (index in 0 until value.length()) {
+                        readTeacher("$idHint:$index", value.opt(index))
+                    }
+                }
+            }
+        }
+
+        when (rawTeachers) {
+            is JSONObject -> {
+                val keys = rawTeachers.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    readTeacher(key, rawTeachers.opt(key))
+                }
+            }
+            is JSONArray -> {
+                for (index in 0 until rawTeachers.length()) {
+                    readTeacher(index.toString(), rawTeachers.opt(index))
+                }
+            }
+        }
+
+        // Librus często zwraca słownik ID -> nazwisko, a powiązania
+        // nauczyciel–przedmiot są dopiero w planie lekcji. Uzupełnij katalog
+        // na podstawie rzeczywiście pobranych lekcji, nie zgaduj przedmiotów.
+        fun collectLesson(value: Any?) {
+            when (value) {
+                is JSONArray -> {
+                    for (index in 0 until value.length()) collectLesson(value.opt(index))
+                }
+                is JSONObject -> {
+                    val teacherId = scalarField(value, "teacher_id", "teacher")
+                    val subjectId = scalarField(value, "subject_id", "subject")
+                    val teacherName = firstDisplayValue(value, "teacher_name")
+                    val subjectName = lookupName(subjects, subjectId)
+                        .ifBlank { firstDisplayValue(value, "subject_name") }
+                    if (teacherId.isNotBlank() || teacherName.isNotBlank()) {
+                        val teacherObject = teachers?.optJSONObject(teacherId)
+                        val dictionaryName = teacherObject?.let { teacher ->
+                            firstDisplayValue(
+                                teacher, "name", "full_name", "teacher_name", "display_name"
+                            ).ifBlank {
+                                listOf(
+                                    firstValue(teacher, "first_name", "firstname"),
+                                    firstValue(teacher, "last_name", "surname", "lastname")
+                                ).filter { it.isNotBlank() }.joinToString(" ")
+                            }
+                        }.orEmpty()
+                        val resolvedName = dictionaryName
+                            .ifBlank { lookupName(teachers, teacherId) }
+                            .ifBlank { teacherName }
+                        addTeacher(teacherId, resolvedName, subjectName)
+                    }
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val child = value.opt(key)
+                        if (child is JSONObject || child is JSONArray) collectLesson(child)
+                    }
+                }
+            }
+        }
+        collectLesson(data.opt("timetable"))
+
+        val entries = byId.map { (id, fields) ->
+            val name = fields["name"] as? String ?: "Nauczyciel"
+            val subjectSet = fields["subjects"] as? Set<String> ?: emptySet()
+            val email = fields["email"] as? String ?: ""
+            val phone = fields["phone"] as? String ?: ""
+            val room = fields["room"] as? String ?: ""
+            val searchable = listOf(name, subjectSet.joinToString(" "), email, phone, room, id)
+                .joinToString(" ")
+                .lowercase(Locale("pl", "PL"))
+            TeacherDirectoryEntry(id, name, subjectSet, email, phone, room, searchable)
+        }.distinctBy { it.id }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+
+        parent.addView(sectionHeader("KATALOG NAUCZYCIELI"), params(0, 2, 0, 6))
+        val summary = label("", 12f, muted)
+        parent.addView(summary, params(0, 0, 0, 10))
+
+        if (entries.isEmpty()) {
+            parent.addView(infoCard("Librus nie zwrócił listy nauczycieli. Po odświeżeniu sprawdź, czy konto ma dostęp do danych kadry."))
+            return
+        }
+
+        val search = EditText(this).apply {
+            hint = "Szukaj nazwiska, przedmiotu lub kontaktu"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setSingleLine(true)
+            setTextColor(white)
+            setHintTextColor(muted)
+            textSize = 14f
+            setPadding(
+                (15 * resources.displayMetrics.density).toInt(),
+                (12 * resources.displayMetrics.density).toInt(),
+                (15 * resources.displayMetrics.density).toInt(),
+                (12 * resources.displayMetrics.density).toInt()
+            )
+            background = roundedBackground(panelLight, 13)
+        }
+        parent.addView(search, params(0, 0, 0, 12))
+
+        val resultList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        parent.addView(resultList)
+
+        fun renderResults(query: String) {
+            resultList.removeAllViews()
+            val normalized = query.trim().lowercase(Locale("pl", "PL"))
+            val filtered = entries.filter {
+                normalized.isBlank() || it.searchable.contains(normalized)
+            }
+            summary.text = if (normalized.isBlank()) {
+                "${entries.size} nauczycieli"
+            } else {
+                "Wyniki wyszukiwania: ${filtered.size} z ${entries.size}"
+            }
+
+            if (filtered.isEmpty()) {
+                resultList.addView(infoCard("Nie znaleziono nauczyciela dla podanej frazy."))
+                return
+            }
+
+            filtered.forEach { teacher ->
+                val itemCard = card()
+                val header = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val initials = teacher.name
+                    .split(Regex("\\s+"))
+                    .filter { it.isNotBlank() }
+                    .take(2)
+                    .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+                    .joinToString("")
+                    .ifBlank { "N" }
+                val avatar = TextView(this).apply {
+                    text = initials
+                    textSize = 15f
+                    gravity = Gravity.CENTER
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(white)
+                    background = roundedBackground(accentColor, 14)
+                }
+                header.addView(
+                    avatar,
+                    LinearLayout.LayoutParams(
+                        (44 * resources.displayMetrics.density).toInt(),
+                        (44 * resources.displayMetrics.density).toInt()
+                    ).apply {
+                        marginEnd = (12 * resources.displayMetrics.density).toInt()
+                    }
+                )
+                val identity = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                }
+                identity.addView(label(teacher.name, 15f, white, true))
+                val subjectLine = teacher.subjects.sortedWith(String.CASE_INSENSITIVE_ORDER)
+                    .joinToString(" • ")
+                identity.addView(
+                    label(
+                        subjectLine.ifBlank { "Brak przypisanego przedmiotu w pobranych danych" },
+                        12f,
+                        if (subjectLine.isBlank()) muted else Color.rgb(174, 196, 224)
+                    )
+                )
+                header.addView(identity, LinearLayout.LayoutParams(0, -2, 1f))
+                itemCard.addView(header)
+
+                if (teacher.email.isNotBlank()) {
+                    itemCard.addView(label("E-mail: ${teacher.email}", 12f, muted), params(0, 9, 0, 0))
+                }
+                if (teacher.phone.isNotBlank()) {
+                    itemCard.addView(label("Telefon: ${teacher.phone}", 12f, muted), params(0, 3, 0, 0))
+                }
+                if (teacher.room.isNotBlank()) {
+                    itemCard.addView(label("Pokój: ${teacher.room}", 12f, muted), params(0, 3, 0, 0))
+                }
+                resultList.addView(itemCard, params(0, 0, 0, 8))
+            }
+        }
+
+        search.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                renderResults(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        renderResults("")
+    }
+
+    // ---------------------------------------------------------
     // FUNKCJE SZKOLNE: ZADANIA, TERMINARZ, UWAGI I NUMEREK
     // ---------------------------------------------------------
 
@@ -3463,60 +3817,6 @@ class MainActivity : Activity() {
     // LOGOWANIE I WYLOGOWANIE SUPABASE
     // ---------------------------------------------------------
 
-    private fun authenticate(register: Boolean) {
-        val email = emailInput.text.toString().trim()
-        val password = passwordInput.text.toString()
-
-        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-            statusText.text = "Podaj prawidłowy adres e-mail."
-            return
-        }
-
-        if (password.length < 10) {
-            statusText.text = "Hasło musi mieć co najmniej 10 znaków."
-            return
-        }
-
-        statusText.text = if (register) "Tworzę konto…" else "Loguję…"
-
-        thread {
-            val result = try {
-                runBlocking {
-                    if (register) {
-                        supabase.auth.signUpWith(
-                            Email,
-                            redirectUrl = AUTH_REDIRECT
-                        ) {
-                            this.email = email
-                            this.password = password
-                        }
-                        "Konto utworzone. Sprawdź pocztę i potwierdź adres e-mail."
-                    } else {
-                        supabase.auth.signInWith(Email) {
-                            this.email = email
-                            this.password = password
-                        }
-                        "Logowanie przyjęte. Otwieram ekran główny…"
-                    }
-                }
-            } catch (e: Exception) {
-                "Błąd: ${e.message ?: e.javaClass.simpleName}"
-            }
-
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-                statusText.text = result
-
-                if (!register) {
-                    val session = supabase.auth.currentSessionOrNull()
-                    if (session != null) {
-                        showHome(session.user?.email.orEmpty())
-                    }
-                }
-            }
-        }
-    }
-
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -3567,7 +3867,7 @@ class MainActivity : Activity() {
                 uiPrefs.edit().putString("accent", keys[which]).apply()
                 dialog.dismiss()
                 if (activeSection == "START") {
-                    showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                    showHome()
                 } else {
                     loadLibrusSection(activeSection)
                 }
@@ -3580,38 +3880,32 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun signOut() {
-        LibrusNotificationScheduler.cancel(applicationContext)
-        thread {
-            val result = try {
-                runBlocking { supabase.auth.signOut() }
-                null
-            } catch (e: Exception) {
-                e.message ?: "Nie udało się wylogować."
-            }
-
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-
-                if (result == null) {
+    private fun disconnectLibrus() {
+        AlertDialog.Builder(this)
+            .setTitle("Odłączyć konto Librus?")
+            .setMessage("Z urządzenia zostaną usunięte zapisane dane logowania i sesja Librusa. Nie zmieni to danych na koncie szkolnym.")
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Odłącz") { _, _ ->
+                try {
+                    librusVault.clear()
+                    LibrusNotificationScheduler.cancel(applicationContext)
                     librusDataMemory = null
                     librusSessionMemory = null
                     librusLoginMemory = null
                     librusPasswordMemory = null
                     autoRestoreStarted = false
-                    showLogin("Wylogowano z konta aplikacji.")
-                } else {
+                    showHome()
+                } catch (error: Exception) {
                     AlertDialog.Builder(this)
-                        .setTitle("Błąd wylogowania")
-                        .setMessage(result)
+                        .setTitle("Nie udało się odłączyć Librusa")
+                        .setMessage(error.message ?: "Nieznany błąd.")
                         .setPositiveButton("OK", null)
                         .show()
                 }
             }
-        }
+            .show()
     }
 
-    // ---------------------------------------------------------
     // DOLNA NAWIGACJA — układ inspirowany Szkolny.eu
     // ---------------------------------------------------------
 
@@ -3706,7 +4000,7 @@ class MainActivity : Activity() {
                     tile.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
                 }
                 when (item.key) {
-                    "START" -> showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                    "START" -> showHome()
                     "WIĘCEJ" -> showMoreMenu(active)
                     else -> loadLibrusSection(item.key)
                 }
@@ -3721,12 +4015,13 @@ class MainActivity : Activity() {
 
     private fun showMoreMenu(activeSection: String) {
         val labels = arrayOf(
-            "Profile i nauczyciele",
+            "Profile i dane ucznia",
             "Frekwencja",
             "Zadania domowe",
             "Terminarz",
             "Uwagi",
             "Szczęśliwy numerek",
+            "Katalog nauczycieli",
             "Ustawienia powiadomień",
             "Wygląd aplikacji"
         )
@@ -3736,14 +4031,15 @@ class MainActivity : Activity() {
             "ZADANIA DOMOWE",
             "TERMINARZ",
             "UWAGI",
-            "SZCZĘŚLIWY NUMEREK"
+            "SZCZĘŚLIWY NUMEREK",
+            "NAUCZYCIELE"
         )
         AlertDialog.Builder(this)
             .setTitle("Więcej modułów")
             .setItems(labels) { _, which ->
                 when (which) {
-                    6 -> showNotificationSettings()
-                    7 -> showAppearanceSettings(activeSection)
+                    7 -> showNotificationSettings()
+                    8 -> showAppearanceSettings(activeSection)
                     else -> loadLibrusSection(sections[which])
                 }
             }
