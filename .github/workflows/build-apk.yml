@@ -12,6 +12,7 @@ on:
       - 'improve/**'
       - 'fix/**'
       - 'release/**'
+      - 'audit/**'
 
 permissions:
   contents: read
