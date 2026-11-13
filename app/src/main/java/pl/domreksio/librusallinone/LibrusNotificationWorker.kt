@@ -221,7 +221,13 @@ class LibrusNotificationWorker(
             detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość")
             detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga")
             detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga")
-            LibrusNotificationDiagnostics.record(applicationContext, "success")
+            val notificationStatus = applicationContext.getSharedPreferences(
+                "librus_notification_diagnostics",
+                Context.MODE_PRIVATE
+            ).getString("last_status", "")
+            if (notificationStatus != "blocked") {
+                LibrusNotificationDiagnostics.record(applicationContext, "success")
+            }
             Result.success()
         } catch (error: Exception) {
             LibrusNotificationDiagnostics.record(
