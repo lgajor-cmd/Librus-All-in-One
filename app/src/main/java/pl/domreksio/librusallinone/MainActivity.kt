@@ -1047,10 +1047,18 @@ class MainActivity : Activity() {
             subjectCard.addView(header)
 
             for (grade in grades) {
-                val value = firstValue(grade, "value", "grade", "symbol")
-                    .ifBlank { "—" }
-                val date = firstValue(grade, "date", "add_date").take(10)
-                val description = firstValue(grade, "skill", "description", "comment")
+                // Librus może zwracać oceny liczbowe i opisowe w różnych polach.
+                // Rozszerzona lista pozwala wyświetlić także tekstowe wpisy spotykane
+                // w edukacji wczesnoszkolnej (klasy 1–3), bez wymuszania symbolu liczbowego.
+                val value = firstValue(
+                    grade,
+                    "value", "grade", "symbol", "text", "result",
+                    "assessment", "grade_description", "description", "skill", "name"
+                ).ifBlank { "—" }
+                val date = firstValue(grade, "date", "add_date", "created_at").take(10)
+                val description = firstValue(
+                    grade, "skill", "description", "comment", "teacher_comment"
+                )
                 val teacherId = firstValue(grade, "teacher_id")
                 val teacher = lookupName(teachers, teacherId)
                     .ifBlank { grade.optString("teacher_name") }
@@ -1070,7 +1078,7 @@ class MainActivity : Activity() {
                     orientation = LinearLayout.VERTICAL
                 }
 
-                if (date.isNotBlank()) details.addView(label(date, 12f, muted))
+                if (date.isNotBlank()) details.addView(label(dateLabel(date), 12f, muted))
                 if (description.isNotBlank()) {
                     details.addView(label(description, 13f, white))
                 }
