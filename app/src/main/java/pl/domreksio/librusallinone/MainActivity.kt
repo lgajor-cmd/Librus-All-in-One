@@ -139,7 +139,7 @@ class MainActivity : Activity() {
             "teal" -> intArrayOf(Color.rgb(28, 91, 91), Color.rgb(25, 48, 58), Color.rgb(22, 31, 48))
             "violet" -> intArrayOf(Color.rgb(76, 57, 120), Color.rgb(39, 35, 64), Color.rgb(22, 31, 48))
             "amber" -> intArrayOf(Color.rgb(112, 78, 35), Color.rgb(53, 43, 39), Color.rgb(22, 31, 48))
-            else -> heroGradient
+            else -> intArrayOf(Color.rgb(28, 57, 104), Color.rgb(25, 34, 58), Color.rgb(22, 31, 48))
         }
 
     private val surfaceGradient: IntArray
@@ -152,7 +152,7 @@ class MainActivity : Activity() {
             "teal" -> intArrayOf(Color.rgb(31, 57, 62), Color.rgb(24, 35, 45))
             "violet" -> intArrayOf(Color.rgb(47, 42, 67), Color.rgb(27, 29, 45))
             "amber" -> intArrayOf(Color.rgb(59, 49, 39), Color.rgb(31, 31, 43))
-            else -> surfaceGradient
+            else -> intArrayOf(Color.rgb(35, 49, 72), Color.rgb(25, 35, 53))
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
