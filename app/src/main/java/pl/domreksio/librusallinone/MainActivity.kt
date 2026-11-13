@@ -1016,20 +1016,19 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
         }
 
-        val title = when {
-            lesson.canceled -> "${lesson.subject} • ODWOŁANA"
-            lesson.substitution -> "${lesson.subject} • ZASTĘPSTWO"
-            else -> lesson.subject
-        }
-
         details.addView(
             label(
-                title,
+                lesson.subject,
                 15f,
                 if (lesson.canceled) errorColor else white,
                 true
             )
         )
+
+        when {
+            lesson.canceled -> details.addView(statusChip("ODWOŁANA", errorColor), params(0, 3, 0, 2))
+            lesson.substitution -> details.addView(statusChip("ZASTĘPSTWO", warningColor), params(0, 3, 0, 2))
+        }
 
         val time = listOf(lesson.from, lesson.to)
             .filter { it.isNotBlank() }
@@ -1243,24 +1242,53 @@ class MainActivity : Activity() {
             .mapNotNull { array.optJSONObject(it) }
             .sortedByDescending { firstValue(it, "date", "lesson_date", "created_at") }
 
+        val statusCounts = linkedMapOf<String, Int>()
+        val statusColors = linkedMapOf<String, Int>()
+
         for (item in sorted) {
             val date = firstValue(item, "date", "lesson_date")
             val typeId = firstValue(item, "type_id", "attendance_type_id", "type")
             val type = lookupName(types, typeId)
                 .ifBlank { item.optString("type_name").ifBlank { typeId } }
+                .ifBlank { "Wpis frekwencji" }
 
             val subject = firstValue(item, "subject", "subject_name")
             val lesson = firstValue(item, "lesson_no", "lesson_number")
             val description = firstValue(item, "description", "comment", "note")
+            val tint = attendanceStatusColor(type)
+            val category = attendanceStatusCategory(type)
+            statusCounts[category] = (statusCounts[category] ?: 0) + 1
+            statusColors[category] = tint
 
-            val card = card()
-            card.addView(label(type.ifBlank { "Wpis frekwencji" }, 15f, white, true))
-            if (date.isNotBlank()) card.addView(label(date, 13f, successColor))
-            if (subject.isNotBlank()) card.addView(label("Przedmiot: $subject", 12f, muted))
-            if (lesson.isNotBlank()) card.addView(label("Lekcja: $lesson", 12f, muted))
-            if (description.isNotBlank()) card.addView(label(description, 12f, muted))
+            val attendanceCard = card()
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(statusChip(type, tint), LinearLayout.LayoutParams(0, -2, 1f))
+            if (date.isNotBlank()) {
+                header.addView(label(date, 12f, muted, true))
+            }
+            attendanceCard.addView(header)
+            if (subject.isNotBlank()) attendanceCard.addView(label("Przedmiot: $subject", 12f, muted), params(0, 5, 0, 0))
+            if (lesson.isNotBlank()) attendanceCard.addView(label("Lekcja: $lesson", 12f, muted))
+            if (description.isNotBlank()) attendanceCard.addView(label(description, 12f, muted))
 
-            parent.addView(card, params(0, 0, 0, 8))
+            parent.addView(attendanceCard, params(0, 0, 0, 8))
+        }
+
+        if (statusCounts.isNotEmpty()) {
+            val summary = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            statusCounts.forEach { (category, count) ->
+                summary.addView(statusChip("$category: $count", statusColors[category] ?: accentColor),
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        marginEnd = (5 * resources.displayMetrics.density).toInt()
+                    })
+            }
+            parent.addView(summary, 0)
         }
     }
 
@@ -2167,6 +2195,44 @@ class MainActivity : Activity() {
         elevation = 2f * resources.displayMetrics.density
         setOnClickListener { action() }
     }
+
+    private fun attendanceStatusCategory(value: String): String {
+        val normalized = value.lowercase(Locale("pl", "PL"))
+        return when {
+            normalized.contains("nieobec") -> "Nieobecności"
+            normalized.contains("spóź") || normalized.contains("spoz") -> "Spóźnienia"
+            normalized.contains("zwoln") -> "Zwolnienia"
+            normalized.contains("obec") -> "Obecności"
+            else -> "Pozostałe"
+        }
+    }
+
+    private fun attendanceStatusColor(value: String): Int {
+        val normalized = value.lowercase(Locale("pl", "PL"))
+        return when {
+            normalized.contains("nieobec") -> errorColor
+            normalized.contains("spóź") || normalized.contains("spoz") -> warningColor
+            normalized.contains("zwoln") -> Color.rgb(116, 174, 255)
+            normalized.contains("obec") -> successColor
+            else -> accentColor
+        }
+    }
+
+    private fun statusChip(value: String, tint: Int): TextView =
+        TextView(this).apply {
+            text = value
+            textSize = 10f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(tint)
+            setPadding((9 * resources.displayMetrics.density).toInt(), (5 * resources.displayMetrics.density).toInt(),
+                (9 * resources.displayMetrics.density).toInt(), (5 * resources.displayMetrics.density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.argb(35, Color.red(tint), Color.green(tint), Color.blue(tint)))
+                cornerRadius = 20f * resources.displayMetrics.density
+                setStroke((1 * resources.displayMetrics.density).toInt(),
+                    Color.argb(100, Color.red(tint), Color.green(tint), Color.blue(tint)))
+            }
+        }
 
     private fun blendColor(from: Int, to: Int, ratio: Float): Int {
         val inverse = 1f - ratio
