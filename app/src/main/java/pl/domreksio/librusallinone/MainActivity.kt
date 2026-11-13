@@ -2137,6 +2137,9 @@ class MainActivity : Activity() {
                     val encoded = attachment.optString("content_base64")
                     if (encoded.isBlank()) throw IllegalStateException("Librus zwrócił pusty plik.")
                     val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                    if (bytes.size > 20 * 1024 * 1024) {
+                        throw IllegalStateException("Załącznik przekracza limit 20 MB.")
+                    }
                     val serverName = attachment.optString("filename").ifBlank { filename }
                     val safeOriginal = serverName.substringAfterLast('/').substringAfterLast('\\')
                         .replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
