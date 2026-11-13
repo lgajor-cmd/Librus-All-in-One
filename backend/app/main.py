@@ -1,10 +1,10 @@
-
 """Stateless HTTPS adapter for Librus Synergia.
 Supabase access tokens are verified against the Supabase Auth server.
 Librus credentials and session cookies are never stored on the server.
 """
 from __future__ import annotations
 
+import base64
 import asyncio
 import os
 import secrets
@@ -299,6 +299,11 @@ class MessageRequest(Credentials):
     mailbox: str = Field(default="inbox", pattern="^(inbox|outbox|archive/inbox|archive/outbox)$")
 
 
+class MessageAttachmentRequest(Credentials):
+    message_id: str = Field(min_length=1, max_length=128)
+    attachment_id: str = Field(min_length=1, max_length=128)
+
+
 class MessageSendRequest(Credentials):
     recipient_ids: list[str] = Field(min_length=1, max_length=10)
     topic: str = Field(min_length=1, max_length=200)
@@ -405,6 +410,54 @@ async def send_message(
         ) from None
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
+    except Exception as error:
+        raise _safe_error(error) from None
+
+
+@app.post("/v1/message/attachment")
+async def download_message_attachment(
+    payload: MessageAttachmentRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    if payload.profile != "parent":
+        raise HTTPException(403, "Pobieranie załączników jest dostępne wyłącznie z konta rodzica.")
+
+    user = await require_user(authorization)
+    check_rate_limit(request)
+
+    try:
+        async with Librus(
+            payload.login,
+            payload.password.get_secret_value(),
+            session_data=_session_data(payload.session),
+            cache_reference_data=True,
+        ) as librus:
+            attachment = await librus.download_attachment(
+                payload.attachment_id,
+                payload.message_id,
+            )
+            state = asdict(librus.session_data)
+
+        if attachment is None:
+            raise HTTPException(404, "Librus nie udostępnił tego załącznika.")
+        if len(attachment.content) > 20 * 1024 * 1024:
+            raise HTTPException(413, "Załącznik przekracza limit 20 MB.")
+
+        return jsonable_encoder({
+            "ok": True,
+            "user_id": user["id"],
+            "profile": payload.profile,
+            "attachment": {
+                "filename": attachment.filename,
+                "content_type": attachment.content_type,
+                "content_base64": base64.b64encode(attachment.content).decode("ascii"),
+            },
+            "session": state,
+        })
+
+    except HTTPException:
+        raise
     except Exception as error:
         raise _safe_error(error) from None
 
