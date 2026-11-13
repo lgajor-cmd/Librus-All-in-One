@@ -17,6 +17,7 @@ To jest lekki, bezstanowy adapter HTTPS oparty na nieoficjalnej bibliotece `libr
 - `POST /v1/sync` — pobiera dostępny zestaw danych i zwraca odświeżoną sesję.
 - `POST /v1/message/recipients` — pobiera odbiorców dostępnych dla konta (w tym wychowawcę).
 - `POST /v1/message/send` — wysyła wiadomość do wskazanych odbiorców. Wysyłka jest wykonywana tylko raz; przy niejednoznacznej odpowiedzi Librusa aplikacja nie może ponawiać jej automatycznie.
+- `POST /v1/message/reply` — odpowiada w istniejącym wątku, tylko jeśli Librus dopuszcza odpowiedź; również bez automatycznych ponowień.
 
 Przykładowe żądanie:
 
