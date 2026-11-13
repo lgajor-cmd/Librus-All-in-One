@@ -50,6 +50,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.Calendar
 import kotlin.concurrent.thread
 
 private const val SUPABASE_URL =
@@ -860,7 +861,10 @@ class MainActivity : Activity() {
                     renderFeatureArray(root, data, listOf("homework", "homeworks"), "Zadania domowe")
                 }
             }
-            "TERMINARZ" -> renderFeatureArray(root, data, listOf("agenda", "events"), "Wydarzenia i terminy")
+            "TERMINARZ" -> {
+                renderAgendaCalendar(root)
+                renderFeatureArray(root, data, listOf("agenda", "events"), "Wydarzenia szkolne z Librusa")
+            }
             "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
             "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
@@ -2458,6 +2462,166 @@ class MainActivity : Activity() {
 
     // WIADOMOŚCI I OGŁOSZENIA
     // ---------------------------------------------------------
+
+    // Kalendarz miesięczny z prywatnymi wydarzeniami użytkownika.
+    private fun renderAgendaCalendar(parent: LinearLayout) {
+        val month = Calendar.getInstance()
+        month.set(Calendar.DAY_OF_MONTH, 1)
+        var selected = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
+        val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        parent.addView(sectionHeader("TWÓJ KALENDARZ"), params(0, 6, 0, 8))
+        parent.addView(host, params(0, 0, 0, 14))
+
+        fun redraw() {
+            host.removeAllViews()
+            val title = SimpleDateFormat("LLLL yyyy", Locale("pl", "PL")).format(month.time)
+                .replaceFirstChar { it.uppercase(Locale("pl", "PL")) }
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(actionButton("‹") { month.add(Calendar.MONTH, -1); redraw() },
+                LinearLayout.LayoutParams(52, -2))
+            header.addView(label(title, 17f, white, true).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(0, -2, 1f))
+            header.addView(actionButton("›") { month.add(Calendar.MONTH, 1); redraw() },
+                LinearLayout.LayoutParams(52, -2))
+            host.addView(header)
+
+            val names = listOf("Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd")
+            val weekHeader = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            names.forEach { name ->
+                weekHeader.addView(label(name, 11f, muted, true).apply { gravity = Gravity.CENTER },
+                    LinearLayout.LayoutParams(0, 32, 1f))
+            }
+            host.addView(weekHeader)
+
+            val first = month.clone() as Calendar
+            first.set(Calendar.DAY_OF_MONTH, 1)
+            val offset = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7
+            val count = first.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val weeks = (offset + count + 6) / 7
+            val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            var number = 1
+            repeat(weeks) { week ->
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                repeat(7) { col ->
+                    val position = week * 7 + col
+                    if (position < offset || number > count) {
+                        row.addView(View(this), LinearLayout.LayoutParams(0, 42, 1f))
+                    } else {
+                        val day = number++
+                        val date = String.format(Locale.ROOT, "%04d-%02d-%02d",
+                            first.get(Calendar.YEAR), first.get(Calendar.MONTH) + 1, day)
+                        val today = date == SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Calendar.getInstance().time)
+                        val chosen = date == selected
+                        val cell = TextView(this).apply {
+                            text = day.toString()
+                            gravity = Gravity.CENTER
+                            textSize = 13f
+                            setTextColor(if (chosen) Color.WHITE else if (today) accentColor else white)
+                            background = roundedBackground(
+                                if (chosen) accentColor else if (today) Color.argb(45, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)) else Color.TRANSPARENT,
+                                12
+                            )
+                            isClickable = true
+                            isFocusable = true
+                            setOnClickListener { selected = date; redraw() }
+                        }
+                        row.addView(cell, LinearLayout.LayoutParams(0, 42, 1f).apply {
+                            setMargins(2, 2, 2, 2)
+                        })
+                    }
+                }
+                grid.addView(row)
+            }
+            host.addView(grid)
+            host.addView(actionButton("+  DODAJ WYDARZENIE") {
+                addAgendaEvent(selected) { redraw() }
+            }, params(0, 10, 0, 8))
+            host.addView(label("WYDARZENIA • " + selected, 11f, Color.rgb(180, 205, 239), true),
+                params(0, 4, 0, 6))
+
+            val events = readLocalArray("personal_events")
+            val todays = (0 until events.length()).mapNotNull { events.optJSONObject(it) }
+                .filter { it.optString("date") == selected }
+            if (todays.isEmpty()) {
+                host.addView(infoCard("Brak prywatnych wydarzeń w tym dniu. Wydarzenia szkolne znajdziesz poniżej."))
+            } else {
+                todays.forEach { event ->
+                    val itemCard = card()
+                    itemCard.addView(label(event.optString("title"), 14f, white, true))
+                    if (event.optString("description").isNotBlank()) {
+                        itemCard.addView(label(event.optString("description"), 12f, muted), params(0, 4, 0, 0))
+                    }
+                    itemCard.addView(actionButton("USUŃ WYDARZENIE") {
+                        AlertDialog.Builder(this).setTitle("Usunąć wydarzenie?")
+                            .setMessage(event.optString("title"))
+                            .setNegativeButton("Anuluj", null)
+                            .setPositiveButton("Usuń") { _, _ ->
+                                val kept = JSONArray()
+                                for (i in 0 until events.length()) {
+                                    val item = events.optJSONObject(i) ?: continue
+                                    if (item.optString("id") != event.optString("id")) kept.put(item)
+                                }
+                                saveLocalArray("personal_events", kept)
+                                redraw()
+                            }.show()
+                    })
+                    host.addView(itemCard, params(0, 0, 0, 6))
+                }
+            }
+        }
+        redraw()
+    }
+
+    private fun addAgendaEvent(defaultDate: String, onSaved: () -> Unit) {
+        val fields = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(8, 8, 8, 0)
+        }
+        val title = EditText(this).apply {
+            hint = "Nazwa wydarzenia"
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+        }
+        val date = EditText(this).apply {
+            hint = "Data RRRR-MM-DD"
+            setText(defaultDate)
+            setTextColor(white)
+            setHintTextColor(muted)
+            setSingleLine(true)
+        }
+        val description = EditText(this).apply {
+            hint = "Opis (opcjonalnie)"
+            setTextColor(white)
+            setHintTextColor(muted)
+            minLines = 2
+        }
+        fields.addView(title)
+        fields.addView(date, params(0, 6, 0, 0))
+        fields.addView(description, params(0, 6, 0, 0))
+        AlertDialog.Builder(this).setTitle("Nowe wydarzenie").setView(fields)
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Zapisz") { _, _ ->
+                val eventTitle = title.text.toString().trim()
+                val eventDate = date.text.toString().trim()
+                val valid = try {
+                    SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }.parse(eventDate) != null
+                } catch (_: Exception) { false }
+                if (eventTitle.isBlank() || !valid) {
+                    Toast.makeText(this, "Podaj nazwę i poprawną datę RRRR-MM-DD.", Toast.LENGTH_LONG).show()
+                } else {
+                    val events = readLocalArray("personal_events")
+                    events.put(JSONObject().put("id", System.currentTimeMillis().toString())
+                        .put("title", eventTitle).put("date", eventDate)
+                        .put("description", description.text.toString().trim()))
+                    saveLocalArray("personal_events", events)
+                    onSaved()
+                }
+            }.show()
+    }
 
     private fun renderMessagesSection(parent: LinearLayout, data: JSONObject) {
         parent.addView(actionButton("NAPISZ WIADOMOŚĆ") { openNewMessageComposer() }, params(0, 0, 0, 10))
