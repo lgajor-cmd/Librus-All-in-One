@@ -99,6 +99,13 @@ jobs:
         if: steps.signing.outputs.available == 'true'
         run: gradle --no-daemon assembleRelease --stacktrace
 
+      - name: Verify signed release APK
+        if: steps.signing.outputs.available == 'true'
+        shell: bash
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+
       - name: Upload signed release APK
         if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
