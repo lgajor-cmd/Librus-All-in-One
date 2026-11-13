@@ -36,7 +36,11 @@ Worker zapisuje status `partial_success`, nazwy niedostępnych kanałów i zalic
 
 Lokalny limiter usuwa nieaktywne wpisy po przekroczeniu progu liczby adresów IP. Nadal jest limiterem procesowym, a nie współdzielonym limitem pomiędzy wieloma instancjami.
 
-### 6. Testy regresyjne
+### 6. Diagnostyka zaszyfrowanego magazynu danych
+
+Magazyn Androida rozróżnia brak konfiguracji od brakującego klucza Keystore, błędu uwierzytelnienia AES-GCM i uszkodzonego formatu. Worker zapisuje szczegółowy status diagnostyczny i nie usuwa ani nie nadpisuje danych po błędzie odszyfrowania.
+
+### 7. Testy regresyjne
 
 Dodano testy standardowej biblioteki `unittest` dla:
 - poprawnego pobrania wszystkich kanałów ocen,
@@ -44,7 +48,7 @@ Dodano testy standardowej biblioteki `unittest` dla:
 - odpowiedzi readiness przy kompletnej i niekompletnej konfiguracji,
 - stabilnego kodu błędu autoryzacji.
 
-Workflow backendu uruchamia te testy w CI.
+Workflow backendu uruchamia te testy w CI. Kompilacja Androida w CI weryfikuje również zmiany magazynu danych logowania.
 
 ## Ograniczenia i dalsze działania
 
