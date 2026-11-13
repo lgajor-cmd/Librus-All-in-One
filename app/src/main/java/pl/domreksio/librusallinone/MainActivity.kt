@@ -3227,7 +3227,7 @@ class MainActivity : Activity() {
         val search = EditText(this).apply {
             hint = "Szukaj nazwiska, przedmiotu lub kontaktu"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            singleLine = true
+            setSingleLine(true)
             setTextColor(white)
             setHintTextColor(muted)
             textSize = 14f
