@@ -165,8 +165,9 @@ class LibrusNotificationWorker(
         val prefKey = "known_$notificationKey"
         val legacyPrefix = sourceKeys.first()
         val previousRaw = prefs.getString(prefKey, null)
-        val previous = previousRaw?.split("|")
-            ?.filter { it.isNotBlank() }
+        val previousValues = previousRaw?.split("|")?.filter { it.isNotBlank() }
+        val legacyState = previousValues != null && previousValues.none { it.contains(":") }
+        val previous = previousValues
             ?.map { if (it.contains(":")) it else "$legacyPrefix:$it" }
             ?.toSet()
 
@@ -180,7 +181,14 @@ class LibrusNotificationWorker(
             previous.filterTo(current) { it.startsWith("$unavailableKey:") }
         }
 
-        val newIds = current - previous
+        // Before this update only ordinary "grades" were monitored. During
+        // migration, seed newly supported grade types without announcing
+        // every historical descriptive/partial/point grade as if it were new.
+        val newIds = if (legacyState && notificationKey == "grades") {
+            current.filterTo(linkedSetOf()) { it.startsWith("grades:") } - previous
+        } else {
+            current - previous
+        }
         if (newIds.isNotEmpty() && notificationsEnabled(notificationKey)) {
             val newest = items.firstOrNull { it.first in newIds }?.second
             val detail = newest?.let {
