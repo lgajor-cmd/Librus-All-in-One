@@ -105,7 +105,9 @@ jobs:
         run: |
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           "$APKSIGNER" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk | tee "$RUNNER_TEMP/apk-signature.txt"
-          grep -qi "3f:ca:39:0f:45:0c:25:e6:11:89:ea:60:59:78:ce:48:60:a0:48:2a:7a:95:f7:48:40:6e:5e:d9:ee:04:6e:94" "$RUNNER_TEMP/apk-signature.txt"
+          EXPECTED_FINGERPRINT="3fca390f450c25e61189ea605978ce4860a0482a7a95f748406e5ed9ee046e94"
+          ACTUAL_FINGERPRINT="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-signature.txt" | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          test "$ACTUAL_FINGERPRINT" = "$EXPECTED_FINGERPRINT"
 
       - name: Upload signed release APK
         if: steps.signing.outputs.available == 'true'
