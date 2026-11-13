@@ -4428,6 +4428,13 @@ class MainActivity : Activity() {
         localKey: (JSONObject) -> String,
         onHomeworkChanged: (() -> Unit)?
     ) {
+        // Odczyt i parsowanie lokalnego stanu tylko raz na render listy,
+        // zamiast ponownego parsowania całego JSON dla każdego zadania.
+        val completedHomework = if (heading == "Zadania domowe") {
+            val saved = readLocalArray("homework_done")
+            (0 until saved.length()).map { saved.optString(it) }.toSet()
+        } else emptySet()
+
         for (item in items) {
             val title = firstValue(item, "title", "topic", "name", "subject", "text")
                 .ifBlank { heading.removeSuffix("a").removeSuffix("y") }
@@ -4464,8 +4471,7 @@ class MainActivity : Activity() {
             if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
             if (heading == "Zadania domowe") {
                 val key = localKey(item)
-                val isDone = key in (0 until readLocalArray("homework_done").length())
-                    .map { readLocalArray("homework_done").optString(it) }.toSet()
+                val isDone = key in completedHomework
                 val completion = CheckBox(this).apply {
                     text = if (isDone) "Wykonane • zapisane na tym urządzeniu" else "Oznacz jako wykonane"
                     isChecked = isDone
