@@ -8,6 +8,7 @@ Version code: 7
 - Aplikacja rozróżnia problemy sesji technicznej Supabase od błędów logowania do Librusa.
 - Diagnostyka informuje o częściowo udanej synchronizacji i wskazuje niedostępne kanały.
 - Dodano endpoint gotowości backendu `/ready`.
+- Diagnostyka rozróżnia brak zapisanych danych od uszkodzonego lub nieodszyfrowywalnego magazynu; dane nie są automatycznie kasowane.
 - Dodano backendowe testy regresyjne uruchamiane przez GitHub Actions.
 
 ## Aktualizacja
