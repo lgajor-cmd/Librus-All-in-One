@@ -1453,7 +1453,7 @@ class MainActivity : Activity() {
             minLines = 5
             maxLines = 9
             gravity = Gravity.TOP or Gravity.START
-            setText("Dzień dobry,\\n\\n$absenceDescription.\\n\\nPowód nieobecności: ")
+            setText("Dzień dobry,\n\n$absenceDescription.\n\nPowód nieobecności: ")
             setTextColor(white)
             setHintTextColor(muted)
             setPadding((14 * density).toInt(), (12 * density).toInt(),
@@ -1474,7 +1474,7 @@ class MainActivity : Activity() {
                 }
                 dialog.dismiss()
                 val confirmation = AlertDialog.Builder(this).setTitle("Potwierdź wysłanie")
-                    .setMessage("Wiadomość zostanie wysłana do: $recipientName\\n\\nTemat: $topic\\n\\n$body\\n\\nWysłanie wiadomości nie oznacza jeszcze usprawiedliwienia nieobecności.")
+                    .setMessage("Wiadomość zostanie wysłana do: $recipientName\n\nTemat: $topic\n\n$body\n\nWysłanie wiadomości nie oznacza jeszcze usprawiedliwienia nieobecności.")
                     .setNegativeButton("WRÓĆ", null).setPositiveButton("WYŚLIJ", null).create()
                 confirmation.setOnShowListener {
                     confirmation.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
