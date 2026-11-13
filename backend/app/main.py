@@ -282,6 +282,12 @@ async def connect(
             cache_reference_data=True,
         ) as librus:
             me = await librus.me()
+            try:
+                school = await librus.school()
+            except Exception:
+                # School metadata is helpful for dashboard branding, but a
+                # temporary failure must not prevent a valid Librus login.
+                school = None
             state = asdict(librus.session_data)
 
         return jsonable_encoder({
@@ -289,6 +295,7 @@ async def connect(
             "user_id": user["id"],
             "profile": payload.profile,
             "student": asdict(me),
+            "school": asdict(school) if school is not None else None,
             "session": state,
         })
 
