@@ -415,10 +415,19 @@ class MainActivity : Activity() {
             signOut()
         }, params(0, 24, 0, 8))
 
-        setContentView(ScrollView(this).apply {
+        val homeScroll = ScrollView(this).apply {
             setBackgroundColor(bgColor)
             addView(content)
-        })
+        }
+        val homePage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        homePage.addView(homeScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        homePage.addView(buildBottomNavigation("START"))
+        setContentView(homePage)
 
         if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext)
 
@@ -702,7 +711,15 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
             addView(root)
         }
-        setContentView(scroll)
+        val sectionPage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        sectionPage.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        sectionPage.addView(buildBottomNavigation(section))
+        setContentView(sectionPage)
         root.alpha = 0f
         root.translationY = 12f * resources.displayMetrics.density
         root.animate().alpha(1f).translationY(0f).setDuration(280).start()
@@ -1750,6 +1767,108 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------
+    // DOLNA NAWIGACJA — układ inspirowany Szkolny.eu
+    // ---------------------------------------------------------
+
+    private fun buildBottomNavigation(active: String): LinearLayout {
+        val density = resources.displayMetrics.density
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding((7 * density).toInt(), (7 * density).toInt(), (7 * density).toInt(), (8 * density).toInt())
+            setBackgroundColor(Color.rgb(18, 26, 41))
+            elevation = 12f * density
+        }
+
+        data class NavItem(val key: String, val icon: String, val title: String)
+        val items = listOf(
+            NavItem("START", "⌂", "Start"),
+            NavItem("PLAN LEKCJI", "▦", "Plan"),
+            NavItem("OCENY", "✦", "Oceny"),
+            NavItem("WIADOMOŚCI", "✉", "Wiadomości"),
+            NavItem("WIĘCEJ", "•••", "Więcej")
+        )
+
+        items.forEach { item ->
+            val selected = when (active) {
+                "START" -> item.key == "START"
+                "PLAN LEKCJI" -> item.key == "PLAN LEKCJI"
+                "OCENY" -> item.key == "OCENY"
+                "WIADOMOŚCI" -> item.key == "WIADOMOŚCI"
+                else -> item.key == "WIĘCEJ"
+            }
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding((2 * density).toInt(), (4 * density).toInt(), (2 * density).toInt(), (3 * density).toInt())
+                background = roundedBackground(
+                    if (selected) Color.rgb(39, 65, 101) else Color.TRANSPARENT,
+                    13
+                )
+                isClickable = true
+                isFocusable = true
+            }
+            tile.addView(TextView(this).apply {
+                text = item.icon
+                textSize = if (item.key == "WIĘCEJ") 17f else 21f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) Color.rgb(145, 190, 255) else muted)
+                setTypeface(null, Typeface.BOLD)
+            })
+            tile.addView(TextView(this).apply {
+                text = item.title
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) white else muted)
+                if (selected) setTypeface(null, Typeface.BOLD)
+                maxLines = 1
+            })
+            tile.setOnClickListener {
+                when (item.key) {
+                    "START" -> showHome(supabase.auth.currentSessionOrNull()?.user?.email.orEmpty())
+                    "WIĘCEJ" -> showMoreMenu()
+                    else -> loadLibrusSection(item.key)
+                }
+            }
+            nav.addView(tile, LinearLayout.LayoutParams(0, (54 * density).toInt(), 1f).apply {
+                marginStart = (2 * density).toInt()
+                marginEnd = (2 * density).toInt()
+            })
+        }
+        return nav
+    }
+
+    private fun showMoreMenu() {
+        val labels = arrayOf(
+            "Profile i nauczyciele",
+            "Frekwencja",
+            "Zadania domowe",
+            "Terminarz",
+            "Uwagi",
+            "Szczęśliwy numerek",
+            "Ustawienia powiadomień"
+        )
+        val sections = arrayOf(
+            "PROFILE",
+            "FREKWENCJA",
+            "ZADANIA DOMOWE",
+            "TERMINARZ",
+            "UWAGI",
+            "SZCZĘŚLIWY NUMEREK"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Więcej modułów")
+            .setItems(labels) { _, which ->
+                if (which == labels.lastIndex) {
+                    showNotificationSettings()
+                } else {
+                    loadLibrusSection(sections[which])
+                }
+            }
+            .show()
     }
 
     // ---------------------------------------------------------
