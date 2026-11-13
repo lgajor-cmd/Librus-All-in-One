@@ -2036,8 +2036,9 @@ class MainActivity : Activity() {
                     val fullBody = message?.let {
                         firstValue(it, "content", "message", "body", "text", "content_html", "message_content")
                     }.orEmpty()
-                    if (fullBody.isBlank()) {
-                        "ERROR|Librus nie zwrócił treści tej wiadomości."
+                    val attachments = message?.optJSONArray("attachments") ?: JSONArray()
+                    if (fullBody.isBlank() && attachments.length() == 0) {
+                        "ERROR|Librus nie zwrócił treści ani załączników tej wiadomości."
                     } else {
                         librusSessionMemory = json.optJSONObject("session") ?: librusSessionMemory
                         librusVault.updateSession(librusSessionMemory?.toString())
