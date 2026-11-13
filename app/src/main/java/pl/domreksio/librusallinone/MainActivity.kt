@@ -290,7 +290,7 @@ class MainActivity : Activity() {
             setPadding(22, 22, 22, 22)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(28, 57, 104), Color.rgb(25, 34, 58), Color.rgb(22, 31, 48))
+                heroGradient
             ).apply { cornerRadius = 24f * resources.displayMetrics.density }
             elevation = 5f * resources.displayMetrics.density
             alpha = 0f
