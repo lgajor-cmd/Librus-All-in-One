@@ -501,19 +501,29 @@ async def submit_justification(
                 },
             ) from None
 
-        if status == 401:
-            # A definite 401 means the first request was rejected before submission.
+        needs_reauth = status == 401 or (
+            status < 400
+            and not raw.lstrip().startswith("{")
+            and ("<html" in raw.lower() or "loguj" in raw.lower())
+        )
+        if needs_reauth:
+            # A definite 401/login page means the first request was rejected before submission.
             try:
                 await librus.login(force=True)
+            except Exception as error:
+                raise HTTPException(401, "Sesja Librusa wygasła. Zaloguj się ponownie.") from None
+            try:
                 status, raw = await post_once()
             except Exception:
                 raise HTTPException(
                     502,
                     {
-                        "message": "Nie udało się odświeżyć sesji i potwierdzić wysyłki. Sprawdź e-Usprawiedliwienia.",
+                        "message": "Nie udało się potwierdzić wyniku po odświeżeniu sesji. Sprawdź e-Usprawiedliwienia.",
                         "outcome_unknown": True,
                     },
                 ) from None
+            if status == 401 or "<html" in raw.lower() or "loguj" in raw.lower():
+                raise HTTPException(401, "Librus nadal odrzuca sesję. Zaloguj się ponownie.")
 
         try:
             parsed = json.loads(raw) if raw.strip() else {}
