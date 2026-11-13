@@ -510,7 +510,7 @@ async def submit_justification(
             # A definite 401/login page means the first request was rejected before submission.
             try:
                 await librus.login(force=True)
-            except Exception as error:
+            except Exception:
                 raise HTTPException(401, "Sesja Librusa wygasła. Zaloguj się ponownie.") from None
             try:
                 status, raw = await post_once()
@@ -533,6 +533,14 @@ async def submit_justification(
 
         status_field = str(result_data.get("Status") or result_data.get("status") or "").lower()
         success = status < 400 and status_field != "error" and result_data.get("successful") is not False
+        if status >= 500:
+            raise HTTPException(
+                502,
+                {
+                    "message": f"Librus zwrócił HTTP {status}. Sprawdź moduł e-Usprawiedliwienia przed ponowną próbą.",
+                    "outcome_unknown": True,
+                },
+            )
         if not success:
             detail = (
                 result_data.get("Message")
