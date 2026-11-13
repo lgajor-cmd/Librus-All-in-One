@@ -1006,8 +1006,8 @@ class MainActivity : Activity() {
             val item = array.optJSONObject(i) ?: continue
             val title = firstValue(item, "title", "subject", "topic")
                 .ifBlank { heading.removeSuffix("i") }
-            val sender = firstValue(item, "sender", "author", "teacher_name", "from", "sender_name")
-            val date = firstValue(item, "date", "created_at", "send_date", "sent_at")
+            val sender = firstValue(item, "sender_name", "sender", "author", "teacher_name", "from")
+            val date = firstValue(item, "send_date", "date", "created_at", "sent_at")
             val body = firstValue(
                 item,
                 "content", "message", "body", "text",
