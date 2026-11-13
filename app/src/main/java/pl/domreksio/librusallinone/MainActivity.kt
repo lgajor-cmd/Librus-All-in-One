@@ -230,8 +230,7 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun showHome(email: String) {
-        timetableTicker?.let { android.os.Handler(mainLooper).removeCallbacks(it) }
-        timetableTicker = null
+        stopTimetableTicker()
         if (isFinishing) return
 
         val content = LinearLayout(this).apply {
@@ -550,6 +549,9 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun loadLibrusSection(section: String) {
+        // Zatrzymaj licznik poprzedniego planu natychmiast po zmianie sekcji,
+        // również podczas oczekiwania na synchronizację danych.
+        stopTimetableTicker()
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -932,8 +934,7 @@ class MainActivity : Activity() {
         }
 
         fun renderSelectedDay(date: String) {
-            timetableTicker?.let { android.os.Handler(mainLooper).removeCallbacks(it) }
-            timetableTicker = null
+            stopTimetableTicker()
             dayContent.removeAllViews()
             val dayLessons = grouped[date] ?: return
             val dayCard = card()
@@ -1434,11 +1435,8 @@ class MainActivity : Activity() {
             }
             .sortedByDescending { it.second }
 
-        if (entries.isEmpty()) {
-            parent.addView(infoCard("Brak wpisów frekwencji."))
-            renderJustifications(parent, data.optJSONArray("justifications"))
-            return
-        }
+        // Nie ukrywaj kalendarza, gdy Librus nie zwrócił jeszcze wpisów.
+        // Dzięki temu użytkownik nadal widzi bieżący miesiąc i dzisiejszą datę.
 
         fun typeOf(item: JSONObject): String {
             val id = firstValue(item, "type_id", "attendance_type_id", "type")
@@ -1471,12 +1469,10 @@ class MainActivity : Activity() {
         parent.addView(summary, params(0, 0, 0, 12))
 
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
-        var selectedDate = if (byDate.containsKey(today)) today else entries.first().second
+        // Kalendarz zawsze otwieraj na bieżącym miesiącu i dniu.
+        // Historia frekwencji może nie zawierać jeszcze żadnego wpisu z dzisiaj.
+        var selectedDate = today
         val monthCursor = java.util.Calendar.getInstance()
-        val initial = try {
-            SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(selectedDate)
-        } catch (_: Exception) { null }
-        if (initial != null) monthCursor.time = initial
 
         val monthTitle = TextView(this).apply {
             textSize = 17f
@@ -1660,8 +1656,9 @@ class MainActivity : Activity() {
             setOnClickListener {
                 monthCursor.add(java.util.Calendar.MONTH, delta)
                 val prefix = SimpleDateFormat("yyyy-MM", Locale.US).format(monthCursor.time)
-                selectedDate = byDate.keys.firstOrNull { it.startsWith(prefix) }
-                    ?: iso((monthCursor.clone() as java.util.Calendar).apply { set(java.util.Calendar.DAY_OF_MONTH, 1) })
+                selectedDate = if (today.startsWith(prefix)) today else
+                    byDate.keys.firstOrNull { it.startsWith(prefix) }
+                        ?: iso((monthCursor.clone() as java.util.Calendar).apply { set(java.util.Calendar.DAY_OF_MONTH, 1) })
                 renderCalendar()
                 renderSelectedDay()
             }
@@ -4061,9 +4058,13 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onDestroy() {
+    private fun stopTimetableTicker() {
         timetableTicker?.let { android.os.Handler(mainLooper).removeCallbacks(it) }
         timetableTicker = null
+    }
+
+    override fun onDestroy() {
+        stopTimetableTicker()
         activityScope.cancel()
         super.onDestroy()
     }
