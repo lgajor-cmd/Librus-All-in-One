@@ -2874,7 +2874,7 @@ class MainActivity : Activity() {
                     firstValue(item, "send_date", "date", "created_at", "sent_at")
                 ).joinToString("|")
             }
-            return "$category:${identity.hashCode()}"
+            return "$category:$identity"
         }
         fun toggleSaved(key: String, storageKey: String, value: Boolean) {
             val old = readLocalArray(storageKey)
@@ -2922,7 +2922,7 @@ class MainActivity : Activity() {
                     val key = messageKey(item, category)
                     val isPinned = key in pinned
                     val isArchived = key in archived
-                    val isUnread = firstValue(item, "read_date", "readDate").isBlank()
+                    val isUnread = category == "Wiadomości" && firstValue(item, "read_date", "readDate").isBlank()
                     if (selectedFilter == "pinned" && !isPinned) continue
                     if (selectedFilter == "archived" && !isArchived) continue
                     if (selectedFilter == "unread" && (!isUnread || isArchived)) continue
@@ -3230,6 +3230,8 @@ class MainActivity : Activity() {
     ) {
         if (array == null || array.length() == 0) return
         parent.addView(sectionHeader(heading), params(0, 18, 0, 8))
+        val pinnedKeys = savedKeys("message_pinned")
+        val archivedKeys = savedKeys("message_archived")
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val title = firstValue(item, "title", "subject", "topic").ifBlank { heading.removeSuffix("i") }
@@ -3237,8 +3239,8 @@ class MainActivity : Activity() {
             val date = firstValue(item, "send_date", "date", "created_at", "sent_at")
             val body = firstValue(item, "content", "message", "body", "text", "content_html", "message_content", "description")
             val key = messageKey(item, heading)
-            val pinned = key in savedKeys("message_pinned")
-            val archived = key in savedKeys("message_archived")
+            val pinned = key in pinnedKeys
+            val archived = key in archivedKeys
             val card = card()
             card.addView(label(title, 15f, white, true))
             if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
