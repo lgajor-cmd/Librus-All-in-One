@@ -1,6 +1,6 @@
 # Librus All-in-One — backend integracyjny
 
-To jest pierwszy, tylko do odczytu adapter HTTPS oparty na nieoficjalnej bibliotece `librus-synergia`.
+To jest lekki, bezstanowy adapter HTTPS oparty na nieoficjalnej bibliotece `librus-synergia`.
 
 ## Ważne zasady bezpieczeństwa
 
