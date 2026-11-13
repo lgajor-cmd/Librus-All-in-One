@@ -292,6 +292,10 @@ class MainActivity : Activity() {
         addHomeSection(content, "FREKWENCJA", "Obecności, nieobecności i spóźnienia", "📅")
         addHomeSection(content, "PLAN LEKCJI", "Tygodniowy harmonogram zajęć", "🗓")
         addHomeSection(content, "WIADOMOŚCI", "Wiadomości i ogłoszenia", "✉")
+        addHomeSection(content, "ZADANIA DOMOWE", "Zadania, terminy i załączniki", "📚")
+        addHomeSection(content, "TERMINARZ", "Sprawdziany, wydarzenia i wycieczki", "🗓")
+        addHomeSection(content, "UWAGI", "Uwagi pozytywne, neutralne i negatywne", "📝")
+        addHomeSection(content, "SZCZĘŚLIWY NUMEREK", "Numer obowiązujący danego dnia", "🍀")
 
         content.addView(actionButton("WYLOGUJ") {
             signOut()
@@ -515,6 +519,10 @@ class MainActivity : Activity() {
             "FREKWENCJA" -> "Obecności, nieobecności i spóźnienia"
             "PLAN LEKCJI" -> "Harmonogram zajęć"
             "WIADOMOŚCI" -> "Wiadomości oraz ogłoszenia"
+            "ZADANIA DOMOWE" -> "Zadania domowe i materiały"
+            "TERMINARZ" -> "Sprawdziany, wydarzenia i wycieczki"
+            "UWAGI" -> "Uwagi dotyczące zachowania"
+            "SZCZĘŚLIWY NUMEREK" -> "Szczęśliwy numerek"
             "PROFILE" -> "Dane ucznia, przedmioty i nauczyciele"
             else -> "Dane z Librusa"
         }
@@ -533,6 +541,10 @@ class MainActivity : Activity() {
             "OCENY" -> renderGradesSection(root, data, subjects, teachers)
             "FREKWENCJA" -> renderAttendanceSection(root, data)
             "WIADOMOŚCI" -> renderMessagesSection(root, data)
+            "ZADANIA DOMOWE" -> renderFeatureArray(root, data, listOf("homework", "homeworks"), "Zadania domowe")
+            "TERMINARZ" -> renderFeatureArray(root, data, listOf("agenda", "events"), "Wydarzenia i terminy")
+            "UWAGI" -> renderFeatureArray(root, data, listOf("notes", "behaviour_notes"), "Uwagi")
+            "SZCZĘŚLIWY NUMEREK" -> renderLuckyNumber(root, data)
             "PROFILE" -> renderProfileSection(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
         }
@@ -1248,6 +1260,88 @@ class MainActivity : Activity() {
         }
 
         if (!found) parent.addView(infoCard("Brak danych profilu."))
+    }
+
+    // ---------------------------------------------------------
+    // FUNKCJE SZKOLNE: ZADANIA, TERMINARZ, UWAGI I NUMEREK
+    // ---------------------------------------------------------
+
+    private fun renderFeatureArray(
+        parent: LinearLayout,
+        data: JSONObject,
+        keys: List<String>,
+        heading: String
+    ) {
+        val key = keys.firstOrNull { data.has(it) && data.opt(it) != JSONObject.NULL }
+        val value = key?.let { data.opt(it) }
+
+        if (value == null) {
+            parent.addView(infoCard("Backend nie zwrócił sekcji „$heading”."))
+            return
+        }
+
+        val items = when (value) {
+            is JSONArray -> value
+            is JSONObject -> {
+                value.optJSONArray("items")
+                    ?: value.optJSONArray("entries")
+                    ?: JSONArray().apply { put(value) }
+            }
+            else -> JSONArray()
+        }
+
+        if (items.length() == 0) {
+            parent.addView(infoCard("Brak wpisów: $heading."))
+            return
+        }
+
+        parent.addView(infoCard("Liczba wpisów: ${items.length()}"))
+        val sorted = (0 until items.length())
+            .mapNotNull { items.optJSONObject(it) }
+            .sortedByDescending {
+                firstValue(it, "date", "due_date", "deadline", "start_date", "created_at")
+            }
+
+        for (item in sorted) {
+            val title = firstValue(item, "title", "topic", "name", "subject", "text")
+                .ifBlank { heading.removeSuffix("a").removeSuffix("y") }
+            val date = firstValue(item, "date", "due_date", "deadline", "start_date")
+            val subjectId = firstValue(item, "subject_id", "subject")
+            val subject = lookupName(data.optJSONObject("subjects"), subjectId)
+                .ifBlank { item.optString("subject_name") }
+            val teacherId = firstValue(item, "teacher_id")
+            val teacher = lookupName(data.optJSONObject("teachers"), teacherId)
+                .ifBlank { item.optString("teacher_name") }
+            val body = firstValue(item, "description", "content", "body", "details", "comment")
+
+            val itemCard = card()
+            itemCard.addView(label(title, 15f, white, true))
+            if (date.isNotBlank()) itemCard.addView(label("Termin: $date", 13f, successColor))
+            if (subject.isNotBlank()) itemCard.addView(label("Przedmiot: $subject", 12f, muted))
+            if (teacher.isNotBlank()) itemCard.addView(label("Nauczyciel: $teacher", 12f, muted))
+            if (body.isNotBlank() && body != title) itemCard.addView(label(body, 13f, white))
+            parent.addView(itemCard, params(0, 0, 0, 8))
+        }
+    }
+
+    private fun renderLuckyNumber(parent: LinearLayout, data: JSONObject) {
+        val value = data.opt("lucky_number")
+        if (value == null || value == JSONObject.NULL) {
+            parent.addView(infoCard("Brak informacji o szczęśliwym numerku."))
+            return
+        }
+
+        val card = card()
+        when (value) {
+            is JSONObject -> {
+                val number = firstValue(value, "number", "lucky_number", "value")
+                val date = firstValue(value, "date", "valid_date", "day")
+                card.addView(label(number.ifBlank { readableValue(value) }, 36f, successColor, true))
+                if (date.isNotBlank()) card.addView(label("Obowiązuje: $date", 13f, muted))
+            }
+            else -> card.addView(label(readableValue(value), 30f, successColor, true))
+        }
+        parent.addView(card)
     }
 
     // ---------------------------------------------------------
