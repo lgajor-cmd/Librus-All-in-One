@@ -4324,15 +4324,45 @@ class MainActivity : Activity() {
                 val subject = firstDisplayValue(grade, "subject_name")
                     .ifBlank { subjectObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
                     .ifBlank { lookupName(subjects, subjectId) }
-                    .ifBlank { (grade.opt("subject") as? String).orEmpty() }
-                    .ifBlank { "Przedmiot nieokreślony" }
+                    .ifBlank {
+                        val rawSubject = grade.opt("subject")
+                        if (rawSubject is String) lookupName(subjects, rawSubject).ifBlank { rawSubject } else ""
+                    }
+                    .ifBlank { "Pozostałe" }
                 val value = firstDisplayValue(grade, "value", "grade", "symbol", "text", "result", "assessment",
                     "grade_value", "grade_text", "mark", "grade_description", "skill", "name")
                     .ifBlank { "Ocena opisowa" }
                 val description = firstDisplayValue(grade, "description", "skill_description", "comment",
-                    "teacher_comment", "feedback", "note", "details", "category_name", "type_name", "grade_type")
-                    .ifBlank { firstDisplayValue(grade, "comments", "requirements", "criteria", "skills") }
-                val date = firstValue(grade, "date", "grade_date", "add_date", "created_at", "modified_at")
+                    "teacher_comment", "feedback", "note", "details")
+                val teacherObject = grade.optJSONObject("teacher")
+                val teacherId = firstValue(grade, "teacher_id")
+                    .ifBlank { teacherObject?.let { firstValue(it, "id", "teacher_id") }.orEmpty() }
+                val teacher = firstDisplayValue(grade, "teacher_name")
+                    .ifBlank { teacherObject?.let { firstDisplayValue(it, "name", "title", "value") }.orEmpty() }
+                    .ifBlank { lookupName(data.optJSONObject("teachers"), teacherId) }
+                    .ifBlank {
+                        val rawTeacher = grade.opt("teacher")
+                        if (rawTeacher is String) lookupName(data.optJSONObject("teachers"), rawTeacher).ifBlank { rawTeacher } else ""
+                    }
+                val detailParts = mutableListOf<String>()
+                if (description.isNotBlank()) detailParts.add(description)
+                if (teacher.isNotBlank()) detailParts.add("Nauczyciel: $teacher")
+                listOf(
+                    "comments" to "Komentarz",
+                    "requirements" to "Wymaganie",
+                    "criteria" to "Kryterium",
+                    "skills" to "Umiejętność"
+                ).forEach { (field, heading) ->
+                    val raw = grade.opt(field)
+                    if (raw != null && raw != JSONObject.NULL) {
+                        val values = when (raw) {
+                            is JSONArray -> (0 until raw.length()).map { displayJsonValue(raw.opt(it)) }
+                            else -> listOf(displayJsonValue(raw))
+                        }.filter { it.isNotBlank() }.distinct()
+                        values.forEach { detailParts.add("$heading: $it") }
+                    }
+                }
+                val date = firstValue(grade, "date", "add_date", "created_at", "modified_at")
                 val category = when (sourceKey) {
                     "descriptive_grades" -> "Ocena opisowa"
                     "partial_grades" -> "Ocena cząstkowa"
@@ -4342,7 +4372,9 @@ class MainActivity : Activity() {
                     else -> "Ocena"
                 }
                 entries.add(TimelineEntry("OCENY", category, "$value • $subject",
-                    description.takeIf { it.isNotBlank() }?.let { "Za co: $it" }.orEmpty(),
+                    detailParts.joinToString(" · ").let { detail ->
+                        if (detail.isBlank()) "" else "Za co: $detail"
+                    },
                     date, "✦", gradeFocusKey(grade, sourceKey)))
             }
         }
