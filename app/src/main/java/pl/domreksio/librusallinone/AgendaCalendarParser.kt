@@ -73,21 +73,4 @@ internal object AgendaCalendarParser {
 
     private fun normalizeDate(raw: String): String? =
         FeatureDateParser.parse(raw)?.toString()
-        }
-
-        val legacyDate = Regex("^(\\d{2}\\.\\d{2}\\.\\d{4})").find(value)
-            ?.groupValues?.get(1)
-            ?: Regex("^(\\d{2}-\\d{2}-\\d{4})").find(value)?.groupValues?.get(1)
-            ?: return null
-        val format = if (legacyDate.contains(".")) {
-            DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT)
-        } else {
-            DateTimeFormatter.ofPattern("dd-MM-uuuu").withResolverStyle(ResolverStyle.STRICT)
-        }
-        return try {
-            LocalDate.parse(legacyDate, format).toString()
-        } catch (_: DateTimeParseException) {
-            null
-        }
-    }
 }
