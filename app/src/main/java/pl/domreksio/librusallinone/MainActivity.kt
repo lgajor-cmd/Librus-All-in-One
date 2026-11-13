@@ -818,16 +818,80 @@ class MainActivity : Activity() {
             setPadding(20, 20, 20, 18)
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(35, 78, 139), Color.rgb(27, 43, 70), Color.rgb(24, 34, 53))
+                heroGradient
             ).apply {
                 cornerRadius = 24f * density
-                setStroke((1 * density).toInt(), Color.rgb(73, 105, 151))
+                setStroke((1 * density).toInt(), blendColor(accentColor, Color.rgb(73, 105, 151), 0.55f))
             }
             elevation = 4f * density
         }
         hero.addView(label("LIBRUS  /  CENTRUM UCZNIA", 10f, Color.rgb(181, 211, 255), true))
         hero.addView(label(section, 25f, white, true), params(0, 5, 0, 0))
         hero.addView(label(subtitle, 13f, Color.rgb(202, 215, 235)))
+
+        // Duża ilustracja tematyczna wewnątrz banera sekcji, a nie tylko na pulpicie.
+        // Rysowana lokalnie na Canvas — działa offline i nie wymaga pobierania obrazów.
+        val activeTheme = uiPrefs.getString("accent", "blue").orEmpty()
+        if (activeTheme in setOf("red", "christmas", "halloween", "pink", "spring")) {
+            val seasonalTitle = when (activeTheme) {
+                "red" -> "MIKOŁAJKI  •  ŚWIĄTECZNY KLIMAT"
+                "christmas" -> "BOŻE NARODZENIE  •  MAGIA ŚWIĄT"
+                "halloween" -> "HALLOWEEN  •  TROCHĘ MAGII"
+                "pink" -> "WALENTYNKI  •  MIŁY AKCENT"
+                "spring" -> "WIOSNA  •  CZAS NA KOLORY"
+                else -> "MOTYW SEZONOWY"
+            }
+            val seasonalRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(12, (7 * density).toInt(), 8, (7 * density).toInt())
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    intArrayOf(Color.argb(48, 255, 255, 255), Color.argb(18, 255, 255, 255))
+                ).apply {
+                    cornerRadius = 17f * density
+                    setStroke((1 * density).toInt(), Color.argb(55, 225, 238, 255))
+                }
+            }
+            val seasonalCopy = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            seasonalCopy.addView(label("WYJĄTKOWY CZAS W SZKOLE", 9f, Color.argb(205, 226, 237, 255), true))
+            seasonalCopy.addView(label(seasonalTitle, 11f, white, true))
+            seasonalRow.addView(seasonalCopy, LinearLayout.LayoutParams(0, -2, 1f))
+            val seasonalArt = FrameLayout(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(38, 255, 255, 255))
+                    setStroke((1 * density).toInt(), Color.argb(75, 235, 244, 255))
+                }
+                clipChildren = false
+                clipToPadding = false
+            }
+            seasonalArt.addView(ThematicBannerArtView(this, section),
+                FrameLayout.LayoutParams((72 * density).toInt(), (72 * density).toInt(), Gravity.CENTER))
+            seasonalArt.addView(SeasonalBannerOverlayView(this),
+                FrameLayout.LayoutParams((72 * density).toInt(), (72 * density).toInt(), Gravity.CENTER))
+            seasonalRow.addView(seasonalArt, LinearLayout.LayoutParams(
+                (76 * density).toInt(), (76 * density).toInt()
+            ))
+            hero.addView(seasonalRow, params(0, 12, 0, 0))
+
+            if (uiPrefs.getBoolean("motion", true)) {
+                val floatAnimation = android.animation.ObjectAnimator.ofFloat(
+                    seasonalArt, View.TRANSLATION_Y, 0f, -4f * density, 0f
+                ).apply {
+                    duration = 2400L
+                    repeatCount = android.animation.ValueAnimator.INFINITE
+                    interpolator = android.view.animation.AccelerateDecelerateInterpolator()
+                }
+                seasonalArt.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                    override fun onViewAttachedToWindow(view: View) { if (!floatAnimation.isStarted) floatAnimation.start() }
+                    override fun onViewDetachedFromWindow(view: View) { floatAnimation.cancel() }
+                })
+            }
+        }
         root.addView(hero, params(0, 8, 0, 16))
 
         val actions = LinearLayout(this).apply {
