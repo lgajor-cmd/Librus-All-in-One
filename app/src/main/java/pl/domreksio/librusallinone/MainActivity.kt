@@ -2957,7 +2957,7 @@ class MainActivity : Activity() {
                                     background = roundedBackground(if (isSelected) Color.WHITE else accentColor, 8)
                                 }, LinearLayout.LayoutParams(dp(7), dp(7)))
                             }
-                            cell.addView(markers, LinearLayout.LayoutParams(-1, dp(10)).apply {
+                            addView(markers, LinearLayout.LayoutParams(-1, dp(10)).apply {
                                 topMargin = dp(3)
                             })
                         }
