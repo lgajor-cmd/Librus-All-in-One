@@ -442,6 +442,8 @@ async def download_message_attachment(
 
         if attachment is None:
             raise HTTPException(404, "Librus nie udostępnił tego załącznika.")
+        if len(attachment.content) > 20 * 1024 * 1024:
+            raise HTTPException(413, "Załącznik przekracza limit 20 MB.")
 
         return jsonable_encoder({
             "ok": True,
