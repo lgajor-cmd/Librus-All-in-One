@@ -2568,7 +2568,7 @@ class MainActivity : Activity() {
                         itemCard.addView(label(event.optString("description"), 12f, muted), params(0, 4, 0, 0))
                     }
                     itemCard.addView(actionButton("EDYTUJ WYDARZENIE") {
-                        addAgendaEvent(selected, { redraw() }, event)
+                        addAgendaEvent(selected, event) { redraw() }
                     }, params(0, 6, 0, 4))
                     itemCard.addView(actionButton("USUŃ WYDARZENIE") {
                         AlertDialog.Builder(this).setTitle("Usunąć wydarzenie?")
@@ -2591,7 +2591,7 @@ class MainActivity : Activity() {
         redraw()
     }
 
-    private fun addAgendaEvent(defaultDate: String, onSaved: () -> Unit, existing: JSONObject? = null) {
+    private fun addAgendaEvent(defaultDate: String, existing: JSONObject? = null, onSaved: () -> Unit) {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 0)
