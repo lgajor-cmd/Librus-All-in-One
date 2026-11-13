@@ -75,18 +75,8 @@ internal object AgendaCalendarParser {
         return ""
     }
 
-    private fun normalizeDate(raw: String): String? {
-        val value = raw.trim()
-        if (value.isBlank()) return null
-
-        // ISO timestamps and date-only values share the same calendar date.
-        val isoPrefix = Regex("^(\\d{4}-\\d{2}-\\d{2})").find(value)?.groupValues?.get(1)
-        if (isoPrefix != null) {
-            return try {
-                LocalDate.parse(isoPrefix, DateTimeFormatter.ISO_LOCAL_DATE).toString()
-            } catch (_: DateTimeParseException) {
-                null
-            }
+    private fun normalizeDate(raw: String): String? =
+        FeatureDateParser.parse(raw)?.toString()
         }
 
         val legacyDate = Regex("^(\\d{2}\\.\\d{2}\\.\\d{4})").find(value)
