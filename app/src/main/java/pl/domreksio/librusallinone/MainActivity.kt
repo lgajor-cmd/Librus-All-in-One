@@ -1375,7 +1375,7 @@ class MainActivity : Activity() {
                         recipients.clear()
                         for (i in 0 until array.length()) {
                             val item = array.optJSONObject(i) ?: continue
-                            val id = firstValue(item, "id", "recipient_id", "user_id")
+                            val id = firstValue(item, "account_id", "id", "recipient_id", "user_id")
                             val name = firstValue(item, "name", "display_name", "full_name", "label")
                             if (id.isNotBlank() && name.isNotBlank()) { recipients.add(id to name); names.add(name) }
                         }
@@ -1431,9 +1431,9 @@ class MainActivity : Activity() {
 
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
-            val title = firstValue(item, "title", "subject", "topic")
+            val title = firstValue(item, "topic", "title", "subject")
                 .ifBlank { heading.removeSuffix("i") }
-            val sender = firstValue(item, "sender_name", "sender", "author", "teacher_name", "from")
+            val sender = firstValue(item, "sender_name", "receiver_name", "sender", "author", "teacher_name", "from")
             val date = firstValue(item, "send_date", "date", "created_at", "sent_at")
             val body = firstValue(
                 item,
