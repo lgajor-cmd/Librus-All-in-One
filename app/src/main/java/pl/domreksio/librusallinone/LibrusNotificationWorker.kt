@@ -362,8 +362,19 @@ class LibrusNotificationWorker(
         val previous = previousValues
             ?.map { if (it.contains(":")) it else "$legacyPrefix:$it" }
             ?.toSet()
-        val pendingBaseline = prefs.getString(pendingBaselinePrefKey, null)
+        val storedPendingBaseline = prefs.getString(pendingBaselinePrefKey, null)
             ?.split("|")?.filter { it.isNotBlank() }?.toSet().orEmpty()
+        // Older installs already have a baseline for ordinary grades, but
+        // the descriptive/partial/point/text/behaviour feeds are new. Seed
+        // those feeds on migration, and also seed ordinary grades if that
+        // feed itself is unavailable during the migration sync.
+        val migrationPendingBaseline = if (legacyState && notificationKey == "grades") {
+            sourceKeys.filter { it != "grades" }.toSet() +
+                if ("grades" !in availableKeys) setOf("grades") else emptySet()
+        } else {
+            emptySet()
+        }
+        val pendingBaseline = storedPendingBaseline + migrationPendingBaseline
 
         val stateUpdate = NotificationStateTracker.update(
             previousKnownIds = previous,
