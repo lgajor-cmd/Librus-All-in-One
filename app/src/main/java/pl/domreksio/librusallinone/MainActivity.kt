@@ -959,8 +959,8 @@ class MainActivity : Activity() {
                         dayContent.alpha = 0f
                         dayContent.translationY = 8f * resources.displayMetrics.density
                         dayContent.animate().alpha(1f).translationY(0f).setDuration(190).start()
-                        button.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120)
-                            .withEndAction { button.animate().scaleX(1f).scaleY(1f).setDuration(120).start() }
+                        this.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120)
+                            .withEndAction { this.animate().scaleX(1f).scaleY(1f).setDuration(120).start() }
                             .start()
                     }
                 }
