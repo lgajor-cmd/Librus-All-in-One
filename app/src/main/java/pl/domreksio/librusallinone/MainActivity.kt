@@ -2947,8 +2947,8 @@ class MainActivity : Activity() {
                     else -> if (needle.isNotBlank()) "Nie znaleziono wiadomości pasujących do: $currentQuery" else "Brak wiadomości."
                 }))
             } else {
-                renderMessageArray(results, messages, "Wiadomości", ::messageKey, ::savedKeys, ::toggleSaved, ::renderFiltered)
-                renderMessageArray(results, announcements, "Ogłoszenia", ::messageKey, ::savedKeys, ::toggleSaved, ::renderFiltered)
+                renderMessageArray(results, messages, "Wiadomości", { item, category -> messageKey(item, category) }, { storageKey -> savedKeys(storageKey) }, { key, storageKey, value -> toggleSaved(key, storageKey, value) }, { renderFiltered() })
+                renderMessageArray(results, announcements, "Ogłoszenia", { item, category -> messageKey(item, category) }, { storageKey -> savedKeys(storageKey) }, { key, storageKey, value -> toggleSaved(key, storageKey, value) }, { renderFiltered() })
             }
         }
         search.addTextChangedListener(object : TextWatcher {
