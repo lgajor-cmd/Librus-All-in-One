@@ -2408,6 +2408,7 @@ class MainActivity : Activity() {
         subject: String,
         lesson: String
     ) {
+        if (!requireParentProfile("e-Usprawiedliwienie")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -2579,6 +2580,7 @@ class MainActivity : Activity() {
     }
 
     private fun requestJustificationToTutor(date: String, subject: String, lesson: String) {
+        if (!requireParentProfile("Wiadomości do wychowawcy")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -2735,6 +2737,7 @@ class MainActivity : Activity() {
     private fun sendJustificationMessage(
         recipientId: String, recipientName: String, topic: String, body: String
     ) {
+        if (!requireParentProfile("Wysyłanie wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3228,6 +3231,7 @@ class MainActivity : Activity() {
     }
 
     private fun openNewMessageComposer() {
+        if (!requireParentProfile("Nowa wiadomość")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3407,6 +3411,7 @@ class MainActivity : Activity() {
     private fun sendNewMessage(
         recipientIds: List<String>, recipientNames: List<String>, topic: String, body: String
     ) {
+        if (!requireParentProfile("Wysyłanie wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3681,6 +3686,7 @@ class MainActivity : Activity() {
     }
 
     private fun downloadHomeworkAttachment(attachmentId: String, filename: String) {
+        if (!requireParentProfile("Pobieranie załączników zadań")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3753,6 +3759,7 @@ class MainActivity : Activity() {
     }
 
     private fun downloadMessageAttachment(messageId: String, attachmentId: String, filename: String) {
+        if (!requireParentProfile("Pobieranie załączników wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3880,6 +3887,7 @@ class MainActivity : Activity() {
     }
 
     private fun sendMessageReply(messageId: String, mailbox: String, sender: String, body: String) {
+        if (!requireParentProfile("Odpowiadanie na wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -5222,6 +5230,16 @@ class MainActivity : Activity() {
             }
             .setNegativeButton("Zamknij", null)
             .show()
+    }
+
+    private fun requireParentProfile(feature: String): Boolean {
+        if (activeProfileType == LibrusProfileStore.TYPE_PARENT) return true
+        AlertDialog.Builder(this)
+            .setTitle("Funkcja dla konta rodzica")
+            .setMessage("$feature jest dostępne po przełączeniu na profil rodzica. Konto ucznia pozostaje oddzielne i służy do przeglądania danych ucznia.")
+            .setPositiveButton("OK", null)
+            .show()
+        return false
     }
 
     private fun showProfileSwitcher() {
