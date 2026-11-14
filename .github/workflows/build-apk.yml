@@ -133,7 +133,7 @@ jobs:
             set -e
 
             adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
-            if ! grep -q "INSTRUMENTATION_CODE: 0" "$RUNNER_TEMP/android-instrumentation-result.txt"; then
+            if ! grep -q "INSTRUMENTATION_CODE: -1" "$RUNNER_TEMP/android-instrumentation-result.txt"; then
               echo "Instrumentation did not report a successful completion."
               exit 1
             fi
