@@ -3,6 +3,7 @@ package pl.domreksio.librusallinone
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -36,7 +37,10 @@ import android.widget.ProgressBar
 import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
+import com.russhwolf.settings.SharedPreferencesSettings
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.SettingsCodeVerifierCache
+import io.github.jan.supabase.auth.SettingsSessionManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
@@ -65,17 +69,38 @@ private const val SUPABASE_PUBLISHABLE_KEY =
 internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
 
-internal val supabase = createSupabaseClient(
-    supabaseUrl = SUPABASE_URL,
-    supabaseKey = SUPABASE_PUBLISHABLE_KEY
-) {
-    install(Auth) {}
-}
-
 class MainActivity : Activity() {
 
     private val activityScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Use an explicit Android context instead of the no-arg Settings() initializer.
+    // The preference file and keys match supabase-kt's previous defaults, preserving sessions.
+    private val supabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val appContext = applicationContext
+        val settings = SharedPreferencesSettings(
+            appContext.getSharedPreferences(
+                "${appContext.packageName}_preferences",
+                Context.MODE_PRIVATE
+            )
+        )
+        val settingsKeyPrefix = "sb-${SUPABASE_URL.removeSuffix("/").replace('/', '-').replace('.', '-')}"
+        createSupabaseClient(
+            supabaseUrl = SUPABASE_URL,
+            supabaseKey = SUPABASE_PUBLISHABLE_KEY
+        ) {
+            install(Auth) {
+                sessionManager = SettingsSessionManager(
+                    settings = settings,
+                    key = "$settingsKeyPrefix-${SettingsSessionManager.SETTINGS_KEY}"
+                )
+                codeVerifierCache = SettingsCodeVerifierCache(
+                    settings = settings,
+                    key = "$settingsKeyPrefix-${SettingsCodeVerifierCache.SETTINGS_KEY}"
+                )
+            }
+        }
+    }
 
     private lateinit var backendStatusText: TextView
 
