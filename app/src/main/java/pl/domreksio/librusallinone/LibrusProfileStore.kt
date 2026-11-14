@@ -46,7 +46,7 @@ internal class LibrusProfileStore(context: Context) {
         val raw = prefs.getString(KEY_PROFILES, null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)
-            buildList {
+            buildList<Profile> {
                 for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
                     val id = item.optString("id")
