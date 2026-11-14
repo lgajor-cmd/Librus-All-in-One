@@ -23,8 +23,8 @@ android {
         applicationId = "pl.domreksio.librusallinone"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.4.5"
+        versionCode = 19
+        versionName = "0.4.6"
     }
 
     signingConfigs {
