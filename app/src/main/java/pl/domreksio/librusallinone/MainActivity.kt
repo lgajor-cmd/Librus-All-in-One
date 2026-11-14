@@ -5874,7 +5874,7 @@ class MainActivity : Activity() {
             } else {
                 val average = grades.average()
                 val formatted = java.text.DecimalFormat("0.00", java.text.DecimalFormatSymbols(Locale("pl", "PL"))).format(average)
-                result.text = "$formatted  •  \${grades.size} ocen"
+                result.text = "$formatted  •  ${grades.size} ocen"
                 result.setTextColor(successColor)
             }
         }, params(0, 0, 0, 12))
