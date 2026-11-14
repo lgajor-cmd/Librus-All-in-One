@@ -108,12 +108,34 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: |
+            set -uo pipefail
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -q 1
+
+            # Build the two APKs, then run instrumentation directly with adb.
+            # This avoids UTP's additionalTestOutputDir creation under /sdcard/Android/media,
+            # which fails on the Android 15 emulator before any test starts.
+            ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest --stacktrace || exit $?
+
+            adb logcat -c
+            adb logcat -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" 2>&1 &
+            LOGCAT_PID=$!
+            trap 'kill "$LOGCAT_PID" 2>/dev/null || true' EXIT
+
+            adb install -r app/build/outputs/apk/debug/app-debug.apk || exit $?
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit $?
+
             set +e
-            ./gradlew --no-daemon connectedDebugAndroidTest --stacktrace
-            TEST_EXIT=$?
-            if [ "$TEST_EXIT" -ne 0 ]; then
-              adb logcat -d -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" || true
-              adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
+            adb shell am instrument -w -r \
+              pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner \
+              2>&1 | tee "$RUNNER_TEMP/android-instrumentation-result.txt"
+            TEST_EXIT=${PIPESTATUS[0]}
+            set -e
+
+            adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
+            if ! grep -q "INSTRUMENTATION_CODE: 0" "$RUNNER_TEMP/android-instrumentation-result.txt"; then
+              echo "Instrumentation did not report a successful completion."
+              exit 1
             fi
             exit "$TEST_EXIT"
 
