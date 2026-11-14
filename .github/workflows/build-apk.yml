@@ -111,36 +111,18 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: |
-            set -eu
             adb wait-for-device
             adb shell 'for i in $(seq 1 60); do [ "$(getprop sys.boot_completed)" = "1" ] && exit 0; sleep 2; done; exit 1'
             sleep 5
-
-            # Build the two APKs, then run instrumentation directly with adb.
-            # This avoids UTP's additionalTestOutputDir creation under /sdcard/Android/media,
-            # which fails on the Android 15 emulator before any test starts.
-            ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest --stacktrace || exit $?
-
-            adb logcat -c
-            adb logcat -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" 2>&1 &
-            LOGCAT_PID=$!
-            trap 'kill "$LOGCAT_PID" 2>/dev/null || true' EXIT
-
-            adb install -r app/build/outputs/apk/debug/app-debug.apk || exit $?
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit $?
-
-            set +e
-            adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1
-            TEST_EXIT=$?
-            set -e
+            # Build APKs and run instrumentation directly to avoid UTP's additionalTestOutputDir permission issue.
+            ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest --stacktrace
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            if adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1; then TEST_EXIT=0; else TEST_EXIT=$?; fi
             cat "$RUNNER_TEMP/android-instrumentation-result.txt"
-
+            adb logcat -d -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" 2>&1 || true
             adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
-            if [ "$TEST_EXIT" -ne 0 ] || grep -q "shortMsg=Process crashed" "$RUNNER_TEMP/android-instrumentation-result.txt" || ! grep -q "INSTRUMENTATION_CODE: -1" "$RUNNER_TEMP/android-instrumentation-result.txt"; then
-              echo "Instrumentation did not complete successfully."
-              exit 1
-            fi
-            exit 0
+            if [ "$TEST_EXIT" -ne 0 ] || grep -q "shortMsg=Process crashed" "$RUNNER_TEMP/android-instrumentation-result.txt" || ! grep -q "INSTRUMENTATION_CODE: -1" "$RUNNER_TEMP/android-instrumentation-result.txt"; then echo "Instrumentation did not complete successfully."; exit 1; else echo "Instrumentation smoke test passed."; fi
 
       - name: Upload Android instrumentation diagnostics
         if: always()
