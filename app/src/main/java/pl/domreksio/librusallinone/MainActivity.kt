@@ -885,6 +885,7 @@ class MainActivity : Activity() {
         }
 
         syncInProgress = true
+        pendingNotificationSection = section
         setLibrusStatus("Pobieram dane z Librusa…", null)
         showSectionLoading(section, "Pobieram dane z Librusa. Nie musisz klikać ponownie — ekran otworzy się automatycznie.")
 
@@ -951,7 +952,11 @@ class MainActivity : Activity() {
                     setLibrusStatus("Dane Librusa pobrane.", true)
                     val destination = pendingNotificationSection ?: section
                     pendingNotificationSection = null
-                    librusDataMemory?.let { showLibrusSection(destination, it) }
+                    when (destination) {
+                        "START" -> showHome()
+                        "WIĘCEJ" -> showMoreMenu(section)
+                        else -> librusDataMemory?.let { showLibrusSection(destination, it) }
+                    }
                 } else {
                     pendingNotificationSection = null
                     val errorMessage = result.substringAfter("|")
@@ -5546,8 +5551,16 @@ class MainActivity : Activity() {
                     tile.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
                 }
                 when (item.key) {
-                    "START" -> showHome()
-                    "WIĘCEJ" -> showMoreMenu(active)
+                    "START" -> {
+                        if (syncInProgress) pendingNotificationSection = "START"
+                        else pendingNotificationSection = null
+                        showHome()
+                    }
+                    "WIĘCEJ" -> {
+                        if (syncInProgress) pendingNotificationSection = "WIĘCEJ"
+                        else pendingNotificationSection = null
+                        showMoreMenu(active)
+                    }
                     else -> loadLibrusSection(item.key)
                 }
             }
