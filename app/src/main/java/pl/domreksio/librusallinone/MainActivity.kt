@@ -36,10 +36,8 @@ import android.widget.ProgressBar
 import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
-import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
-import io.github.jan.supabase.createSupabaseClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -56,26 +54,15 @@ import java.util.Locale
 import java.util.Calendar
 import kotlin.concurrent.thread
 
-private const val SUPABASE_URL =
-    "https://alegkhpqxdzuqjuuoawp.supabase.co"
-
-private const val SUPABASE_PUBLISHABLE_KEY =
-    "sb_publishable_gchAnvMxlFgvzdenD0QqWg_YoOtsTPe"
-
 internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
-
-internal val supabase = createSupabaseClient(
-    supabaseUrl = SUPABASE_URL,
-    supabaseKey = SUPABASE_PUBLISHABLE_KEY
-) {
-    install(Auth) {}
-}
 
 class MainActivity : Activity() {
 
     private val activityScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    private val supabase get() = SupabaseClientProvider.get(applicationContext)
 
     private lateinit var backendStatusText: TextView
 

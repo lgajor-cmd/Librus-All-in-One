@@ -12,29 +12,25 @@ on:
   push:
     branches:
       - main
-      - 'feature/**'
-      - 'improve/**'
-      - 'fix/**'
-      - 'release/**'
-      - 'audit/**'
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: macos-15-intel
     timeout-minutes: 90
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
+          problem-matcher: true
 
       - name: Install Android SDK packages
         shell: bash
@@ -50,9 +46,10 @@ jobs:
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.11.1"
+          cache-provider: basic
 
       - name: Check project files
         shell: bash
@@ -90,11 +87,8 @@ jobs:
             echo "::warning::Brak kompletu sekretow podpisu. Powstanie tylko APK debug do testow; nie instaluj go jako aktualizacji wydania."
           fi
 
-      - name: Run Android lint
-        run: ./gradlew --no-daemon lintDebug --stacktrace
-
-      - name: Run Android unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest --stacktrace
+      - name: Run Android lint and unit tests
+        run: ./gradlew lintDebug testDebugUnitTest --stacktrace
 
       - name: Run Android emulator smoke tests
         timeout-minutes: 60
@@ -110,33 +104,25 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          script: |
-            adb wait-for-device
-            adb shell 'for i in $(seq 1 60); do [ "$(getprop sys.boot_completed)" = "1" ] && exit 0; sleep 2; done; exit 1'
-            sleep 5
-            # Build APKs and run instrumentation directly to avoid UTP's additionalTestOutputDir permission issue.
-            ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest --stacktrace
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1 && cat "$RUNNER_TEMP/android-instrumentation-result.txt" && grep -Eq "OK \\([0-9]+ tests?\\)" "$RUNNER_TEMP/android-instrumentation-result.txt" && ! grep -q "FAILURES!!!" "$RUNNER_TEMP/android-instrumentation-result.txt" || { cat "$RUNNER_TEMP/android-instrumentation-result.txt"; echo "Instrumentation smoke test failed."; exit 1; }
-            adb logcat -d -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" 2>&1 || true
-            adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
+          script: bash -c 'set -e; trap "mkdir -p \"$RUNNER_TEMP\"; adb devices -l > \"$RUNNER_TEMP/android-adb-devices.txt\" 2>&1 || true; adb logcat -d -v threadtime > \"$RUNNER_TEMP/android-emulator-logcat.txt\" 2>&1 || true; adb shell dumpsys activity activities > \"$RUNNER_TEMP/android-emulator-activities.txt\" 2>&1 || true; adb shell dumpsys meminfo > \"$RUNNER_TEMP/android-emulator-meminfo.txt\" 2>&1 || true" EXIT; adb wait-for-device; adb shell "until [ \$(getprop sys.boot_completed) = 1 ]; do sleep 2; done"; sleep 5; ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace; adb install -r app/build/outputs/apk/debug/app-debug.apk; adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk; adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1; cat "$RUNNER_TEMP/android-instrumentation-result.txt"; grep -Eq "OK \\([0-9]+ tests?\\)" "$RUNNER_TEMP/android-instrumentation-result.txt"; ! grep -q "FAILURES!!!" "$RUNNER_TEMP/android-instrumentation-result.txt"'
 
       - name: Upload Android instrumentation diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Android-Instrumentation-Diagnostics
           path: |
             ${{ runner.temp }}/android-emulator-logcat.txt
             ${{ runner.temp }}/android-emulator-activities.txt
+            ${{ runner.temp }}/android-emulator-meminfo.txt
+            ${{ runner.temp }}/android-adb-devices.txt
             app/build/reports/androidTests/connected/debug/**
             app/build/outputs/androidTest-results/connected/**
           if-no-files-found: ignore
           retention-days: 14
       - name: Upload Android lint report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Android-Lint-Report
           path: app/build/reports/lint-results-debug.html
@@ -144,7 +130,7 @@ jobs:
 
       - name: Build signed release APK
         if: steps.signing.outputs.available == 'true'
-        run: ./gradlew --no-daemon assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Verify signed release APK
         if: steps.signing.outputs.available == 'true'
@@ -158,7 +144,7 @@ jobs:
 
       - name: Upload signed release APK
         if: steps.signing.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EduFlow-APK-RELEASE
           path: app/build/outputs/apk/release/app-release.apk
@@ -167,11 +153,11 @@ jobs:
 
       - name: Build debug APK (CI only)
         if: steps.signing.outputs.available != 'true'
-        run: ./gradlew --no-daemon assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload debug APK (CI only)
         if: steps.signing.outputs.available != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EduFlow-APK-DEBUG-ONLY
           path: app/build/outputs/apk/debug/app-debug.apk
