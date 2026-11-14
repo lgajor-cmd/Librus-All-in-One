@@ -28,7 +28,7 @@ internal object LibrusProfileDataCleaner {
         }
         if (keysToRemove.isNotEmpty()) {
             val editor = state.edit()
-            keysToRemove.forEach(editor::remove)
+            keysToRemove.forEach { key -> editor.remove(key) }
             check(editor.commit()) { "Nie udało się usunąć historii powiadomień profilu." }
         }
     }
