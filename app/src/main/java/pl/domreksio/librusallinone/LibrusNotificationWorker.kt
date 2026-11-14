@@ -102,6 +102,8 @@ object LibrusNotificationScheduler {
     private const val UNIQUE_WORK_PREFIX = "librus-background-notifications-"
 
     fun schedule(context: Context, profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID) {
+        // Remove the single-profile worker used by older app versions to avoid duplicate syncs.
+        WorkManager.getInstance(context).cancelUniqueWork("librus-background-notifications")
         val request = PeriodicWorkRequestBuilder<LibrusNotificationWorker>(
             15, TimeUnit.MINUTES
         ).setConstraints(
@@ -230,16 +232,18 @@ class LibrusNotificationWorker(
                         )
                         postNotification(
                             "Wymagana sesja aplikacji",
-                            "Otwórz Librus All-in-One, aby odnowić sesję aplikacji. Dane Librusa nie zostały zmienione.",
-                            "START"
+                            "Otwórz EduFlow, aby odnowić sesję aplikacji. Dane Librusa nie zostały zmienione.",
+                            "START",
+                            profileId
                         )
                     }
                     errorCode.startsWith("LIBRUS_") || code == 428 || code == 409 -> {
                         LibrusNotificationDiagnostics.record(applicationContext, "auth_required", detail)
                         postNotification(
                             "Wymagane działanie w Librusie",
-                            "Otwórz aplikację i sprawdź połączenie z Librusem. $detail",
-                            "START"
+                            "Otwórz EduFlow i sprawdź połączenie z Librusem. $detail",
+                            "START",
+                            profileId
                         )
                     }
                     else -> {
