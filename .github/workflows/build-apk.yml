@@ -113,8 +113,22 @@ jobs:
           script: |
             set -eu
             adb wait-for-device
-            BOOT_COMPLETED=$(adb shell getprop sys.boot_completed)
-            [ "$BOOT_COMPLETED" = "1" ]
+            BOOT_COMPLETED=""
+            ATTEMPT=0
+            while [ "$ATTEMPT" -lt 60 ]; do
+              BOOT_COMPLETED=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+              if [ "$BOOT_COMPLETED" = "1" ]; then
+                break
+              fi
+              ATTEMPT=$((ATTEMPT + 1))
+              sleep 2
+            done
+            if [ "$BOOT_COMPLETED" != "1" ]; then
+              echo "Android emulator did not report sys.boot_completed=1 within 120 seconds."
+              adb devices -l || true
+              exit 1
+            fi
+            sleep 5
 
             # Build the two APKs, then run instrumentation directly with adb.
             # This avoids UTP's additionalTestOutputDir creation under /sdcard/Android/media,
