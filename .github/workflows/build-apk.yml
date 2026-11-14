@@ -96,9 +96,11 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest --stacktrace
 
       - name: Run Android emulator smoke tests
+        timeout-minutes: 12
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
+          emulator-boot-timeout: 300
           target: google_apis
           arch: x86_64
           profile: pixel_2
