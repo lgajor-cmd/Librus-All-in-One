@@ -81,6 +81,9 @@ class MainActivity : Activity() {
     private lateinit var librusConnectButton: Button
 
     private lateinit var librusVault: LibrusCredentialVault
+    private lateinit var profileStore: LibrusProfileStore
+    private var activeProfileId: String = LibrusProfileStore.LEGACY_PROFILE_ID
+    private var activeProfileType: String = LibrusProfileStore.TYPE_PARENT
 
     private var librusLoginMemory: String? = null
     private var librusPasswordMemory: String? = null
@@ -161,7 +164,11 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        librusVault = LibrusCredentialVault(applicationContext)
+        profileStore = LibrusProfileStore(applicationContext)
+        val initialProfile = profileStore.ensureDefaultProfile()
+        activeProfileId = initialProfile.id
+        activeProfileType = initialProfile.accountType
+        librusVault = LibrusCredentialVault(applicationContext, activeProfileId)
         pendingNotificationSection = intent?.getStringExtra("open_librus_section")
         requestNotificationPermissionIfNeeded()
         showLogin("Uruchamiam bezpieczną sesję urządzenia…")
@@ -196,6 +203,18 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val requestedSection = intent.getStringExtra("open_librus_section") ?: return
+        val requestedProfileId = intent.getStringExtra("profile_id")
+        if (!requestedProfileId.isNullOrBlank() && requestedProfileId != activeProfileId) {
+            val requestedProfile = profileStore.getProfile(requestedProfileId)
+            if (requestedProfile != null) {
+                if (syncInProgress) {
+                    Toast.makeText(this, "Zakończ najpierw bieżącą operację.", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                activateProfile(requestedProfile, requestedSection)
+                return
+            }
+        }
         pendingNotificationSection = requestedSection
 
         // A notification tap must navigate even when MainActivity is already alive.
@@ -326,9 +345,10 @@ class MainActivity : Activity() {
             }
             elevation = 4f * resources.displayMetrics.density
         }
-        card.addView(label("LIBRUS  /  ALL-IN-ONE", 11f, Color.rgb(190, 211, 245), true))
+        val accountLabel = if (activeProfileType == LibrusProfileStore.TYPE_STUDENT) "ucznia" else "rodzica"
+        card.addView(label("EDUFLOW", 11f, Color.rgb(190, 211, 245), true))
         card.addView(label("Zaloguj się do Librusa", 27f, white, true), params(0, 10, 0, 6))
-        card.addView(label("Wpisz dane konta rodzica Librus Synergia, aby przejść do swojego pulpitu szkolnego.", 14f, Color.rgb(205, 217, 235)), params(0, 0, 0, 16))
+        card.addView(label("Wpisz dane konta $accountLabel Librus Synergia, aby przejść do swojego pulpitu szkolnego.", 14f, Color.rgb(205, 217, 235)), params(0, 0, 0, 16))
 
         librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
         saved?.let { librusLoginInput.setText(it.login) }
@@ -360,14 +380,27 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun schoolProfilePrefs() = getSharedPreferences(
+        "librus_school_profile_$activeProfileId",
+        MODE_PRIVATE
+    ).also { current ->
+        if (activeProfileId == LibrusProfileStore.LEGACY_PROFILE_ID &&
+            current.getString("school_name", null) == null
+        ) {
+            val legacyName = getSharedPreferences("librus_school_profile", MODE_PRIVATE)
+                .getString("school_name", null)
+            if (!legacyName.isNullOrBlank()) current.edit().putString("school_name", legacyName).apply()
+        }
+    }
+
     private fun currentSchoolName(): String {
         val dataName = librusDataMemory?.let { extractSchoolName(it) }.orEmpty()
         if (dataName.isNotBlank()) {
-            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+            schoolProfilePrefs().edit()
                 .putString("school_name", dataName).apply()
             return dataName
         }
-        val savedName = getSharedPreferences("librus_school_profile", MODE_PRIVATE)
+        val savedName = schoolProfilePrefs()
             .getString("school_name", "").orEmpty()
         return savedName
     }
@@ -529,8 +562,15 @@ class MainActivity : Activity() {
         }
         welcomeCard.addView(greetingRow, params(0, 14, 0, 0))
         welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)), params(0, 3, 0, 0))
-        content.addView(welcomeCard, params(0, 0, 0, 16))
+        content.addView(welcomeCard, params(0, 0, 0, 10))
         welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
+        val activeProfile = profileStore.getProfile(activeProfileId)
+        content.addView(
+            actionButton("PROFIL: ${activeProfile?.displayName ?: "Konto"}  ·  ZMIEŃ") {
+                showProfileSwitcher()
+            },
+            params(0, 0, 0, 14)
+        )
 
         val savedLibrus = librusVault.load()
 
@@ -579,9 +619,6 @@ class MainActivity : Activity() {
             13f, Color.rgb(205, 217, 235)
         )
         connectionCard.addView(backendStatusText, params(0, 8, 0, 0))
-        connectionCard.addView(actionButton("SPRAWDŹ SERWER") {
-            checkBackendConnection()
-        }, params(0, 12, 0, 0))
         content.addView(connectionCard, params(0, 2, 0, 14))
 
         content.addView(actionButton(if (savedLibrus != null) "ZMIEN DANE KONTA LIBRUS" else "ZALOGUJ DO LIBRUSA") {
@@ -687,7 +724,7 @@ class MainActivity : Activity() {
         homePage.addView(buildBottomNavigation("START"))
         setContentView(homePage)
 
-        if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext)
+        if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext, activeProfileId)
 
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
@@ -741,7 +778,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                 }
@@ -758,7 +795,7 @@ class MainActivity : Activity() {
 
                     if (json.has("student") && json.has("session")) {
                         extractSchoolName(json).takeIf { it.isNotBlank() }?.let { schoolName ->
-                            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                            schoolProfilePrefs().edit()
                                 .putString("school_name", schoolName).apply()
                         }
                         librusLoginMemory = login
@@ -767,7 +804,7 @@ class MainActivity : Activity() {
                         librusDataMemory = null
 
                         librusVault.save(login, password, librusSessionMemory?.toString())
-                        LibrusNotificationScheduler.schedule(applicationContext)
+                        LibrusNotificationScheduler.schedule(applicationContext, activeProfileId)
 
                         "SUCCESS|Połączono z Librusem. Dane można teraz pobrać."
                     } else {
@@ -856,7 +893,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
@@ -876,7 +913,7 @@ class MainActivity : Activity() {
                     if (data != null) {
                         librusDataMemory = data
                         extractSchoolName(data).takeIf { it.isNotBlank() }?.let { schoolName ->
-                            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                            schoolProfilePrefs().edit()
                                 .putString("school_name", schoolName).apply()
                         }
                         librusSessionMemory =
@@ -2394,7 +2431,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("date_from", isoDate)
@@ -2565,7 +2602,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
@@ -2721,7 +2758,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("recipient_ids", JSONArray().put(recipientId))
@@ -3214,7 +3251,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
@@ -3393,7 +3430,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("recipient_ids", JSONArray().apply { recipientIds.forEach { put(it) } })
@@ -3554,7 +3591,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("message_id", messageId)
@@ -3667,7 +3704,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("attachment_id", attachmentId)
@@ -3739,7 +3776,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("message_id", messageId)
@@ -3866,7 +3903,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("message_id", messageId)
@@ -5187,6 +5224,125 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun showProfileSwitcher() {
+        if (syncInProgress) {
+            Toast.makeText(this, "Poczekaj na zakończenie bieżącej operacji.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val profiles = profileStore.getProfiles()
+        val labels = profiles.map { profile ->
+            val typeLabel = if (profile.accountType == LibrusProfileStore.TYPE_STUDENT) "Uczeń" else "Rodzic"
+            val activeLabel = if (profile.id == activeProfileId) "  •  aktywny" else ""
+            "${profile.displayName}  ·  $typeLabel$activeLabel"
+        }.toTypedArray()
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Profile EduFlow")
+            .setItems(labels) { _, which ->
+                val selected = profiles.getOrNull(which) ?: return@setItems
+                if (selected.id != activeProfileId) activateProfile(selected)
+            }
+            .setPositiveButton("Dodaj konto") { _, _ -> showAddProfileTypePicker() }
+            .setNegativeButton("Zamknij", null)
+        if (profiles.size > 1) {
+            builder.setNeutralButton("Usuń aktywne") { _, _ -> confirmRemoveActiveProfile() }
+        }
+        builder.show()
+    }
+
+    private fun showAddProfileTypePicker() {
+        AlertDialog.Builder(this)
+            .setTitle("Jakie konto dodajesz?")
+            .setItems(arrayOf("Konto rodzica", "Konto ucznia / dziecka")) { _, which ->
+                val type = if (which == 1) LibrusProfileStore.TYPE_STUDENT
+                    else LibrusProfileStore.TYPE_PARENT
+                showAddProfileNameDialog(type)
+            }
+            .setNegativeButton("Anuluj", null)
+            .show()
+    }
+
+    private fun showAddProfileNameDialog(accountType: String) {
+        val nameInput = EditText(this).apply {
+            hint = if (accountType == LibrusProfileStore.TYPE_STUDENT) "Imię dziecka lub własna nazwa" else "Np. Mama, Tata"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 0)
+            addView(nameInput, LinearLayout.LayoutParams(-1, -2))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Nazwa profilu")
+            .setMessage("Nazwa będzie widoczna tylko na tym urządzeniu.")
+            .setView(container)
+            .setPositiveButton("Dodaj i połącz") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isBlank()) {
+                    Toast.makeText(this, "Wpisz nazwę profilu.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val profile = runCatching { profileStore.addProfile(name, accountType) }.getOrElse {
+                    Toast.makeText(this, it.message ?: "Nie udało się dodać profilu.", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                activateProfile(profile)
+            }
+            .setNegativeButton("Anuluj", null)
+            .show()
+    }
+
+    private fun activateProfile(profile: LibrusProfileStore.Profile, notificationSection: String? = null) {
+        if (syncInProgress) return
+        profileStore.setActiveProfileId(profile.id)
+        activeProfileId = profile.id
+        activeProfileType = profile.accountType
+        librusVault = LibrusCredentialVault(applicationContext, activeProfileId)
+        librusLoginMemory = null
+        librusPasswordMemory = null
+        librusSessionMemory = null
+        librusDataMemory = null
+        pendingNotificationSection = notificationSection
+        autoRestoreStarted = false
+        stopTimetableTicker()
+
+        val saved = librusVault.load()
+        if (saved == null) {
+            showLibrusLogin()
+            return
+        }
+        librusLoginMemory = saved.login
+        librusPasswordMemory = saved.password
+        librusSessionMemory = saved.sessionJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+        LibrusNotificationScheduler.schedule(applicationContext, activeProfileId)
+        showHome()
+    }
+
+    private fun confirmRemoveActiveProfile() {
+        val profile = profileStore.getProfile(activeProfileId) ?: return
+        if (profileStore.getProfiles().size <= 1) {
+            Toast.makeText(this, "Nie można usunąć ostatniego profilu.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Usunąć profil ${profile.displayName}?")
+            .setMessage("Zostaną usunięte zapisane na tym urządzeniu dane logowania i sesja tego profilu. Pozostałe konta pozostaną bez zmian.")
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Usuń") { _, _ ->
+                val removedId = activeProfileId
+                runCatching { librusVault.clear() }.onFailure {
+                    Toast.makeText(this, "Nie udało się bezpiecznie usunąć danych: ${it.message}", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                LibrusNotificationScheduler.cancel(applicationContext, removedId)
+                if (profileStore.removeProfile(removedId)) {
+                    val next = profileStore.getProfiles().first()
+                    activateProfile(next)
+                }
+            }
+            .show()
+    }
+
     private fun disconnectLibrus() {
         AlertDialog.Builder(this)
             .setTitle("Odłączyć konto Librus?")
@@ -5195,7 +5351,7 @@ class MainActivity : Activity() {
             .setPositiveButton("Odłącz") { _, _ ->
                 try {
                     librusVault.clear()
-                    LibrusNotificationScheduler.cancel(applicationContext)
+                    LibrusNotificationScheduler.cancel(applicationContext, activeProfileId)
                     librusDataMemory = null
                     librusSessionMemory = null
                     librusLoginMemory = null
