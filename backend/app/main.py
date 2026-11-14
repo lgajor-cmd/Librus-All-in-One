@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 import json
+import logging
 
 from collections import defaultdict, deque
 from dataclasses import asdict
@@ -33,6 +34,8 @@ from librus_synergia import (
     LibrusMessageSendError,
     LibrusSessionData,
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Librus All-in-One API", version="0.3.0")
 
@@ -784,10 +787,14 @@ async def sync(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    sync_started = time.perf_counter()
     check_rate_limit(request)
+    auth_started = time.perf_counter()
     user = await require_user(authorization)
+    auth_ms = round((time.perf_counter() - auth_started) * 1000)
 
     try:
+        librus_started = time.perf_counter()
         async with Librus(
             payload.login,
             payload.password.get_secret_value(),
@@ -811,7 +818,9 @@ async def sync(
                 data = await librus.fetch_all()
                 failed_grade_feeds = []
             state = asdict(librus.session_data)
+        librus_ms = round((time.perf_counter() - librus_started) * 1000)
 
+        serialize_started = time.perf_counter()
         serialized_data = asdict(data)
         if payload.notifications_only:
             # The Android worker must distinguish an unavailable feed from an
@@ -820,13 +829,24 @@ async def sync(
             serialized_data["partial_grades"] = feeds["partial_grades"]
             serialized_data["failed_sections"] = failed_grade_feeds
 
-        return jsonable_encoder({
+        response_payload = jsonable_encoder({
             "ok": True,
             "user_id": user["id"],
             "profile": payload.profile,
             "data": serialized_data,
             "session": state,
         })
+        serialize_ms = round((time.perf_counter() - serialize_started) * 1000)
+        logger.info(
+            "sync_timing profile=%s mode=%s auth_ms=%d librus_ms=%d serialize_ms=%d total_ms=%d",
+            payload.profile,
+            "notifications" if payload.notifications_only else "full",
+            auth_ms,
+            librus_ms,
+            serialize_ms,
+            round((time.perf_counter() - sync_started) * 1000),
+        )
+        return response_payload
 
     except Exception as error:
         raise _safe_error(error) from None
