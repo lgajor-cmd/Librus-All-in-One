@@ -92,6 +92,52 @@ class LibrusNotificationDiagnosticsProfileTest {
         assertTrue(studentEnabled)
     }
 
+    @Test
+    fun partialSyncIsCountedAsWarningNotAsHardError() {
+        LibrusNotificationDiagnostics.record(
+            context,
+            "partial_success",
+            "Jedna sekcja Librusa była chwilowo niedostępna.",
+            LibrusProfileStore.LEGACY_PROFILE_ID
+        )
+
+        val prefs = context.getSharedPreferences(
+            "librus_notification_diagnostics",
+            Context.MODE_PRIVATE
+        )
+        assertTrue(prefs.getLong("warning_count", 0L) == 1L)
+        assertTrue(prefs.getLong("error_count", 0L) == 0L)
+        assertTrue(prefs.getLong("success_count", 0L) == 0L)
+    }
+
+    @Test
+    fun localNotificationTestDoesNotOverwriteSyncStatusOrCounters() {
+        LibrusNotificationDiagnostics.record(
+            context,
+            "success",
+            "Synchronizacja zakończona poprawnie.",
+            LibrusProfileStore.LEGACY_PROFILE_ID
+        )
+        LibrusNotificationDiagnostics.recordLocalTest(
+            context,
+            "blocked",
+            "Testowe powiadomienie zablokowane przez Androida.",
+            LibrusProfileStore.LEGACY_PROFILE_ID
+        )
+
+        val prefs = context.getSharedPreferences(
+            "librus_notification_diagnostics",
+            Context.MODE_PRIVATE
+        )
+        assertTrue(LibrusNotificationDiagnostics.lastStatus(context) == "success")
+        assertTrue(prefs.getLong("success_count", 0L) == 1L)
+        assertTrue(prefs.getLong("error_count", 0L) == 0L)
+        assertTrue(prefs.getString("last_test_status", "") == "blocked")
+        assertTrue(
+            LibrusNotificationDiagnostics.summary(context).contains("Test lokalny: blocked")
+        )
+    }
+
     private fun clearDiagnostics() {
         context.getSharedPreferences("librus_notification_diagnostics", Context.MODE_PRIVATE)
             .edit().clear().commit()
