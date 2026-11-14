@@ -5863,6 +5863,9 @@ class MainActivity : Activity() {
 
         root.addView(sectionHeader("MODUŁY SZKOLNE"), params(0, 0, 0, 8))
         addMoreModuleCard(root, "DANE KONTA I SZKOŁY", "Uczeń, klasa, szkoła i nauczyciele", "🏫", Color.rgb(47, 111, 157)) { loadLibrusSection("PROFILE") }
+        addMoreModuleCard(root, "OCENY I POSTĘPY", "Oceny bieżące, opisowe i wyniki nauki", "📊", Color.rgb(67, 103, 177)) { loadLibrusSection("OCENY") }
+        addMoreModuleCard(root, "PLAN LEKCJI", "Dzienny i tygodniowy harmonogram zajęć", "⏰", Color.rgb(42, 119, 145)) { loadLibrusSection("PLAN LEKCJI") }
+        addMoreModuleCard(root, "WIADOMOŚCI", "Wiadomości od szkoły i ogłoszenia", "✉️", Color.rgb(119, 78, 153)) { loadLibrusSection("WIADOMOŚCI") }
         addMoreModuleCard(root, "FREKWENCJA", "Obecności, nieobecności i spóźnienia", "📅", Color.rgb(39, 126, 117)) { loadLibrusSection("FREKWENCJA") }
         addMoreModuleCard(root, "ZADANIA DOMOWE", "Prace do wykonania i terminy", "📚", Color.rgb(103, 86, 158)) { loadLibrusSection("ZADANIA DOMOWE") }
         addMoreModuleCard(root, "TERMINARZ", "Sprawdziany, wydarzenia i kalendarz", "🗓", Color.rgb(55, 112, 159)) { loadLibrusSection("TERMINARZ") }
