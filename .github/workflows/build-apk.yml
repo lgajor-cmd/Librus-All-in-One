@@ -1,4 +1,4 @@
-name: Build Librus APK
+name: Build EduFlow APK
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
@@ -23,7 +23,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -95,6 +96,44 @@ jobs:
       - name: Run Android unit tests
         run: ./gradlew --no-daemon testDebugUnitTest --stacktrace
 
+      - name: Run Android emulator smoke tests
+        timeout-minutes: 60
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          emulator-boot-timeout: 1200
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            adb wait-for-device
+            adb shell 'for i in $(seq 1 60); do [ "$(getprop sys.boot_completed)" = "1" ] && exit 0; sleep 2; done; exit 1'
+            sleep 5
+            # Build APKs and run instrumentation directly to avoid UTP's additionalTestOutputDir permission issue.
+            ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest --stacktrace
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1 && cat "$RUNNER_TEMP/android-instrumentation-result.txt" && grep -Eq "OK \\([0-9]+ tests?\\)" "$RUNNER_TEMP/android-instrumentation-result.txt" && ! grep -q "FAILURES!!!" "$RUNNER_TEMP/android-instrumentation-result.txt" || { cat "$RUNNER_TEMP/android-instrumentation-result.txt"; echo "Instrumentation smoke test failed."; exit 1; }
+            adb logcat -d -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" 2>&1 || true
+            adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
+
+      - name: Upload Android instrumentation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Instrumentation-Diagnostics
+          path: |
+            ${{ runner.temp }}/android-emulator-logcat.txt
+            ${{ runner.temp }}/android-emulator-activities.txt
+            app/build/reports/androidTests/connected/debug/**
+            app/build/outputs/androidTest-results/connected/**
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload Android lint report
         if: always()
         uses: actions/upload-artifact@v4
@@ -121,7 +160,7 @@ jobs:
         if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Librus-All-in-One-APK-RELEASE
+          name: EduFlow-APK-RELEASE
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -134,7 +173,7 @@ jobs:
         if: steps.signing.outputs.available != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Librus-All-in-One-APK-DEBUG-ONLY
+          name: EduFlow-APK-DEBUG-ONLY
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
@@ -144,9 +183,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
-            echo "### Librus APK: RELEASE" >> "$GITHUB_STEP_SUMMARY"
+            echo "### EduFlow APK: RELEASE" >> "$GITHUB_STEP_SUMMARY"
             echo "APK jest podpisany stalym kluczem wydawniczym." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### Librus APK: DEBUG ONLY" >> "$GITHUB_STEP_SUMMARY"
+            echo "### EduFlow APK: DEBUG ONLY" >> "$GITHUB_STEP_SUMMARY"
             echo "Brak sekretow podpisu. Ten plik sluzy tylko do testow i nie jest stabilnym wydaniem." >> "$GITHUB_STEP_SUMMARY"
           fi

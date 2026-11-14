@@ -23,8 +23,9 @@ android {
         applicationId = "pl.domreksio.librusallinone"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.3.9"
+        versionCode = 22
+        versionName = "0.4.9"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -69,4 +70,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

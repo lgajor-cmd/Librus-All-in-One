@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.SystemClock
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -19,6 +20,7 @@ import android.text.InputType
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -27,8 +29,10 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.ProgressBar
 import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
@@ -81,6 +85,9 @@ class MainActivity : Activity() {
     private lateinit var librusConnectButton: Button
 
     private lateinit var librusVault: LibrusCredentialVault
+    private lateinit var profileStore: LibrusProfileStore
+    private var activeProfileId: String = LibrusProfileStore.LEGACY_PROFILE_ID
+    private var activeProfileType: String = LibrusProfileStore.TYPE_PARENT
 
     private var librusLoginMemory: String? = null
     private var librusPasswordMemory: String? = null
@@ -161,7 +168,16 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        librusVault = LibrusCredentialVault(applicationContext)
+        profileStore = LibrusProfileStore(applicationContext)
+        val defaultProfile = profileStore.ensureDefaultProfile()
+        val notificationProfileId = intent?.getStringExtra("profile_id")
+        val initialProfile = notificationProfileId?.let { profileStore.getProfile(it) } ?: defaultProfile
+        if (initialProfile.id != defaultProfile.id) {
+            profileStore.setActiveProfileId(initialProfile.id)
+        }
+        activeProfileId = initialProfile.id
+        activeProfileType = initialProfile.accountType
+        librusVault = LibrusCredentialVault(applicationContext, activeProfileId)
         pendingNotificationSection = intent?.getStringExtra("open_librus_section")
         requestNotificationPermissionIfNeeded()
         showLogin("Uruchamiam bezpieczną sesję urządzenia…")
@@ -196,6 +212,18 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         val requestedSection = intent.getStringExtra("open_librus_section") ?: return
+        val requestedProfileId = intent.getStringExtra("profile_id")
+        if (!requestedProfileId.isNullOrBlank() && requestedProfileId != activeProfileId) {
+            val requestedProfile = profileStore.getProfile(requestedProfileId)
+            if (requestedProfile != null) {
+                if (syncInProgress) {
+                    Toast.makeText(this, "Zakończ najpierw bieżącą operację.", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                activateProfile(requestedProfile, requestedSection)
+                return
+            }
+        }
         pendingNotificationSection = requestedSection
 
         // A notification tap must navigate even when MainActivity is already alive.
@@ -218,7 +246,7 @@ class MainActivity : Activity() {
             setPadding(28, 40, 28, 40)
             setBackgroundColor(bgColor)
         }
-        content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
+        content.addView(label("EDUFLOW", 13f, muted, true))
         content.addView(label("Witaj!", 32f, white, true), params(0, 12, 0, 8))
         content.addView(label("Nie potrzebujesz osobnego konta ani adresu e-mail. Aplikacja tworzy bezpieczną sesję urządzenia, a następnie połączysz ją z Librusem.", 15f, muted))
         content.addView(label(message, 14f, muted), params(0, 18, 0, 8))
@@ -291,14 +319,10 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, 22)
         }
-        val mark = TextView(this).apply {
-            text = "14"
-            textSize = 25f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(7, 27, 73))
-            background = roundedBackground(Color.WHITE, 14)
-            setPadding(12, 8, 12, 8)
+        val mark = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Logo EduFlow"
         }
         brand.addView(mark, LinearLayout.LayoutParams(56, 56))
         val school = LinearLayout(this).apply {
@@ -326,9 +350,10 @@ class MainActivity : Activity() {
             }
             elevation = 4f * resources.displayMetrics.density
         }
-        card.addView(label("LIBRUS  /  ALL-IN-ONE", 11f, Color.rgb(190, 211, 245), true))
+        val accountLabel = if (activeProfileType == LibrusProfileStore.TYPE_STUDENT) "ucznia" else "rodzica"
+        card.addView(label("EDUFLOW", 11f, Color.rgb(190, 211, 245), true))
         card.addView(label("Zaloguj się do Librusa", 27f, white, true), params(0, 10, 0, 6))
-        card.addView(label("Wpisz dane konta rodzica Librus Synergia, aby przejść do swojego pulpitu szkolnego.", 14f, Color.rgb(205, 217, 235)), params(0, 0, 0, 16))
+        card.addView(label("Wpisz dane konta $accountLabel Librus Synergia, aby przejść do swojego pulpitu szkolnego.", 14f, Color.rgb(205, 217, 235)), params(0, 0, 0, 16))
 
         librusLoginInput = inputField("Login do Librusa", InputType.TYPE_CLASS_TEXT)
         saved?.let { librusLoginInput.setText(it.login) }
@@ -352,6 +377,10 @@ class MainActivity : Activity() {
         card.addView(librusStatusText, params(0, 6, 0, 0))
         card.addView(label("Hasło jest przechowywane lokalnie w zaszyfrowanym magazynie urządzenia. Połączenie z serwerem odbywa się przez HTTPS.", 11f, muted), params(0, 14, 0, 0))
         root.addView(card, LinearLayout.LayoutParams(-1, -2))
+        root.addView(
+            actionButton("ZMIEŃ LUB DODAJ PROFIL") { showProfileSwitcher() },
+            params(0, 14, 0, 0)
+        )
 
         setContentView(ScrollView(this).apply {
             setFillViewport(true)
@@ -360,14 +389,27 @@ class MainActivity : Activity() {
         })
     }
 
+    private fun schoolProfilePrefs() = getSharedPreferences(
+        "librus_school_profile_$activeProfileId",
+        MODE_PRIVATE
+    ).also { current ->
+        if (activeProfileId == LibrusProfileStore.LEGACY_PROFILE_ID &&
+            current.getString("school_name", null) == null
+        ) {
+            val legacyName = getSharedPreferences("librus_school_profile", MODE_PRIVATE)
+                .getString("school_name", null)
+            if (!legacyName.isNullOrBlank()) current.edit().putString("school_name", legacyName).apply()
+        }
+    }
+
     private fun currentSchoolName(): String {
         val dataName = librusDataMemory?.let { extractSchoolName(it) }.orEmpty()
         if (dataName.isNotBlank()) {
-            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+            schoolProfilePrefs().edit()
                 .putString("school_name", dataName).apply()
             return dataName
         }
-        val savedName = getSharedPreferences("librus_school_profile", MODE_PRIVATE)
+        val savedName = schoolProfilePrefs()
             .getString("school_name", "").orEmpty()
         return savedName
     }
@@ -529,8 +571,15 @@ class MainActivity : Activity() {
         }
         welcomeCard.addView(greetingRow, params(0, 14, 0, 0))
         welcomeCard.addView(label("Twoje szkolne sprawy w jednym miejscu.", 14f, Color.rgb(130, 220, 180)), params(0, 3, 0, 0))
-        content.addView(welcomeCard, params(0, 0, 0, 16))
+        content.addView(welcomeCard, params(0, 0, 0, 10))
         welcomeCard.animate().alpha(1f).translationY(0f).setDuration(520).start()
+        val activeProfile = profileStore.getProfile(activeProfileId)
+        content.addView(
+            actionButton("PROFIL: ${activeProfile?.displayName ?: "Konto"}  ·  ZMIEŃ") {
+                showProfileSwitcher()
+            },
+            params(0, 0, 0, 14)
+        )
 
         val savedLibrus = librusVault.load()
 
@@ -579,9 +628,6 @@ class MainActivity : Activity() {
             13f, Color.rgb(205, 217, 235)
         )
         connectionCard.addView(backendStatusText, params(0, 8, 0, 0))
-        connectionCard.addView(actionButton("SPRAWDŹ SERWER") {
-            checkBackendConnection()
-        }, params(0, 12, 0, 0))
         content.addView(connectionCard, params(0, 2, 0, 14))
 
         content.addView(actionButton(if (savedLibrus != null) "ZMIEN DANE KONTA LIBRUS" else "ZALOGUJ DO LIBRUSA") {
@@ -663,7 +709,7 @@ class MainActivity : Activity() {
         content.addView(label("Przydatne rzeczy poza dziennikiem szkolnym.", 13f, muted), params(0, 0, 0, 8))
         addPersonalToolCard(content, "NOTATKI", "Szybkie zapiski, pomysły i ważne informacje", "📝") { showPersonalNotes() }
         addPersonalToolCard(content, "LISTA ZAKUPÓW", "Dodawaj produkty i odhaczaj je w sklepie", "🛒") { showShoppingList() }
-        addPersonalToolCard(content, "O AUTORZE", "Poznaj twórcę aplikacji Librus All-in-One", "⌘") { showAbout() }
+        addPersonalToolCard(content, "O AUTORZE", "Poznaj twórcę aplikacji EduFlow", "⌘") { showAbout() }
 
         content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
             showNotificationSettings()
@@ -687,7 +733,7 @@ class MainActivity : Activity() {
         homePage.addView(buildBottomNavigation("START"))
         setContentView(homePage)
 
-        if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext)
+        if (savedLibrus != null) LibrusNotificationScheduler.schedule(applicationContext, activeProfileId)
 
         if (savedLibrus != null && !autoRestoreStarted) {
             autoRestoreStarted = true
@@ -723,11 +769,11 @@ class MainActivity : Activity() {
         }
 
         librusConnectButton.isEnabled = false
+        syncInProgress = true
         setLibrusStatus("Łączę się z Librusem. To może chwilę potrwać…", null)
 
         thread {
             var connection: HttpURLConnection? = null
-
             val result = try {
                 connection = URL("$BACKEND_URL/v1/connect")
                     .openConnection() as HttpURLConnection
@@ -741,7 +787,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                 }
@@ -758,7 +804,7 @@ class MainActivity : Activity() {
 
                     if (json.has("student") && json.has("session")) {
                         extractSchoolName(json).takeIf { it.isNotBlank() }?.let { schoolName ->
-                            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                            schoolProfilePrefs().edit()
                                 .putString("school_name", schoolName).apply()
                         }
                         librusLoginMemory = login
@@ -767,7 +813,7 @@ class MainActivity : Activity() {
                         librusDataMemory = null
 
                         librusVault.save(login, password, librusSessionMemory?.toString())
-                        LibrusNotificationScheduler.schedule(applicationContext)
+                        LibrusNotificationScheduler.schedule(applicationContext, activeProfileId)
 
                         "SUCCESS|Połączono z Librusem. Dane można teraz pobrać."
                     } else {
@@ -784,6 +830,7 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
+                syncInProgress = false
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
                 val ok = result.startsWith("SUCCESS|")
@@ -821,9 +868,10 @@ class MainActivity : Activity() {
         }
 
         if (syncInProgress) {
-            // Keep the latest requested destination instead of silently dropping
-            // navigation taps while a refresh is running.
+            // Nawigacja pozostaje aktywna podczas pobierania. Zapamiętujemy
+            // ostatnią wybraną zakładkę i od razu pokazujemy jej ekran ładowania.
             pendingNotificationSection = section
+            showSectionLoading(section, "Pobieranie danych trwa. Otworzę tę sekcję, gdy dane będą gotowe.")
             return
         }
 
@@ -838,10 +886,19 @@ class MainActivity : Activity() {
         }
 
         syncInProgress = true
+        pendingNotificationSection = section
+        val syncStartedAt = SystemClock.elapsedRealtime()
         setLibrusStatus("Pobieram dane z Librusa…", null)
+        showSectionLoading(section, "Pobieram dane z Librusa. Nie musisz klikać ponownie — ekran otworzy się automatycznie.")
 
         thread {
             var connection: HttpURLConnection? = null
+            var payloadBuildMs = 0L
+            var requestWriteMs = 0L
+            var responseWaitMs = 0L
+            var responseReadMs = 0L
+            var jsonParseMs = 0L
+            var responseBytes = 0
 
             val result = try {
                 connection = URL("$BACKEND_URL/v1/sync")
@@ -855,28 +912,39 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
 
+                val payloadStartedAt = SystemClock.elapsedRealtime()
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
                 }
+                val payloadBytes = payload.toString().toByteArray(Charsets.UTF_8)
+                payloadBuildMs = SystemClock.elapsedRealtime() - payloadStartedAt
 
-                connection.outputStream.use {
-                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
-                }
+                val writeStartedAt = SystemClock.elapsedRealtime()
+                connection.outputStream.use { it.write(payloadBytes) }
+                requestWriteMs = SystemClock.elapsedRealtime() - writeStartedAt
 
+                val responseWaitStartedAt = SystemClock.elapsedRealtime()
                 val code = connection.responseCode
+                responseWaitMs = SystemClock.elapsedRealtime() - responseWaitStartedAt
+
+                val responseReadStartedAt = SystemClock.elapsedRealtime()
                 val body = readResponse(connection, code)
+                responseReadMs = SystemClock.elapsedRealtime() - responseReadStartedAt
+                responseBytes = body.toByteArray(Charsets.UTF_8).size
 
                 if (code in 200..299) {
+                    val parseStartedAt = SystemClock.elapsedRealtime()
                     val json = JSONObject(body)
                     val data = json.optJSONObject("data")
+                    jsonParseMs = SystemClock.elapsedRealtime() - parseStartedAt
 
                     if (data != null) {
                         librusDataMemory = data
                         extractSchoolName(data).takeIf { it.isNotBlank() }?.let { schoolName ->
-                            getSharedPreferences("librus_school_profile", MODE_PRIVATE).edit()
+                            schoolProfilePrefs().edit()
                                 .putString("school_name", schoolName).apply()
                         }
                         librusSessionMemory =
@@ -895,6 +963,15 @@ class MainActivity : Activity() {
                 connection?.disconnect()
             }
 
+            val syncDurationMs = SystemClock.elapsedRealtime() - syncStartedAt
+            Log.d(
+                "EduFlowPerf",
+                "section_sync section=$section total_ms=$syncDurationMs payload_ms=$payloadBuildMs " +
+                    "write_ms=$requestWriteMs response_wait_ms=$responseWaitMs response_read_ms=$responseReadMs " +
+                    "json_parse_ms=$jsonParseMs response_bytes=$responseBytes result=" +
+                    if (result == "SUCCESS") "success" else "error"
+            )
+
             runOnUiThread {
                 syncInProgress = false
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -903,13 +980,71 @@ class MainActivity : Activity() {
                     setLibrusStatus("Dane Librusa pobrane.", true)
                     val destination = pendingNotificationSection ?: section
                     pendingNotificationSection = null
-                    librusDataMemory?.let { showLibrusSection(destination, it) }
+                    when (destination) {
+                        "START" -> showHome()
+                        "WIĘCEJ" -> showMoreMenu(section)
+                        else -> librusDataMemory?.let { showLibrusSection(destination, it) }
+                    }
                 } else {
                     pendingNotificationSection = null
-                    setLibrusStatus(result.substringAfter("|"), false)
+                    val errorMessage = result.substringAfter("|")
+                    setLibrusStatus(errorMessage, false)
+                    showSectionLoadError(section, errorMessage)
                 }
             }
         }
+    }
+
+    private fun showSectionLoading(section: String, message: String) {
+        if (isFinishing || isDestroyed) return
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28, 28, 28, 28)
+        }
+        content.addView(label(section, 24f, white, true))
+        content.addView(ProgressBar(this).apply {
+            isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(accentColor)
+        }, LinearLayout.LayoutParams(
+            (42 * resources.displayMetrics.density).toInt(),
+            (42 * resources.displayMetrics.density).toInt()
+        ).apply { topMargin = (24 * resources.displayMetrics.density).toInt() })
+        content.addView(label("Chwileczkę…", 16f, white, true), params(0, 18, 0, 4))
+        content.addView(label(message, 13f, muted), params(0, 4, 0, 0))
+        page.addView(content, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        page.addView(buildBottomNavigation(section))
+        setContentView(page)
+    }
+
+    private fun showSectionLoadError(section: String, message: String) {
+        if (isFinishing || isDestroyed) return
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28, 28, 28, 28)
+        }
+        content.addView(label(section, 24f, white, true))
+        content.addView(label("Nie udało się pobrać danych", 17f, errorColor, true), params(0, 18, 0, 6))
+        content.addView(label(message, 13f, muted), params(0, 4, 0, 18))
+        content.addView(actionButton("SPRÓBUJ PONOWNIE") {
+            loadLibrusSection(section)
+        })
+        page.addView(content, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        page.addView(buildBottomNavigation(section))
+        setContentView(page)
     }
 
     // ---------------------------------------------------------
@@ -917,6 +1052,7 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun showLibrusSection(section: String, data: JSONObject) {
+        val renderStartedAt = SystemClock.elapsedRealtime()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 12, 18, 22)
@@ -1039,6 +1175,9 @@ class MainActivity : Activity() {
         val teachers = data.optJSONObject("teachers")
         val classrooms = data.optJSONObject("classrooms")
 
+        // Rozdzielamy koszt przygotowania treści od budowania reszty ekranu.
+        // Dzięki temu log z urządzenia wskaże konkretny ciężki moduł.
+        val contentRenderStartedAt = SystemClock.elapsedRealtime()
         when (section) {
             "PLAN LEKCJI" -> renderTimetable(root, data, subjects, teachers, classrooms)
             "OCENY" -> renderGradesSection(root, data, subjects, teachers)
@@ -1059,6 +1198,10 @@ class MainActivity : Activity() {
             "NAUCZYCIELE" -> renderTeachersDirectory(root, data)
             "OŚ CZASU" -> renderSchoolTimeline(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
+        }
+        val contentRenderDurationMs = SystemClock.elapsedRealtime() - contentRenderStartedAt
+        if (contentRenderDurationMs >= 80L) {
+            Log.d("EduFlowPerf", "section_content_render section=$section duration_ms=$contentRenderDurationMs child_views=${root.childCount}")
         }
 
         val scroll = ScrollView(this).apply {
@@ -1091,6 +1234,10 @@ class MainActivity : Activity() {
             root.alpha = 0f
             root.translationY = 12f * resources.displayMetrics.density
             root.animate().alpha(1f).translationY(0f).setDuration(280).start()
+        }
+        val renderDurationMs = SystemClock.elapsedRealtime() - renderStartedAt
+        if (renderDurationMs >= 120L) {
+            Log.d("EduFlowPerf", "section_render section=$section duration_ms=$renderDurationMs")
         }
     }
 
@@ -2371,6 +2518,7 @@ class MainActivity : Activity() {
         subject: String,
         lesson: String
     ) {
+        if (!requireParentProfile("e-Usprawiedliwienie")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -2394,7 +2542,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("date_from", isoDate)
@@ -2542,6 +2690,7 @@ class MainActivity : Activity() {
     }
 
     private fun requestJustificationToTutor(date: String, subject: String, lesson: String) {
+        if (!requireParentProfile("Wiadomości do wychowawcy")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -2565,7 +2714,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
@@ -2698,6 +2847,7 @@ class MainActivity : Activity() {
     private fun sendJustificationMessage(
         recipientId: String, recipientName: String, topic: String, body: String
     ) {
+        if (!requireParentProfile("Wysyłanie wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -2721,7 +2871,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("recipient_ids", JSONArray().put(recipientId))
@@ -3191,6 +3341,7 @@ class MainActivity : Activity() {
     }
 
     private fun openNewMessageComposer() {
+        if (!requireParentProfile("Nowa wiadomość")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3214,7 +3365,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
@@ -3370,6 +3521,7 @@ class MainActivity : Activity() {
     private fun sendNewMessage(
         recipientIds: List<String>, recipientNames: List<String>, topic: String, body: String
     ) {
+        if (!requireParentProfile("Wysyłanie wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3393,7 +3545,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("recipient_ids", JSONArray().apply { recipientIds.forEach { put(it) } })
@@ -3469,12 +3621,34 @@ class MainActivity : Activity() {
             val key = messageKey(item, heading)
             val pinned = key in pinnedKeys
             val archived = key in archivedKeys
-            val card = card()
+            val isUnread = heading == "Wiadomości" &&
+                firstValue(item, "read_date", "readDate").isBlank()
+            // Każdy wpis ma własną, lekko odróżnioną powierzchnię.
+            // Nie zmieniamy wspólnego card(), aby nie naruszyć pozostałych zakładek.
+            val card = card().apply {
+                setPadding(16, 15, 16, 15)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    if (isUnread) {
+                        intArrayOf(Color.rgb(37, 48, 69), Color.rgb(25, 36, 55))
+                    } else {
+                        intArrayOf(Color.rgb(29, 41, 59), Color.rgb(21, 31, 47))
+                    }
+                ).apply {
+                    cornerRadius = 18f * resources.displayMetrics.density
+                    setStroke(
+                        (1 * resources.displayMetrics.density).toInt(),
+                        if (isUnread) blendColor(accentColor, Color.rgb(91, 112, 143), 0.48f)
+                        else Color.rgb(55, 70, 92)
+                    )
+                }
+                elevation = 3f * resources.displayMetrics.density
+            }
             val focusKey = messageKey(item, heading)
             if (pendingTimelineTargetKey == focusKey) card.tag = "timeline_target:$focusKey"
             card.addView(label(title, 15f, white, true))
-            if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
-            if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
+            if (sender.isNotBlank()) card.addView(label("OD  $sender", 11f, Color.rgb(170, 188, 211), true))
+            if (date.isNotBlank()) card.addView(label(date, 11f, muted))
             if (heading == "Wiadomości") {
                 val messageReadDate = firstValue(item, "read_date", "readDate")
                 val readChip = statusChip(
@@ -3517,7 +3691,8 @@ class MainActivity : Activity() {
                 onChanged()
             }, LinearLayout.LayoutParams(0, -2, 1f))
             card.addView(actions, params(0, 8, 0, 0))
-            parent.addView(card, params(0, 0, 0, 8))
+            // 12 dp odstępu zapobiega zlewaniu się kolejnych wiadomości na ekranie.
+            parent.addView(card, params(0, 0, 0, 12))
         }
     }
 
@@ -3554,7 +3729,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Accept", "application/json")
 
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("message_id", messageId)
@@ -3644,6 +3819,7 @@ class MainActivity : Activity() {
     }
 
     private fun downloadHomeworkAttachment(attachmentId: String, filename: String) {
+        if (!requireParentProfile("Pobieranie załączników zadań")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3667,7 +3843,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("attachment_id", attachmentId)
@@ -3716,6 +3892,7 @@ class MainActivity : Activity() {
     }
 
     private fun downloadMessageAttachment(messageId: String, attachmentId: String, filename: String) {
+        if (!requireParentProfile("Pobieranie załączników wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3739,7 +3916,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("message_id", messageId)
@@ -3843,6 +4020,7 @@ class MainActivity : Activity() {
     }
 
     private fun sendMessageReply(messageId: String, mailbox: String, sender: String, body: String) {
+        if (!requireParentProfile("Odpowiadanie na wiadomości")) return
         val login = librusLoginMemory
         val password = librusPasswordMemory
         val token = supabase.auth.currentAccessTokenOrNull()
@@ -3866,7 +4044,7 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
                 val payload = JSONObject().apply {
-                    put("profile", "parent")
+                    put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     put("message_id", messageId)
@@ -5107,10 +5285,10 @@ class MainActivity : Activity() {
     private fun showNotificationSettings() {
         val keys = arrayOf("grades", "messages", "notes", "behaviour_notes")
         val labels = arrayOf("Nowe oceny", "Wiadomości", "Uwagi", "Uwagi o zachowaniu")
-        val prefs = getSharedPreferences("librus_notification_settings", MODE_PRIVATE)
+        val prefs = LibrusNotificationSettings.preferences(applicationContext, activeProfileId)
         val checked = BooleanArray(keys.size) { prefs.getBoolean(keys[it], true) }
         AlertDialog.Builder(this)
-            .setTitle("Powiadomienia Librus")
+            .setTitle("Powiadomienia EduFlow")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
             }
@@ -5125,17 +5303,17 @@ class MainActivity : Activity() {
     }
 
     private fun showNotificationDiagnostics() {
-        val message = LibrusNotificationDiagnostics.summary(applicationContext)
+        val message = LibrusNotificationDiagnostics.summary(applicationContext, activeProfileId)
         AlertDialog.Builder(this)
             .setTitle("Diagnostyka powiadomień")
             .setMessage(message)
             .setPositiveButton("Odśwież") { _, _ -> showNotificationDiagnostics() }
             .setNeutralButton("Test lokalny") { _, _ ->
-                val sent = LibrusNotificationDiagnostics.sendTest(applicationContext)
+                val sent = LibrusNotificationDiagnostics.sendTest(applicationContext, activeProfileId)
                 val explanation = if (sent) {
-                    "Wysłano testowe powiadomienie. Jeśli go nie widzisz, sprawdź ustawienia kanału „Aktualizacje Librus” i tryb Nie przeszkadzać."
+                    "Wysłano testowe powiadomienie. Jeśli go nie widzisz, sprawdź ustawienia kanału „Aktualizacje EduFlow” i tryb Nie przeszkadzać."
                 } else {
-                    "Android blokuje powiadomienia aplikacji. Sprawdź uprawnienie i kanał „Aktualizacje Librus” w ustawieniach systemowych."
+                    "Android blokuje powiadomienia aplikacji. Sprawdź uprawnienie i kanał „Aktualizacje EduFlow” w ustawieniach systemowych."
                 }
                 AlertDialog.Builder(this)
                     .setTitle("Test powiadomień")
@@ -5187,6 +5365,145 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun requireParentProfile(feature: String): Boolean {
+        if (activeProfileType == LibrusProfileStore.TYPE_PARENT) return true
+        AlertDialog.Builder(this)
+            .setTitle("Funkcja dla konta rodzica")
+            .setMessage("$feature jest dostępne po przełączeniu na profil rodzica. Konto ucznia pozostaje oddzielne i służy do przeglądania danych ucznia.")
+            .setPositiveButton("OK", null)
+            .show()
+        return false
+    }
+
+    private fun showProfileSwitcher() {
+        if (syncInProgress) {
+            Toast.makeText(this, "Poczekaj na zakończenie bieżącej operacji.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val profiles = profileStore.getProfiles()
+        val labels = profiles.map { profile ->
+            val typeLabel = if (profile.accountType == LibrusProfileStore.TYPE_STUDENT) "Uczeń" else "Rodzic"
+            val activeLabel = if (profile.id == activeProfileId) "  •  aktywny" else ""
+            "${profile.displayName}  ·  $typeLabel$activeLabel"
+        }.toTypedArray()
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Profile EduFlow")
+            .setItems(labels) { _, which ->
+                val selected = profiles.getOrNull(which) ?: return@setItems
+                if (selected.id != activeProfileId) activateProfile(selected)
+            }
+            .setPositiveButton("Dodaj konto") { _, _ -> showAddProfileTypePicker() }
+            .setNegativeButton("Zamknij", null)
+        if (profiles.size > 1) {
+            builder.setNeutralButton("Usuń aktywne") { _, _ -> confirmRemoveActiveProfile() }
+        }
+        builder.show()
+    }
+
+    private fun showAddProfileTypePicker() {
+        AlertDialog.Builder(this)
+            .setTitle("Jakie konto dodajesz?")
+            .setItems(arrayOf("Konto rodzica", "Konto ucznia / dziecka")) { _, which ->
+                val type = if (which == 1) LibrusProfileStore.TYPE_STUDENT
+                    else LibrusProfileStore.TYPE_PARENT
+                showAddProfileNameDialog(type)
+            }
+            .setNegativeButton("Anuluj", null)
+            .show()
+    }
+
+    private fun showAddProfileNameDialog(accountType: String) {
+        val nameInput = EditText(this).apply {
+            hint = if (accountType == LibrusProfileStore.TYPE_STUDENT) "Imię dziecka lub własna nazwa" else "Np. Mama, Tata"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 8, 24, 0)
+            addView(nameInput, LinearLayout.LayoutParams(-1, -2))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Nazwa profilu")
+            .setMessage("Nazwa będzie widoczna tylko na tym urządzeniu.")
+            .setView(container)
+            .setPositiveButton("Dodaj i połącz") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isBlank()) {
+                    Toast.makeText(this, "Wpisz nazwę profilu.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val profile = runCatching { profileStore.addProfile(name, accountType) }.getOrElse {
+                    Toast.makeText(this, it.message ?: "Nie udało się dodać profilu.", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                activateProfile(profile)
+            }
+            .setNegativeButton("Anuluj", null)
+            .show()
+    }
+
+    private fun activateProfile(profile: LibrusProfileStore.Profile, notificationSection: String? = null) {
+        if (syncInProgress) return
+        profileStore.setActiveProfileId(profile.id)
+        activeProfileId = profile.id
+        activeProfileType = profile.accountType
+        librusVault = LibrusCredentialVault(applicationContext, activeProfileId)
+        librusLoginMemory = null
+        librusPasswordMemory = null
+        librusSessionMemory = null
+        librusDataMemory = null
+        pendingNotificationSection = notificationSection
+        autoRestoreStarted = false
+        stopTimetableTicker()
+
+        val saved = librusVault.load()
+        if (saved == null) {
+            showLibrusLogin()
+            return
+        }
+        librusLoginMemory = saved.login
+        librusPasswordMemory = saved.password
+        librusSessionMemory = saved.sessionJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+        LibrusNotificationScheduler.schedule(applicationContext, activeProfileId)
+        showHome()
+    }
+
+    private fun confirmRemoveActiveProfile() {
+        val profile = profileStore.getProfile(activeProfileId) ?: return
+        if (profileStore.getProfiles().size <= 1) {
+            Toast.makeText(this, "Nie można usunąć ostatniego profilu.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Usunąć profil ${profile.displayName}?")
+            .setMessage("Zostaną usunięte zapisane na tym urządzeniu dane logowania i sesja tego profilu. Pozostałe konta pozostaną bez zmian.")
+            .setNegativeButton("Anuluj", null)
+            .setPositiveButton("Usuń") { _, _ ->
+                val removedId = activeProfileId
+                runCatching { librusVault.clear() }.onFailure {
+                    Toast.makeText(this, "Nie udało się bezpiecznie usunąć danych: ${it.message}", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                runCatching {
+                    LibrusProfileDataCleaner.clear(applicationContext, removedId)
+                }.onFailure {
+                    Toast.makeText(
+                        this,
+                        "Nie udało się wyczyścić historii profilu: ${it.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@setPositiveButton
+                }
+                LibrusNotificationScheduler.cancel(applicationContext, removedId)
+                if (profileStore.removeProfile(removedId)) {
+                    val next = profileStore.getProfiles().first()
+                    activateProfile(next)
+                }
+            }
+            .show()
+    }
+
     private fun disconnectLibrus() {
         AlertDialog.Builder(this)
             .setTitle("Odłączyć konto Librus?")
@@ -5195,7 +5512,7 @@ class MainActivity : Activity() {
             .setPositiveButton("Odłącz") { _, _ ->
                 try {
                     librusVault.clear()
-                    LibrusNotificationScheduler.cancel(applicationContext)
+                    LibrusNotificationScheduler.cancel(applicationContext, activeProfileId)
                     librusDataMemory = null
                     librusSessionMemory = null
                     librusLoginMemory = null
@@ -5275,12 +5592,28 @@ class MainActivity : Activity() {
                 scaleY = if (selected) 1.03f else 1f
             }
             if (selected) {
+                val motionEnabled = uiPrefs.getBoolean("motion", true)
                 val indicator = View(this).apply {
                     background = roundedBackground(accentColor, 4)
+                    if (motionEnabled) {
+                        alpha = 0f
+                        scaleX = 0.55f
+                        scaleY = 0.8f
+                    }
                 }
                 tile.addView(indicator, LinearLayout.LayoutParams((22 * density).toInt(), (3 * density).toInt()).apply {
                     bottomMargin = (2 * density).toInt()
                 })
+                if (motionEnabled) {
+                    indicator.post {
+                        indicator.animate()
+                            .alpha(1f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(190)
+                            .start()
+                    }
+                }
             } else {
                 tile.addView(View(this), LinearLayout.LayoutParams(1, (5 * density).toInt()))
             }
@@ -5307,8 +5640,16 @@ class MainActivity : Activity() {
                     tile.animate().scaleX(1f).scaleY(1f).setDuration(160).start()
                 }
                 when (item.key) {
-                    "START" -> showHome()
-                    "WIĘCEJ" -> showMoreMenu(active)
+                    "START" -> {
+                        if (syncInProgress) pendingNotificationSection = "START"
+                        else pendingNotificationSection = null
+                        showHome()
+                    }
+                    "WIĘCEJ" -> {
+                        if (syncInProgress) pendingNotificationSection = "WIĘCEJ"
+                        else pendingNotificationSection = null
+                        showMoreMenu(active)
+                    }
                     else -> loadLibrusSection(item.key)
                 }
             }
@@ -5357,7 +5698,7 @@ class MainActivity : Activity() {
                 intArrayOf(Color.TRANSPARENT, Color.argb(220, 10, 18, 34)))
         }
         heroText.addView(label("POZNAJ TWÓRCĘ", 10f, Color.rgb(133, 205, 255), true))
-        heroText.addView(label("Librus All-in-One", 25f, Color.WHITE, true), params(0, 3, 0, 0))
+        heroText.addView(label("EduFlow", 25f, Color.WHITE, true), params(0, 3, 0, 0))
         heroText.addView(label("Technologia, edukacja i wygoda w jednym miejscu", 12f, Color.rgb(205, 220, 240)))
         hero.addView(heroText, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM))
@@ -5401,7 +5742,7 @@ class MainActivity : Activity() {
         emailRow.setOnClickListener {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
                 data = android.net.Uri.parse("mailto:LGajor@gmail.com")
-                putExtra(Intent.EXTRA_SUBJECT, "Kontakt — Librus All-in-One")
+                putExtra(Intent.EXTRA_SUBJECT, "Kontakt — EduFlow")
             }
             try {
                 startActivity(intent)
@@ -5419,8 +5760,9 @@ class MainActivity : Activity() {
             background = roundedBackground(panel, 18)
         }
         infoCard.addView(label("O PROJEKCIE", 10f, accentColor, true))
-        infoCard.addView(label("Librus All-in-One to niezależna aplikacja pomocnicza. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
+        infoCard.addView(label("EduFlow to niezależna aplikacja pomocnicza do obsługi szkolnych spraw. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
         content.addView(infoCard, params(0, 0, 0, 12))
+        content.addView(actionButton("ZMIEN PROFIL / DODAJ KONTO") { showProfileSwitcher() }, params(0, 4, 0, 8))
         content.addView(actionButton("‹  WRÓĆ DO PULPITU") { showHome() }, params(0, 4, 0, 0))
 
         val scroll = ScrollView(this).apply { addView(content) }
@@ -5495,45 +5837,274 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showMoreMenu(activeSection: String) {
-        val labels = arrayOf(
-            "Dane konta i szkoły",
-            "Frekwencja",
-            "Zadania domowe",
-            "Terminarz",
-            "Uwagi",
-            "Szczęśliwy numerek",
-            "Katalog nauczycieli",
-            "Ustawienia powiadomień",
-            "Wygląd aplikacji",
-            "Notatki",
-            "Lista zakupów",
-            "O autorze"
-        )
-        val sections = arrayOf(
-            "PROFILE",
-            "FREKWENCJA",
-            "ZADANIA DOMOWE",
-            "TERMINARZ",
-            "UWAGI",
-            "SZCZĘŚLIWY NUMEREK",
-            "NAUCZYCIELE"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("Więcej modułów")
-            .setItems(labels) { _, which ->
-                when (which) {
-                    7 -> showNotificationSettings()
-                    8 -> showAppearanceSettings(activeSection)
-                    9 -> showPersonalNotes()
-                    10 -> showShoppingList()
-                    11 -> showAbout()
-                    else -> loadLibrusSection(sections[which])
-                }
+    private fun showGradeCalculator() {
+        val density = resources.displayMetrics.density
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (20 * density).toInt(), (18 * density).toInt(), (28 * density).toInt())
+            setBackgroundColor(bgColor)
+        }
+        root.addView(label("KALKULATOR ŚREDNIEJ", 11f, accentColor, true))
+        root.addView(label("Policz średnią arytmetyczną z ocen", 23f, white, true), params(0, 7, 0, 8))
+        root.addView(label("Wpisz oceny oddzielone średnikiem lub spacją. Możesz używać połówek i przecinków, np. 5; 4,5; 3.", 13f, muted), params(0, 0, 0, 16))
+        val input = EditText(this).apply {
+            hint = "Np. 5; 4,5; 3; 6"
+            setTextColor(white)
+            setHintTextColor(muted)
+            textSize = 17f
+            inputType = InputType.TYPE_CLASS_TEXT
+            setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+            background = roundedBackground(panelLight, 16)
+        }
+        root.addView(input, params(0, 0, 0, 12))
+        val resultCard = card()
+        val result = label("Tutaj pojawi się wynik.", 15f, muted)
+        resultCard.addView(label("TWOJA ŚREDNIA", 10f, accentColor, true))
+        resultCard.addView(result, params(0, 7, 0, 0))
+        root.addView(resultCard, params(0, 0, 0, 12))
+        root.addView(actionButton("OBLICZ ŚREDNIĄ") {
+            val raw = input.text.toString().trim()
+            val tokens = raw.split(Regex("[;\\s]+")).filter { it.isNotBlank() }
+            val grades = tokens.mapNotNull { token ->
+                token.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..6.0 }
             }
-            .show()
+            if (tokens.isEmpty() || grades.size != tokens.size) {
+                result.text = "Sprawdź wpisane oceny. Dozwolony zakres to 1–6."
+                result.setTextColor(errorColor)
+            } else {
+                val average = grades.average()
+                val formatted = java.text.DecimalFormat("0.00", java.text.DecimalFormatSymbols(Locale("pl", "PL"))).format(average)
+                result.text = "$formatted  •  ${grades.size} ocen"
+                result.setTextColor(successColor)
+            }
+        }, params(0, 0, 0, 12))
+        root.addView(infoCard("To średnia arytmetyczna bez wag. Oficjalna średnia w Librusie może być liczona według wag ustalonych przez nauczyciela."))
+        root.addView(actionButton("←  WRÓĆ DO WIĘCEJ") { showMoreMenu("WIĘCEJ") }, params(0, 18, 0, 0))
+        showPersonalToolPage(root, "WIĘCEJ")
     }
 
+    private fun showStudyPlanner() {
+        val density = resources.displayMetrics.density
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (20 * density).toInt(), (18 * density).toInt(), (28 * density).toInt())
+            setBackgroundColor(bgColor)
+        }
+        root.addView(label("ORGANIZACJA NAUKI", 11f, accentColor, true))
+        root.addView(label("Plan nauki", 25f, white, true), params(0, 7, 0, 5))
+        root.addView(label("Zapisuj tematy do powtórki i zaznaczaj te, które masz już opanowane.", 13f, muted), params(0, 0, 0, 14))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun redraw() {
+            list.removeAllViews()
+            val items = readLocalArray("study_plan_items_v1")
+            val total = items.length()
+            var done = 0
+            for (i in 0 until items.length()) if (items.optJSONObject(i)?.optBoolean("done") == true) done++
+            val summary = card()
+            summary.addView(label("POSTĘP", 10f, accentColor, true))
+            summary.addView(label("$done z $total tematów ukończonych", 16f, white, true), params(0, 4, 0, 0))
+            list.addView(summary, params(0, 0, 0, 12))
+            if (total == 0) list.addView(infoCard("Twój plan jest pusty. Dodaj pierwszy temat, który chcesz powtórzyć."))
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding((12 * density).toInt(), (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
+                    background = roundedBackground(panel, 15)
+                }
+                val check = CheckBox(this).apply {
+                    text = item.optString("title")
+                    textSize = 14f
+                    setTextColor(white)
+                    isChecked = item.optBoolean("done")
+                    setOnCheckedChangeListener { _, checked ->
+                        val latest = readLocalArray("study_plan_items_v1")
+                        for (j in 0 until latest.length()) {
+                            val candidate = latest.optJSONObject(j) ?: continue
+                            if (candidate.optString("id") == item.optString("id")) candidate.put("done", checked)
+                        }
+                        saveLocalArray("study_plan_items_v1", latest)
+                        redraw()
+                    }
+                }
+                row.addView(check, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(actionButton("×") {
+                    val latest = readLocalArray("study_plan_items_v1")
+                    val kept = JSONArray()
+                    for (j in 0 until latest.length()) {
+                        val candidate = latest.optJSONObject(j) ?: continue
+                        if (candidate.optString("id") != item.optString("id")) kept.put(candidate)
+                    }
+                    saveLocalArray("study_plan_items_v1", kept)
+                    redraw()
+                }, LinearLayout.LayoutParams((42 * density).toInt(), (40 * density).toInt()))
+                list.addView(row, params(0, 0, 0, 7))
+            }
+        }
+        root.addView(actionButton("+  DODAJ TEMAT DO POWTÓRKI") {
+            val field = EditText(this).apply {
+                hint = "Np. Matematyka – ułamki"
+                setTextColor(white)
+                setHintTextColor(muted)
+                setSingleLine(true)
+            }
+            AlertDialog.Builder(this).setTitle("Nowy temat").setView(field)
+                .setNegativeButton("Anuluj", null)
+                .setPositiveButton("Dodaj") { _, _ ->
+                    val title = field.text.toString().trim()
+                    if (title.isNotBlank()) {
+                        val items = readLocalArray("study_plan_items_v1")
+                        items.put(JSONObject().put("id", java.util.UUID.randomUUID().toString())
+                            .put("title", title).put("done", false))
+                        saveLocalArray("study_plan_items_v1", items)
+                        redraw()
+                    }
+                }.show()
+        }, params(0, 0, 0, 12))
+        root.addView(list)
+        root.addView(actionButton("←  WRÓĆ DO WIĘCEJ") { showMoreMenu("WIĘCEJ") }, params(0, 18, 0, 0))
+        redraw()
+        showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun showMoreMenu(activeSection: String) {
+        stopTimetableTicker()
+        val density = resources.displayMetrics.density
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((16 * density).toInt(), (18 * density).toInt(), (16 * density).toInt(), (28 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
+        }
+
+        // Hero: bardziej przypomina centrum aplikacji niż zwykłą listę ustawień.
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (20 * density).toInt(), (20 * density).toInt(), (20 * density).toInt())
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(35, 83, 128), Color.rgb(61, 61, 116), Color.rgb(34, 48, 75))
+            ).apply {
+                cornerRadius = 25f * density
+                setStroke((1 * density).toInt(), Color.rgb(92, 128, 184))
+            }
+            elevation = 3f * density
+        }
+        hero.addView(label("EDUFLOW  /  TWOJE CENTRUM", 10f, Color.rgb(190, 218, 255), true))
+        hero.addView(label("Więcej możliwości.", 25f, Color.WHITE, true), params(0, 7, 0, 3))
+        hero.addView(label("Szkoła, planowanie i codzienne sprawy — wszystko w jednym miejscu.", 12f, Color.rgb(222, 232, 248)), params(0, 0, 0, 14))
+        val heroActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val profileButton = actionButton("👤  PROFILE") { showProfileSwitcher() }
+        val notesButton = actionButton("✎  NOTATKI") { showPersonalNotes() }
+        heroActions.addView(profileButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * density).toInt() })
+        heroActions.addView(notesButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = (6 * density).toInt() })
+        hero.addView(heroActions)
+        root.addView(hero, params(0, 0, 0, 20))
+
+        root.addView(sectionHeader("SZKOŁA I NAUKA"), params(0, 0, 0, 7))
+        addMoreModuleRow(root,
+            "OCENY I POSTĘPY", "Oceny, średnie i wyniki", "📊", Color.rgb(67, 103, 177), { loadLibrusSection("OCENY") },
+            "PLAN LEKCJI", "Dzień, tydzień i godziny", "⏰", Color.rgb(42, 119, 145), { loadLibrusSection("PLAN LEKCJI") })
+        addMoreModuleRow(root,
+            "ZADANIA DOMOWE", "Prace i terminy do wykonania", "📚", Color.rgb(103, 86, 158), { loadLibrusSection("ZADANIA DOMOWE") },
+            "TERMINARZ", "Sprawdziany i wydarzenia", "🗓", Color.rgb(55, 112, 159), { loadLibrusSection("TERMINARZ") })
+        addMoreModuleRow(root,
+            "FREKWENCJA", "Miesięczny kalendarz obecności", "📅", Color.rgb(39, 126, 117), { loadLibrusSection("FREKWENCJA") },
+            "SZCZĘŚLIWY NUMEREK", "Numer na dzisiejszy dzień", "🍀", Color.rgb(63, 130, 91), { loadLibrusSection("SZCZĘŚLIWY NUMEREK") })
+        addMoreModuleRow(root,
+            "WIADOMOŚCI", "Kontakt ze szkołą i nauczycielami", "✉️", Color.rgb(119, 78, 153), { loadLibrusSection("WIADOMOŚCI") },
+            "KATALOG NAUCZYCIELI", "Osoby, przedmioty i kontakt", "👩‍🏫", Color.rgb(70, 104, 157), { loadLibrusSection("NAUCZYCIELE") })
+        addMoreModuleRow(root,
+            "DANE KONTA I SZKOŁY", "Uczeń, klasa i szkoła", "🏫", Color.rgb(47, 111, 157), { loadLibrusSection("PROFILE") },
+            "UWAGI", "Informacje o zachowaniu", "📝", Color.rgb(153, 105, 57), { loadLibrusSection("UWAGI") })
+
+        root.addView(sectionHeader("TWOJE NARZĘDZIA"), params(0, 17, 0, 7))
+        addMoreModuleRow(root,
+            "KALKULATOR ŚREDNIEJ", "Szybko policz średnią z ocen", "🧮", Color.rgb(76, 113, 184), { showGradeCalculator() },
+            "PLAN NAUKI", "Tematy do powtórki i postęp", "🎯", Color.rgb(49, 139, 119), { showStudyPlanner() })
+        addMoreModuleRow(root,
+            "KALENDARZ", "Wydarzenia szkolne i własne", "📆", Color.rgb(51, 112, 151), { loadLibrusSection("TERMINARZ") },
+            "NOTATKI", "Własne zapiski i szablony", "✍️", Color.rgb(105, 83, 151), { showPersonalNotes() })
+
+        root.addView(sectionHeader("ORGANIZACJA NA CO DZIEŃ"), params(0, 17, 0, 7))
+        addMoreModuleRow(root,
+            "LISTA ZAKUPÓW", "Listy i odhaczanie produktów", "🛒", Color.rgb(45, 125, 104), { showShoppingList() },
+            "PULPIT DNIA", "Najważniejsze informacje i skróty", "☀️", Color.rgb(43, 128, 111), { showHome() })
+
+        root.addView(sectionHeader("USTAWIENIA I APLIKACJA"), params(0, 17, 0, 7))
+        addMoreModuleRow(root,
+            "POWIADOMIENIA", "Alerty i harmonogram sprawdzania", "🔔", Color.rgb(153, 103, 62), { showNotificationSettings() },
+            "DIAGNOSTYKA", "Sprawdź działanie powiadomień", "🩺", Color.rgb(56, 128, 135), { showNotificationDiagnostics() })
+        addMoreModuleRow(root,
+            "WYGLĄD APLIKACJI", "Motyw i kolory interfejsu", "🎨", Color.rgb(91, 92, 158), { showAppearanceSettings(activeSection) },
+            "ZARZĄDZAJ PROFILAMI", "Dodaj lub przełącz konto", "👥", Color.rgb(74, 105, 151), { showProfileSwitcher() })
+        addMoreModuleRow(root,
+            "O AUTORZE", "Twórca i informacje o EduFlow", "✦", Color.rgb(76, 101, 130), { showAbout() },
+            "PULPIT DNIA", "Najważniejsze informacje i szkolne skróty", "☀️", Color.rgb(43, 128, 111), { showHome() })
+
+        root.addView(label("EduFlow  •  Twoja szkoła i codzienność w jednym miejscu", 10f, muted).apply {
+            gravity = Gravity.CENTER
+        }, params(0, 18, 0, 4))
+        showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun addMoreModuleRow(
+        parent: LinearLayout,
+        firstTitle: String, firstDescription: String, firstEmoji: String, firstAccent: Int, firstAction: () -> Unit,
+        secondTitle: String, secondDescription: String, secondEmoji: String, secondAccent: Int, secondAction: () -> Unit
+    ) {
+        val density = resources.displayMetrics.density
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+        addMoreModuleTile(row, firstTitle, firstDescription, firstEmoji, firstAccent, firstAction,
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = (5 * density).toInt() })
+        addMoreModuleTile(row, secondTitle, secondDescription, secondEmoji, secondAccent, secondAction,
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = (5 * density).toInt() })
+        parent.addView(row, params(0, 0, 0, 10))
+    }
+
+    private fun addMoreModuleTile(
+        parent: LinearLayout,
+        title: String,
+        description: String,
+        emoji: String,
+        accent: Int,
+        action: () -> Unit,
+        layoutParams: LinearLayout.LayoutParams
+    ) {
+        val density = resources.displayMetrics.density
+        val tile = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+            setPadding((13 * density).toInt(), (14 * density).toInt(), (12 * density).toInt(), (14 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(
+                Color.rgb(Color.red(accent) * 2 / 5 + 18, Color.green(accent) * 2 / 5 + 18, Color.blue(accent) * 2 / 5 + 18),
+                Color.rgb(25, 36, 55)
+            )).apply {
+                cornerRadius = 19f * density
+                setStroke((1 * density).toInt(), Color.argb(150, Color.red(accent), Color.green(accent), Color.blue(accent)))
+            }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+            minimumHeight = (140 * density).toInt()
+        }
+        val icon = TextView(this).apply {
+            text = emoji
+            textSize = 22f
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.argb(80, Color.red(accent), Color.green(accent), Color.blue(accent)))
+                cornerRadius = 13f * density
+            }
+        }
+        tile.addView(icon, LinearLayout.LayoutParams((42 * density).toInt(), (42 * density).toInt()))
+        tile.addView(label(title, 11.5f, Color.WHITE, true), params(0, 10, 0, 4))
+        tile.addView(label(description, 10.5f, Color.rgb(190, 205, 225)), params(0, 0, 0, 0))
+        parent.addView(tile, layoutParams)
+    }
 
     // ---------------------------------------------------------
     // PRYWATNE NARZĘDZIA — dane zapisywane lokalnie na urządzeniu
@@ -5596,7 +6167,10 @@ class MainActivity : Activity() {
             background = roundedBackground(panelLight, 13)
         }
         root.addView(search, params(0, 0, 0, 10))
-        root.addView(actionButton("+  DODAJ NOTATKĘ") { editPersonalNote(null) }, params(0, 0, 0, 12))
+        val noteActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        noteActions.addView(actionButton("+  DODAJ NOTATKĘ") { editPersonalNote(null) }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() })
+        noteActions.addView(actionButton("SZABLONY") { showNoteTemplates() }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(noteActions, params(0, 0, 0, 12))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(list)
 
@@ -5662,6 +6236,11 @@ class MainActivity : Activity() {
                     saveLocalArray("personal_notes", updated)
                     redraw()
                 }, params(0, 8, 0, 0))
+                val updatedAt = note.optLong("updated", 0L)
+                if (updatedAt > 0L) {
+                    val date = java.text.SimpleDateFormat("dd.MM.yyyy  •  HH:mm", Locale("pl", "PL")).format(java.util.Date(updatedAt))
+                    noteCard.addView(label("Ostatnia zmiana: $date", 10f, muted), params(0, 5, 0, 0))
+                }
                 noteCard.addView(label("Dotknij treści, aby edytować • przytrzymaj, aby usunąć", 10f, muted), params(0, 4, 0, 0))
                 list.addView(noteCard, params(0, 5, 0, 5))
             }
@@ -5675,21 +6254,38 @@ class MainActivity : Activity() {
         showPersonalToolPage(root, "WIĘCEJ")
     }
 
-    private fun editPersonalNote(existing: JSONObject?) {
+    private fun showNoteTemplates() {
+        val templates = arrayOf(
+            "Do zrobienia" to "☐ Zadanie:\n☐ Termin:\n☐ Ważne informacje:",
+            "Ważne informacje" to "Informacja:\n\nKontakt / numer:\nTermin:",
+            "Pomysł" to "Pomysł:\n\nCo będzie potrzebne:\nPierwszy krok:",
+            "Lista / plan" to "1. \n2. \n3. "
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Wybierz szablon notatki")
+            .setItems(templates.map { it.first }.toTypedArray()) { _, which ->
+                val template = templates[which]
+                editPersonalNote(null, template.first, template.second)
+            }
+            .setNegativeButton("Anuluj", null)
+            .show()
+    }
+
+    private fun editPersonalNote(existing: JSONObject?, initialTitle: String = "", initialBody: String = "") {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 0)
         }
         val titleInput = EditText(this).apply {
             hint = "Tytuł notatki"
-            setText(existing?.optString("title", "").orEmpty())
+            setText(existing?.optString("title", "").orEmpty().ifBlank { initialTitle })
             setTextColor(white)
             setHintTextColor(muted)
             setSingleLine(true)
         }
         val bodyInput = EditText(this).apply {
             hint = "Treść notatki"
-            setText(existing?.optString("body", "").orEmpty())
+            setText(existing?.optString("body", "").orEmpty().ifBlank { initialBody })
             setTextColor(white)
             setHintTextColor(muted)
             minLines = 5
@@ -5757,6 +6353,27 @@ class MainActivity : Activity() {
         val summary = label("", 13f, muted)
         root.addView(summary, params(0, 2, 0, 10))
         root.addView(actionButton("+  DODAJ PRODUKT") { addShoppingItem(activeId, null) }, params(0, 0, 0, 8))
+        root.addView(label("SZYBKIE DODAWANIE", 10f, Color.rgb(180, 205, 239), true), params(0, 2, 0, 5))
+        val frequentNames = listOf(
+            "Chleb" to "Pieczywo", "Marchew" to "Warzywa i owoce", "Jajka" to "Nabiał",
+            "Mleko" to "Nabiał", "Masło" to "Nabiał", "Ziemniaki" to "Warzywa i owoce",
+            "Banany" to "Warzywa i owoce", "Woda" to "Napoje"
+        )
+        val savedFrequent = readFrequentShoppingProducts()
+        val quickItems = (frequentNames + savedFrequent).distinctBy { it.first.lowercase(Locale.ROOT) }
+        val quickScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
+        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        quickItems.forEach { (productName, productCategory) ->
+            quickRow.addView(actionButton("+ $productName") {
+                addFrequentShoppingItem(activeId, productName, productCategory)
+            }.apply {
+                textSize = 11f
+                minHeight = (38 * resources.displayMetrics.density).toInt()
+                setPadding(10, 0, 10, 0)
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() })
+        }
+        quickScroll.addView(quickRow)
+        root.addView(quickScroll, params(0, 0, 0, 10))
         val filterScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -5775,6 +6392,47 @@ class MainActivity : Activity() {
         root.addView(list)
         redrawShoppingItems(categoryFilter, activeId, summary, list)
         showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun readFrequentShoppingProducts(): List<Pair<String, String>> {
+        val raw = uiPrefs.getString("frequent_shopping_products_v1", null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val name = item.optString("name").trim()
+                val category = item.optString("category", "Pozostałe")
+                if (name.isBlank()) null else name to category
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveFrequentShoppingProduct(name: String, category: String) {
+        val items = (readFrequentShoppingProducts() + (name.trim() to category))
+            .distinctBy { it.first.lowercase(Locale.ROOT) }
+            .take(30)
+        val array = JSONArray()
+        items.forEach { (productName, productCategory) ->
+            array.put(JSONObject().put("name", productName).put("category", productCategory))
+        }
+        uiPrefs.edit().putString("frequent_shopping_products_v1", array.toString()).apply()
+    }
+
+    private fun addFrequentShoppingItem(listId: String, name: String, category: String) {
+        val all = readLocalArray("shopping_items")
+        val duplicate = (0 until all.length()).mapNotNull { all.optJSONObject(it) }
+            .firstOrNull { it.optString("listId") == listId && !it.optBoolean("done", false) &&
+                it.optString("name").trim().equals(name, ignoreCase = true) }
+        if (duplicate != null) {
+            Toast.makeText(this, "$name jest już na tej liście.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        all.put(JSONObject().put("id", java.util.UUID.randomUUID().toString())
+            .put("listId", listId).put("name", name).put("quantity", "1")
+            .put("category", category).put("done", false))
+        saveLocalArray("shopping_items", all)
+        uiPrefs.edit().putString("active_shopping_list", listId).apply()
+        showShoppingList()
     }
 
     private fun redrawShoppingItems(categoryFilter: String, activeId: String, summary: TextView, list: LinearLayout) {
@@ -5899,6 +6557,13 @@ class MainActivity : Activity() {
         }
         val categoryNames = arrayOf("Warzywa i owoce", "Nabiał", "Pieczywo", "Mięso i ryby", "Napoje", "Chemia", "Pozostałe")
         var category = existing?.optString("category", "Pozostałe") ?: "Pozostałe"
+        val rememberFrequent = CheckBox(this).apply {
+            text = "Zapamiętaj jako często kupowany produkt"
+            setTextColor(white)
+            buttonTintList = android.content.res.ColorStateList.valueOf(accentColor)
+            isChecked = readFrequentShoppingProducts().any { it.first.equals(existing?.optString("name", ""), true) }
+            isEnabled = existing == null
+        }
         lateinit var categoryButton: Button
         categoryButton = actionButton("Kategoria: " + category) {
             AlertDialog.Builder(this).setTitle("Kategoria")
@@ -5911,6 +6576,7 @@ class MainActivity : Activity() {
         fields.addView(name)
         fields.addView(quantity, params(0, 6, 0, 6))
         fields.addView(categoryButton, params(0, 6, 0, 0))
+        if (existing == null) fields.addView(rememberFrequent, params(0, 6, 0, 0))
         AlertDialog.Builder(this).setTitle(if (existing == null) "Dodaj produkt" else "Edytuj produkt").setView(fields)
             .setNegativeButton("Anuluj", null).setPositiveButton("Zapisz") { _, _ ->
                 val productName = name.text.toString().trim()
@@ -5927,6 +6593,7 @@ class MainActivity : Activity() {
                         .put("quantity", quantity.text.toString().trim().ifBlank { "1" }).put("category", category)
                         .put("done", existing?.optBoolean("done", false) ?: false))
                     saveLocalArray("shopping_items", updated)
+                    if (existing == null && rememberFrequent.isChecked) saveFrequentShoppingProduct(productName, category)
                     uiPrefs.edit().putString("active_shopping_list", listId).apply()
                     showShoppingList()
                 }
