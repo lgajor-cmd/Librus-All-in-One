@@ -1153,6 +1153,9 @@ class MainActivity : Activity() {
         val teachers = data.optJSONObject("teachers")
         val classrooms = data.optJSONObject("classrooms")
 
+        // Rozdzielamy koszt przygotowania treści od budowania reszty ekranu.
+        // Dzięki temu log z urządzenia wskaże konkretny ciężki moduł.
+        val contentRenderStartedAt = SystemClock.elapsedRealtime()
         when (section) {
             "PLAN LEKCJI" -> renderTimetable(root, data, subjects, teachers, classrooms)
             "OCENY" -> renderGradesSection(root, data, subjects, teachers)
@@ -1173,6 +1176,10 @@ class MainActivity : Activity() {
             "NAUCZYCIELE" -> renderTeachersDirectory(root, data)
             "OŚ CZASU" -> renderSchoolTimeline(root, data)
             else -> root.addView(infoCard("Nieznana sekcja."))
+        }
+        val contentRenderDurationMs = SystemClock.elapsedRealtime() - contentRenderStartedAt
+        if (contentRenderDurationMs >= 80L) {
+            Log.d("EduFlowPerf", "section_content_render section=$section duration_ms=$contentRenderDurationMs child_views=${root.childCount}")
         }
 
         val scroll = ScrollView(this).apply {
