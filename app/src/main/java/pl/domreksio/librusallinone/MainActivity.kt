@@ -3167,7 +3167,7 @@ class MainActivity : Activity() {
         }
         val title = EditText(this).apply {
             hint = "Nazwa wydarzenia"
-            setText(existing?.optString("title", "").orEmpty().ifBlank { initialTitle })
+            setText(existing?.optString("title", "").orEmpty())
             setTextColor(white)
             setHintTextColor(muted)
             setSingleLine(true)
