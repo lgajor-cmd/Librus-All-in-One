@@ -5904,13 +5904,7 @@ class MainActivity : Activity() {
             "ZARZĄDZAJ PROFILAMI", "Dodaj lub przełącz konto", "👥", Color.rgb(74, 105, 151), { showProfileSwitcher() })
         addMoreModuleRow(root,
             "O AUTORZE", "Twórca i informacje o EduFlow", "✦", Color.rgb(76, 101, 130), { showAbout() },
-            "ODŚWIEŻ DANE", "Pobierz aktualne informacje z Librusa", "↻", Color.rgb(43, 128, 111), {
-                if (syncInProgress) {
-                    Toast.makeText(this, "Synchronizacja już trwa.", Toast.LENGTH_SHORT).show()
-                } else {
-                    syncLibrusData()
-                }
-            })
+            "PULPIT DNIA", "Najważniejsze informacje i szkolne skróty", "☀️", Color.rgb(43, 128, 111), { showHome() })
 
         root.addView(label("EduFlow  •  Twoja szkoła i codzienność w jednym miejscu", 10f, muted).apply {
             gravity = Gravity.CENTER
