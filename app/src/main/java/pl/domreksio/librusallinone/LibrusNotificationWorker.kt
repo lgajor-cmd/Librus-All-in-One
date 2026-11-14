@@ -18,6 +18,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.workDataOf
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.first
@@ -98,26 +99,27 @@ internal object LibrusNotificationDiagnostics {
 }
 
 object LibrusNotificationScheduler {
-    private const val UNIQUE_WORK = "librus-background-notifications"
+    private const val UNIQUE_WORK_PREFIX = "librus-background-notifications-"
 
-    fun schedule(context: Context) {
+    fun schedule(context: Context, profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID) {
         val request = PeriodicWorkRequestBuilder<LibrusNotificationWorker>(
             15, TimeUnit.MINUTES
         ).setConstraints(
             Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
-        ).build()
+        ).setInputData(workDataOf("profile_id" to profileId))
+            .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            UNIQUE_WORK,
+            UNIQUE_WORK_PREFIX + profileId,
             ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
     }
 
-    fun cancel(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK)
+    fun cancel(context: Context, profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID) {
+        WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_PREFIX + profileId)
     }
 }
 
@@ -127,8 +129,14 @@ class LibrusNotificationWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
+        val profileId = inputData.getString("profile_id")
+            ?.takeIf { it == LibrusProfileStore.LEGACY_PROFILE_ID || it.matches(Regex("[a-f0-9]{32}")) }
+            ?: LibrusProfileStore.LEGACY_PROFILE_ID
+        val profileName = LibrusProfileStore(applicationContext).getProfile(profileId)?.displayName
+            ?: "Konto Librus"
         LibrusNotificationDiagnostics.record(applicationContext, "running")
-        val vaultResult = LibrusCredentialVault(applicationContext).loadDetailed()
+        val vault = LibrusCredentialVault(applicationContext, profileId)
+        val vaultResult = vault.loadDetailed()
         val credentials = vaultResult.credentials ?: run {
             when (vaultResult.status) {
                 LibrusCredentialVault.LoadStatus.NOT_CONFIGURED ->
@@ -261,7 +269,7 @@ class LibrusNotificationWorker(
                 return Result.retry()
             }
             response.optJSONObject("session")?.let {
-                LibrusCredentialVault(applicationContext).updateSession(it.toString())
+                vault.updateSession(it.toString())
             }
 
             detectNewItems(
@@ -269,11 +277,13 @@ class LibrusNotificationWorker(
                 listOf("grades", "descriptive_grades", "partial_grades", "point_grades", "text_grades", "behaviour_grades"),
                 "grades",
                 "OCENY",
-                "Nowa ocena"
+                "Nowa ocena",
+                profileId,
+                profileName
             )
-            detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość")
-            detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga")
-            detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga")
+            detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość", profileId, profileName)
+            detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga", profileId, profileName)
+            detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga", profileId, profileName)
             val notificationStatus = applicationContext.getSharedPreferences(
                 "librus_notification_diagnostics",
                 Context.MODE_PRIVATE
@@ -313,7 +323,9 @@ class LibrusNotificationWorker(
         sourceKeys: List<String>,
         notificationKey: String,
         section: String,
-        title: String
+        title: String,
+        profileId: String,
+        profileName: String
     ) {
         val failedSections = data.optJSONArray("failed_sections")
         val failed = mutableSetOf<String>()
@@ -352,8 +364,9 @@ class LibrusNotificationWorker(
             }
         }
 
-        val prefKey = "known_$notificationKey"
-        val pendingSeedPrefKey = "pending_seed_$notificationKey"
+        val profilePrefix = if (profileId == LibrusProfileStore.LEGACY_PROFILE_ID) "" else "${profileId}_"
+        val prefKey = "${profilePrefix}known_$notificationKey"
+        val pendingSeedPrefKey = "${profilePrefix}pending_seed_$notificationKey"
         val legacyPrefix = sourceKeys.first()
         val previousRaw = prefs.getString(prefKey, null)
         val previousValues = previousRaw?.split("|")?.filter { it.isNotBlank() }
@@ -393,9 +406,10 @@ class LibrusNotificationWorker(
                     }
             }.orEmpty()
             val posted = postNotification(
-                title,
-                if (detail.isBlank()) "Otwórz aplikację, aby zobaczyć szczegóły." else detail,
-                section
+                "$title • $profileName",
+                if (detail.isBlank()) "Profil: $profileName. Otwórz EduFlow, aby zobaczyć szczegóły." else "$profileName: $detail",
+                section,
+                profileId
             )
             if (!posted) {
                 LibrusNotificationDiagnostics.record(
@@ -417,7 +431,7 @@ class LibrusNotificationWorker(
         return prefs.getBoolean(key, true)
     }
 
-    private fun postNotification(title: String, text: String, section: String): Boolean {
+    private fun postNotification(title: String, text: String, section: String, profileId: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
@@ -435,9 +449,10 @@ class LibrusNotificationWorker(
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("open_librus_section", section)
+            putExtra("profile_id", profileId)
         }
         val pending = PendingIntent.getActivity(
-            applicationContext, section.hashCode(), intent,
+            applicationContext, 31 * profileId.hashCode() + section.hashCode(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(applicationContext, "librus_updates")
@@ -449,7 +464,7 @@ class LibrusNotificationWorker(
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(applicationContext).notify(
-            (section + title + System.currentTimeMillis()).hashCode(), notification
+            (profileId + section + title + System.currentTimeMillis()).hashCode(), notification
         )
         return true
     }
