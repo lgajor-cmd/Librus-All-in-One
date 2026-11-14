@@ -6039,7 +6039,7 @@ class MainActivity : Activity() {
         }
         val titleInput = EditText(this).apply {
             hint = "Tytuł notatki"
-            setText(existing?.optString("title", "").orEmpty())
+            setText(existing?.optString("title", "").orEmpty().ifBlank { initialTitle })
             setTextColor(white)
             setHintTextColor(muted)
             setSingleLine(true)
