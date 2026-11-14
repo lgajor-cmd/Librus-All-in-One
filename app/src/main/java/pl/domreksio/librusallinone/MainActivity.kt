@@ -5837,6 +5837,137 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showGradeCalculator() {
+        val density = resources.displayMetrics.density
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (20 * density).toInt(), (18 * density).toInt(), (28 * density).toInt())
+            setBackgroundColor(bgColor)
+        }
+        root.addView(label("KALKULATOR ŚREDNIEJ", 11f, accentColor, true))
+        root.addView(label("Policz średnią arytmetyczną z ocen", 23f, white, true), params(0, 7, 0, 8))
+        root.addView(label("Wpisz oceny oddzielone średnikiem lub spacją. Możesz używać połówek i przecinków, np. 5; 4,5; 3.", 13f, muted), params(0, 0, 0, 16))
+        val input = EditText(this).apply {
+            hint = "Np. 5; 4,5; 3; 6"
+            setTextColor(white)
+            setHintTextColor(muted)
+            textSize = 17f
+            inputType = InputType.TYPE_CLASS_TEXT
+            setPadding((16 * density).toInt(), (14 * density).toInt(), (16 * density).toInt(), (14 * density).toInt())
+            background = roundedBackground(panelLight, 16)
+        }
+        root.addView(input, params(0, 0, 0, 12))
+        val resultCard = card()
+        val result = label("Tutaj pojawi się wynik.", 15f, muted)
+        resultCard.addView(label("TWOJA ŚREDNIA", 10f, accentColor, true))
+        resultCard.addView(result, params(0, 7, 0, 0))
+        root.addView(resultCard, params(0, 0, 0, 12))
+        root.addView(actionButton("OBLICZ ŚREDNIĄ") {
+            val raw = input.text.toString().trim()
+            val tokens = raw.split(Regex("[;\\s]+")).filter { it.isNotBlank() }
+            val grades = tokens.mapNotNull { token ->
+                token.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..6.0 }
+            }
+            if (tokens.isEmpty() || grades.size != tokens.size) {
+                result.text = "Sprawdź wpisane oceny. Dozwolony zakres to 1–6."
+                result.setTextColor(errorColor)
+            } else {
+                val average = grades.average()
+                val formatted = java.text.DecimalFormat("0.00", java.text.DecimalFormatSymbols(Locale("pl", "PL"))).format(average)
+                result.text = "$formatted  •  \${grades.size} ocen"
+                result.setTextColor(successColor)
+            }
+        }, params(0, 0, 0, 12))
+        root.addView(infoCard("To średnia arytmetyczna bez wag. Oficjalna średnia w Librusie może być liczona według wag ustalonych przez nauczyciela."))
+        root.addView(actionButton("←  WRÓĆ DO WIĘCEJ") { showMoreMenu("WIĘCEJ") }, params(0, 18, 0, 0))
+        showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun showStudyPlanner() {
+        val density = resources.displayMetrics.density
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((18 * density).toInt(), (20 * density).toInt(), (18 * density).toInt(), (28 * density).toInt())
+            setBackgroundColor(bgColor)
+        }
+        root.addView(label("ORGANIZACJA NAUKI", 11f, accentColor, true))
+        root.addView(label("Plan nauki", 25f, white, true), params(0, 7, 0, 5))
+        root.addView(label("Zapisuj tematy do powtórki i zaznaczaj te, które masz już opanowane.", 13f, muted), params(0, 0, 0, 14))
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        fun redraw() {
+            list.removeAllViews()
+            val items = readLocalArray("study_plan_items_v1")
+            val total = items.length()
+            var done = 0
+            for (i in 0 until items.length()) if (items.optJSONObject(i)?.optBoolean("done") == true) done++
+            val summary = card()
+            summary.addView(label("POSTĘP", 10f, accentColor, true))
+            summary.addView(label("$done z $total tematów ukończonych", 16f, white, true), params(0, 4, 0, 0))
+            list.addView(summary, params(0, 0, 0, 12))
+            if (total == 0) list.addView(infoCard("Twój plan jest pusty. Dodaj pierwszy temat, który chcesz powtórzyć."))
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding((12 * density).toInt(), (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
+                    background = roundedBackground(panel, 15)
+                }
+                val check = CheckBox(this).apply {
+                    text = item.optString("title")
+                    textSize = 14f
+                    setTextColor(white)
+                    isChecked = item.optBoolean("done")
+                    setOnCheckedChangeListener { _, checked ->
+                        val latest = readLocalArray("study_plan_items_v1")
+                        for (j in 0 until latest.length()) {
+                            val candidate = latest.optJSONObject(j) ?: continue
+                            if (candidate.optString("id") == item.optString("id")) candidate.put("done", checked)
+                        }
+                        saveLocalArray("study_plan_items_v1", latest)
+                        redraw()
+                    }
+                }
+                row.addView(check, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(actionButton("×") {
+                    val latest = readLocalArray("study_plan_items_v1")
+                    val kept = JSONArray()
+                    for (j in 0 until latest.length()) {
+                        val candidate = latest.optJSONObject(j) ?: continue
+                        if (candidate.optString("id") != item.optString("id")) kept.put(candidate)
+                    }
+                    saveLocalArray("study_plan_items_v1", kept)
+                    redraw()
+                }, LinearLayout.LayoutParams((42 * density).toInt(), (40 * density).toInt()))
+                list.addView(row, params(0, 0, 0, 7))
+            }
+        }
+        root.addView(actionButton("+  DODAJ TEMAT DO POWTÓRKI") {
+            val field = EditText(this).apply {
+                hint = "Np. Matematyka – ułamki"
+                setTextColor(white)
+                setHintTextColor(muted)
+                setSingleLine(true)
+            }
+            AlertDialog.Builder(this).setTitle("Nowy temat").setView(field)
+                .setNegativeButton("Anuluj", null)
+                .setPositiveButton("Dodaj") { _, _ ->
+                    val title = field.text.toString().trim()
+                    if (title.isNotBlank()) {
+                        val items = readLocalArray("study_plan_items_v1")
+                        items.put(JSONObject().put("id", java.util.UUID.randomUUID().toString())
+                            .put("title", title).put("done", false))
+                        saveLocalArray("study_plan_items_v1", items)
+                        redraw()
+                    }
+                }.show()
+        }, params(0, 0, 0, 12))
+        root.addView(list)
+        root.addView(actionButton("←  WRÓĆ DO WIĘCEJ") { showMoreMenu("WIĘCEJ") }, params(0, 18, 0, 0))
+        redraw()
+        showPersonalToolPage(root, "WIĘCEJ")
+    }
+
     private fun showMoreMenu(activeSection: String) {
         stopTimetableTicker()
         val density = resources.displayMetrics.density
@@ -5887,13 +6018,18 @@ class MainActivity : Activity() {
             "DANE KONTA I SZKOŁY", "Uczeń, klasa i szkoła", "🏫", Color.rgb(47, 111, 157), { loadLibrusSection("PROFILE") },
             "UWAGI", "Informacje o zachowaniu", "📝", Color.rgb(153, 105, 57), { loadLibrusSection("UWAGI") })
 
+        root.addView(sectionHeader("TWOJE NARZĘDZIA"), params(0, 17, 0, 7))
+        addMoreModuleRow(root,
+            "KALKULATOR ŚREDNIEJ", "Szybko policz średnią z ocen", "🧮", Color.rgb(76, 113, 184), { showGradeCalculator() },
+            "PLAN NAUKI", "Tematy do powtórki i postęp", "🎯", Color.rgb(49, 139, 119), { showStudyPlanner() })
+        addMoreModuleRow(root,
+            "KALENDARZ", "Wydarzenia szkolne i własne", "📆", Color.rgb(51, 112, 151), { loadLibrusSection("TERMINARZ") },
+            "NOTATKI", "Własne zapiski i szablony", "✍️", Color.rgb(105, 83, 151), { showPersonalNotes() })
+
         root.addView(sectionHeader("ORGANIZACJA NA CO DZIEŃ"), params(0, 17, 0, 7))
         addMoreModuleRow(root,
-            "NOTATKI", "Własne zapiski i szablony", "✍️", Color.rgb(105, 83, 151), { showPersonalNotes() },
-            "LISTA ZAKUPÓW", "Listy i odhaczanie produktów", "🛒", Color.rgb(45, 125, 104), { showShoppingList() })
-        addMoreModuleRow(root,
-            "KALENDARZ OSOBISTY", "Twoje wydarzenia i przypomnienia", "📆", Color.rgb(51, 112, 151), { loadLibrusSection("TERMINARZ") },
-            "SZYBKI DOSTĘP", "Wróć do ekranu głównego", "⌂", Color.rgb(74, 113, 139), { showHome() })
+            "LISTA ZAKUPÓW", "Listy i odhaczanie produktów", "🛒", Color.rgb(45, 125, 104), { showShoppingList() },
+            "PULPIT DNIA", "Najważniejsze informacje i skróty", "☀️", Color.rgb(43, 128, 111), { showHome() })
 
         root.addView(sectionHeader("USTAWIENIA I APLIKACJA"), params(0, 17, 0, 7))
         addMoreModuleRow(root,
@@ -5953,7 +6089,7 @@ class MainActivity : Activity() {
             isClickable = true
             isFocusable = true
             setOnClickListener { action() }
-            minimumHeight = (126 * density).toInt()
+            minimumHeight = (140 * density).toInt()
         }
         val icon = TextView(this).apply {
             text = emoji
@@ -5965,8 +6101,8 @@ class MainActivity : Activity() {
             }
         }
         tile.addView(icon, LinearLayout.LayoutParams((42 * density).toInt(), (42 * density).toInt()))
-        tile.addView(label(title, 11f, Color.WHITE, true), params(0, 10, 0, 3))
-        tile.addView(label(description, 10f, Color.rgb(190, 205, 225)), params(0, 0, 0, 0))
+        tile.addView(label(title, 11.5f, Color.WHITE, true), params(0, 10, 0, 4))
+        tile.addView(label(description, 10.5f, Color.rgb(190, 205, 225)), params(0, 0, 0, 0))
         parent.addView(tile, layoutParams)
     }
 
