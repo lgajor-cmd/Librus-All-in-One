@@ -760,6 +760,7 @@ class MainActivity : Activity() {
         }
 
         librusConnectButton.isEnabled = false
+        syncInProgress = true
         setLibrusStatus("Łączę się z Librusem. To może chwilę potrwać…", null)
 
         thread {
@@ -821,6 +822,7 @@ class MainActivity : Activity() {
             }
 
             runOnUiThread {
+                syncInProgress = false
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
                 val ok = result.startsWith("SUCCESS|")
