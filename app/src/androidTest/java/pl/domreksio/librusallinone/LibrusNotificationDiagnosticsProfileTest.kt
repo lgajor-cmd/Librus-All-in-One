@@ -55,6 +55,26 @@ class LibrusNotificationDiagnosticsProfileTest {
     }
 
     @Test
+    fun blockedNotificationStatusIsIsolatedBetweenProfiles() {
+        LibrusNotificationDiagnostics.record(
+            context,
+            "blocked",
+            "blokada ucznia",
+            studentProfileId
+        )
+
+        assertTrue(
+            LibrusNotificationDiagnostics.lastStatus(context, studentProfileId) == "blocked"
+        )
+        assertFalse(
+            LibrusNotificationDiagnostics.lastStatus(
+                context,
+                LibrusProfileStore.LEGACY_PROFILE_ID
+            ) == "blocked"
+        )
+    }
+
+    @Test
     fun notificationTogglesAreIndependentBetweenProfiles() {
         LibrusNotificationSettings.preferences(context, LibrusProfileStore.LEGACY_PROFILE_ID)
             .edit().putBoolean("grades", false).commit()
