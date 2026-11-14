@@ -774,13 +774,6 @@ class MainActivity : Activity() {
 
         thread {
             var connection: HttpURLConnection? = null
-            var payloadBuildMs = 0L
-            var requestWriteMs = 0L
-            var responseWaitMs = 0L
-            var responseReadMs = 0L
-            var jsonParseMs = 0L
-            var responseBytes = 0
-
             val result = try {
                 connection = URL("$BACKEND_URL/v1/connect")
                     .openConnection() as HttpURLConnection
@@ -900,6 +893,12 @@ class MainActivity : Activity() {
 
         thread {
             var connection: HttpURLConnection? = null
+            var payloadBuildMs = 0L
+            var requestWriteMs = 0L
+            var responseWaitMs = 0L
+            var responseReadMs = 0L
+            var jsonParseMs = 0L
+            var responseBytes = 0
 
             val result = try {
                 connection = URL("$BACKEND_URL/v1/sync")
