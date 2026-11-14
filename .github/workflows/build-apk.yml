@@ -12,11 +12,6 @@ on:
   push:
     branches:
       - main
-      - 'feature/**'
-      - 'improve/**'
-      - 'fix/**'
-      - 'release/**'
-      - 'audit/**'
 
 permissions:
   contents: read
