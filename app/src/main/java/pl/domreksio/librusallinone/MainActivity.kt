@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.SystemClock
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -19,6 +20,7 @@ import android.text.InputType
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -886,6 +888,7 @@ class MainActivity : Activity() {
 
         syncInProgress = true
         pendingNotificationSection = section
+        val syncStartedAt = SystemClock.elapsedRealtime()
         setLibrusStatus("Pobieram dane z Librusa…", null)
         showSectionLoading(section, "Pobieram dane z Librusa. Nie musisz klikać ponownie — ekran otworzy się automatycznie.")
 
@@ -943,6 +946,9 @@ class MainActivity : Activity() {
             } finally {
                 connection?.disconnect()
             }
+
+            val syncDurationMs = SystemClock.elapsedRealtime() - syncStartedAt
+            Log.d("EduFlowPerf", "section_sync section=$section duration_ms=$syncDurationMs result=" + if (result == "SUCCESS") "success" else "error")
 
             runOnUiThread {
                 syncInProgress = false
@@ -1024,6 +1030,7 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------
 
     private fun showLibrusSection(section: String, data: JSONObject) {
+        val renderStartedAt = SystemClock.elapsedRealtime()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 12, 18, 22)
@@ -1198,6 +1205,10 @@ class MainActivity : Activity() {
             root.alpha = 0f
             root.translationY = 12f * resources.displayMetrics.density
             root.animate().alpha(1f).translationY(0f).setDuration(280).start()
+        }
+        val renderDurationMs = SystemClock.elapsedRealtime() - renderStartedAt
+        if (renderDurationMs >= 120L) {
+            Log.d("EduFlowPerf", "section_render section=$section duration_ms=$renderDurationMs")
         }
     }
 
