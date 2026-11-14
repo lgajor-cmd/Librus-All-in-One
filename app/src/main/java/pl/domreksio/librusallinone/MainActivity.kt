@@ -5303,13 +5303,13 @@ class MainActivity : Activity() {
     }
 
     private fun showNotificationDiagnostics() {
-        val message = LibrusNotificationDiagnostics.summary(applicationContext)
+        val message = LibrusNotificationDiagnostics.summary(applicationContext, activeProfileId)
         AlertDialog.Builder(this)
             .setTitle("Diagnostyka powiadomień")
             .setMessage(message)
             .setPositiveButton("Odśwież") { _, _ -> showNotificationDiagnostics() }
             .setNeutralButton("Test lokalny") { _, _ ->
-                val sent = LibrusNotificationDiagnostics.sendTest(applicationContext)
+                val sent = LibrusNotificationDiagnostics.sendTest(applicationContext, activeProfileId)
                 val explanation = if (sent) {
                     "Wysłano testowe powiadomienie. Jeśli go nie widzisz, sprawdź ustawienia kanału „Aktualizacje EduFlow” i tryb Nie przeszkadzać."
                 } else {
