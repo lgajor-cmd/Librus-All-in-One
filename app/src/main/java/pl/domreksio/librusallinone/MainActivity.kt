@@ -774,6 +774,12 @@ class MainActivity : Activity() {
 
         thread {
             var connection: HttpURLConnection? = null
+            var payloadBuildMs = 0L
+            var requestWriteMs = 0L
+            var responseWaitMs = 0L
+            var responseReadMs = 0L
+            var jsonParseMs = 0L
+            var responseBytes = 0
 
             val result = try {
                 connection = URL("$BACKEND_URL/v1/connect")
@@ -907,23 +913,34 @@ class MainActivity : Activity() {
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 connection.setRequestProperty("Accept", "application/json")
 
+                val payloadStartedAt = SystemClock.elapsedRealtime()
                 val payload = JSONObject().apply {
                     put("profile", activeProfileType)
                     put("login", login)
                     put("password", password)
                     librusSessionMemory?.let { put("session", it) }
                 }
+                val payloadBytes = payload.toString().toByteArray(Charsets.UTF_8)
+                payloadBuildMs = SystemClock.elapsedRealtime() - payloadStartedAt
 
-                connection.outputStream.use {
-                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
-                }
+                val writeStartedAt = SystemClock.elapsedRealtime()
+                connection.outputStream.use { it.write(payloadBytes) }
+                requestWriteMs = SystemClock.elapsedRealtime() - writeStartedAt
 
+                val responseWaitStartedAt = SystemClock.elapsedRealtime()
                 val code = connection.responseCode
+                responseWaitMs = SystemClock.elapsedRealtime() - responseWaitStartedAt
+
+                val responseReadStartedAt = SystemClock.elapsedRealtime()
                 val body = readResponse(connection, code)
+                responseReadMs = SystemClock.elapsedRealtime() - responseReadStartedAt
+                responseBytes = body.toByteArray(Charsets.UTF_8).size
 
                 if (code in 200..299) {
+                    val parseStartedAt = SystemClock.elapsedRealtime()
                     val json = JSONObject(body)
                     val data = json.optJSONObject("data")
+                    jsonParseMs = SystemClock.elapsedRealtime() - parseStartedAt
 
                     if (data != null) {
                         librusDataMemory = data
@@ -948,7 +965,13 @@ class MainActivity : Activity() {
             }
 
             val syncDurationMs = SystemClock.elapsedRealtime() - syncStartedAt
-            Log.d("EduFlowPerf", "section_sync section=$section duration_ms=$syncDurationMs result=" + if (result == "SUCCESS") "success" else "error")
+            Log.d(
+                "EduFlowPerf",
+                "section_sync section=$section total_ms=$syncDurationMs payload_ms=$payloadBuildMs " +
+                    "write_ms=$requestWriteMs response_wait_ms=$responseWaitMs response_read_ms=$responseReadMs " +
+                    "json_parse_ms=$jsonParseMs response_bytes=$responseBytes result=" +
+                    if (result == "SUCCESS") "success" else "error"
+            )
 
             runOnUiThread {
                 syncInProgress = false
