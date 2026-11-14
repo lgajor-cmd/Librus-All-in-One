@@ -415,7 +415,7 @@ class LibrusNotificationWorker(
         }
 
         val newIds = stateDiff.newIds
-        if (newIds.isNotEmpty() && notificationsEnabled(notificationKey)) {
+        if (newIds.isNotEmpty() && notificationsEnabled(notificationKey, profileId)) {
             val newest = items.firstOrNull { it.first in newIds }?.second
             val detail = newest?.let {
                 listOf("title", "subject", "topic", "value", "text", "skill")
@@ -443,10 +443,8 @@ class LibrusNotificationWorker(
             .commit()
     }
 
-    private fun notificationsEnabled(key: String): Boolean {
-        val prefs = applicationContext.getSharedPreferences("librus_notification_settings", Context.MODE_PRIVATE)
-        return prefs.getBoolean(key, true)
-    }
+    private fun notificationsEnabled(key: String, profileId: String): Boolean =
+        LibrusNotificationSettings.preferences(applicationContext, profileId).getBoolean(key, true)
 
     private fun postNotification(title: String, text: String, section: String, profileId: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
