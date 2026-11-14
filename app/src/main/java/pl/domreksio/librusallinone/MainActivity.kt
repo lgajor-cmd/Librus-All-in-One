@@ -29,6 +29,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.ProgressBar
 import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
@@ -869,9 +870,10 @@ class MainActivity : Activity() {
         }
 
         if (syncInProgress) {
-            // Keep the latest requested destination instead of silently dropping
-            // navigation taps while a refresh is running.
+            // Nawigacja pozostaje aktywna podczas pobierania. Zapamiętujemy
+            // ostatnią wybraną zakładkę i od razu pokazujemy jej ekran ładowania.
             pendingNotificationSection = section
+            showSectionLoading(section, "Pobieranie danych trwa. Otworzę tę sekcję, gdy dane będą gotowe.")
             return
         }
 
@@ -887,6 +889,7 @@ class MainActivity : Activity() {
 
         syncInProgress = true
         setLibrusStatus("Pobieram dane z Librusa…", null)
+        showSectionLoading(section, "Pobieram dane z Librusa. Nie musisz klikać ponownie — ekran otworzy się automatycznie.")
 
         thread {
             var connection: HttpURLConnection? = null
@@ -954,10 +957,64 @@ class MainActivity : Activity() {
                     librusDataMemory?.let { showLibrusSection(destination, it) }
                 } else {
                     pendingNotificationSection = null
-                    setLibrusStatus(result.substringAfter("|"), false)
+                    val errorMessage = result.substringAfter("|")
+                    setLibrusStatus(errorMessage, false)
+                    showSectionLoadError(section, errorMessage)
                 }
             }
         }
+    }
+
+    private fun showSectionLoading(section: String, message: String) {
+        if (isFinishing || isDestroyed) return
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28, 28, 28, 28)
+        }
+        content.addView(label(section, 24f, white, true))
+        content.addView(ProgressBar(this).apply {
+            isIndeterminate = true
+            indeterminateTintList = android.content.res.ColorStateList.valueOf(accentColor)
+        }, LinearLayout.LayoutParams(
+            (42 * resources.displayMetrics.density).toInt(),
+            (42 * resources.displayMetrics.density).toInt()
+        ).apply { topMargin = (24 * resources.displayMetrics.density).toInt() })
+        content.addView(label("Chwileczkę…", 16f, white, true), params(0, 18, 0, 4))
+        content.addView(label(message, 13f, muted), params(0, 4, 0, 0))
+        page.addView(content, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        page.addView(buildBottomNavigation(section))
+        setContentView(page)
+    }
+
+    private fun showSectionLoadError(section: String, message: String) {
+        if (isFinishing || isDestroyed) return
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor)
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(28, 28, 28, 28)
+        }
+        content.addView(label(section, 24f, white, true))
+        content.addView(label("Nie udało się pobrać danych", 17f, errorColor, true), params(0, 18, 0, 6))
+        content.addView(label(message, 13f, muted), params(0, 4, 0, 18))
+        content.addView(actionButton("SPRÓBUJ PONOWNIE") {
+            loadLibrusSection(section)
+        })
+        page.addView(content, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        page.addView(buildBottomNavigation(section))
+        setContentView(page)
     }
 
     // ---------------------------------------------------------
