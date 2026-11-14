@@ -165,7 +165,12 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         profileStore = LibrusProfileStore(applicationContext)
-        val initialProfile = profileStore.ensureDefaultProfile()
+        val defaultProfile = profileStore.ensureDefaultProfile()
+        val notificationProfileId = intent?.getStringExtra("profile_id")
+        val initialProfile = notificationProfileId?.let { profileStore.getProfile(it) } ?: defaultProfile
+        if (initialProfile.id != defaultProfile.id) {
+            profileStore.setActiveProfileId(initialProfile.id)
+        }
         activeProfileId = initialProfile.id
         activeProfileType = initialProfile.accountType
         librusVault = LibrusCredentialVault(applicationContext, activeProfileId)
@@ -372,6 +377,10 @@ class MainActivity : Activity() {
         card.addView(librusStatusText, params(0, 6, 0, 0))
         card.addView(label("Hasło jest przechowywane lokalnie w zaszyfrowanym magazynie urządzenia. Połączenie z serwerem odbywa się przez HTTPS.", 11f, muted), params(0, 14, 0, 0))
         root.addView(card, LinearLayout.LayoutParams(-1, -2))
+        root.addView(
+            actionButton("ZMIEŃ LUB DODAJ PROFIL") { showProfileSwitcher() },
+            params(0, 14, 0, 0)
+        )
 
         setContentView(ScrollView(this).apply {
             setFillViewport(true)
@@ -700,7 +709,7 @@ class MainActivity : Activity() {
         content.addView(label("Przydatne rzeczy poza dziennikiem szkolnym.", 13f, muted), params(0, 0, 0, 8))
         addPersonalToolCard(content, "NOTATKI", "Szybkie zapiski, pomysły i ważne informacje", "📝") { showPersonalNotes() }
         addPersonalToolCard(content, "LISTA ZAKUPÓW", "Dodawaj produkty i odhaczaj je w sklepie", "🛒") { showShoppingList() }
-        addPersonalToolCard(content, "O AUTORZE", "Poznaj twórcę aplikacji Librus All-in-One", "⌘") { showAbout() }
+        addPersonalToolCard(content, "O AUTORZE", "Poznaj twórcę aplikacji EduFlow", "⌘") { showAbout() }
 
         content.addView(actionButton("USTAWIENIA POWIADOMIEŃ") {
             showNotificationSettings()
@@ -5157,7 +5166,7 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("librus_notification_settings", MODE_PRIVATE)
         val checked = BooleanArray(keys.size) { prefs.getBoolean(keys[it], true) }
         AlertDialog.Builder(this)
-            .setTitle("Powiadomienia Librus")
+            .setTitle("Powiadomienia EduFlow")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
             }
@@ -5180,9 +5189,9 @@ class MainActivity : Activity() {
             .setNeutralButton("Test lokalny") { _, _ ->
                 val sent = LibrusNotificationDiagnostics.sendTest(applicationContext)
                 val explanation = if (sent) {
-                    "Wysłano testowe powiadomienie. Jeśli go nie widzisz, sprawdź ustawienia kanału „Aktualizacje Librus” i tryb Nie przeszkadzać."
+                    "Wysłano testowe powiadomienie. Jeśli go nie widzisz, sprawdź ustawienia kanału „Aktualizacje EduFlow” i tryb Nie przeszkadzać."
                 } else {
-                    "Android blokuje powiadomienia aplikacji. Sprawdź uprawnienie i kanał „Aktualizacje Librus” w ustawieniach systemowych."
+                    "Android blokuje powiadomienia aplikacji. Sprawdź uprawnienie i kanał „Aktualizacje EduFlow” w ustawieniach systemowych."
                 }
                 AlertDialog.Builder(this)
                     .setTitle("Test powiadomień")
@@ -5595,7 +5604,7 @@ class MainActivity : Activity() {
             background = roundedBackground(panel, 18)
         }
         infoCard.addView(label("O PROJEKCIE", 10f, accentColor, true))
-        infoCard.addView(label("Librus All-in-One to niezależna aplikacja pomocnicza. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
+        infoCard.addView(label("EduFlow to niezależna aplikacja pomocnicza do obsługi szkolnych spraw. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
         content.addView(infoCard, params(0, 0, 0, 12))
         content.addView(actionButton("ZMIEN PROFIL / DODAJ KONTO") { showProfileSwitcher() }, params(0, 4, 0, 8))
         content.addView(actionButton("‹  WRÓĆ DO PULPITU") { showHome() }, params(0, 4, 0, 0))

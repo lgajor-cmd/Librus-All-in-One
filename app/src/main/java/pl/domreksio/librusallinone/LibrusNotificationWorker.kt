@@ -77,18 +77,18 @@ internal object LibrusNotificationDiagnostics {
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
-            NotificationChannel("librus_updates", "Aktualizacje Librus", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel("librus_updates", "Aktualizacje EduFlow", NotificationManager.IMPORTANCE_DEFAULT)
         )
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled() ||
             (Build.VERSION.SDK_INT >= 26 &&
                 manager.getNotificationChannel("librus_updates")?.importance == NotificationManager.IMPORTANCE_NONE)
         ) {
-            record(context, "blocked", "Powiadomienia aplikacji lub kanał Aktualizacje Librus są wyłączone w Androidzie.")
+            record(context, "blocked", "Powiadomienia aplikacji lub kanał Aktualizacje EduFlow są wyłączone w Androidzie.")
             return false
         }
         val notification = NotificationCompat.Builder(context, "librus_updates")
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Librus – test powiadomień")
+            .setContentTitle("EduFlow – test powiadomień")
             .setContentText("Powiadomienia na tym urządzeniu działają poprawnie.")
             .setAutoCancel(true)
             .build()
@@ -444,7 +444,7 @@ class LibrusNotificationWorker(
 
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
-            NotificationChannel("librus_updates", "Aktualizacje Librus", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel("librus_updates", "Aktualizacje EduFlow", NotificationManager.IMPORTANCE_DEFAULT)
         )
         if (!NotificationManagerCompat.from(applicationContext).areNotificationsEnabled() ||
             (Build.VERSION.SDK_INT >= 26 &&

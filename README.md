@@ -1,37 +1,52 @@
-# Librus All-in-One
+# EduFlow
 
-Aplikacja Android z własnym backendem FastAPI, automatyczną anonimową sesją urządzenia przez Supabase i bezstanową komunikacją z Librus Synergia przez Render.
+EduFlow to niezależna aplikacja Android do wygodnego przeglądania szkolnych informacji z kont Librus Synergia. Projekt wykorzystuje własny backend FastAPI, anonimową sesję urządzenia przez Supabase i komunikację HTTPS z usługą Render.
 
 ## Architektura
 
 - Android: natywna aplikacja Kotlin.
-- Uwierzytelnianie techniczne: anonimowa sesja Supabase Auth — użytkownik nie rejestruje się e-mailem ani nie potwierdza adresu.
-- Backend nadal weryfikuje token Supabase; endpointy API nie są publicznie dostępne bez sesji.
-- W panelu Supabase musi być włączona opcja Anonymous Sign-Ins (Authentication → Sign In / Providers → Anonymous).
-- Backend: FastAPI na Render.
-- Librus: `librus-synergia` 0.3.30; sesja Librusa przekazywana przez klienta i nieprzechowywana po stronie serwera.
-- Dane dostępne po synchronizacji: profil, oceny, frekwencja, plan lekcji, wiadomości, ogłoszenia, zadania domowe, terminarz, uwagi i szczęśliwy numerek — zależnie od uprawnień konta i dostępności sekcji w Librusie.
+- Uwierzytelnianie techniczne: anonimowa sesja Supabase Auth przypisana do instalacji urządzenia — użytkownik nie rejestruje się e-mailem.
+- Backend: FastAPI na Render; endpointy API wymagają prawidłowego tokenu Supabase.
+- Librus: biblioteka `librus-synergia` 0.3.30; sesje Librusa są przekazywane przez klienta i nie są przechowywane po stronie serwera.
+- Dane dostępne po synchronizacji zależą od uprawnień konta i dostępności sekcji w dzienniku.
 
-## Funkcje aplikacji
+## Profile rodzinne
 
-- Brak osobnej rejestracji i logowania e-mail; połączenie bezpośrednio danymi Librusa.
-- Supabase tworzy w tle anonimową sesję urządzenia. Po wyczyszczeniu danych aplikacji lub reinstalacji sesja nie może zostać odzyskana — użytkownik tworzy nową i ponownie łączy Librusa.
-- Bezpieczne lokalne przechowywanie poświadczeń Librusa.
-- Synchronizacja danych i aktualizacja zapisanej sesji.
-- Oceny, frekwencja, plan lekcji i wiadomości.
-- Sekcje zadań domowych, terminarza, uwag oraz szczęśliwego numerka.
-- Pobieranie pełnej treści wiadomości na żądanie.
+- Jedna instalacja może przechowywać wiele kont rodziców i uczniów/dzieci.
+- Każdy profil ma własną nazwę, typ konta, login, hasło, sesję Librusa i dane szkolne.
+- Dane logowania każdego profilu są szyfrowane osobnym kluczem AES-256-GCM przechowywanym w Android Keystore.
+- Przełączanie profili nie łączy ocen, frekwencji, planu lekcji ani terminarzy różnych kont.
+- Powiadomienia i stan wykrytych nowości są przypisane do właściwego profilu.
+- Usunięcie profilu usuwa tylko jego lokalne poświadczenia i sesję; pozostałe profile pozostają bez zmian.
+- Istniejące konto z poprzednich wersji jest automatycznie zachowywane jako profil rodzica o wewnętrznym identyfikatorze `parent`.
 
-Niektóre sekcje mogą być puste, jeśli Librus nie udostępnia ich na danym koncie. Pełna treść wiadomości może zostać oznaczona jako przeczytana przez Librusa.
+## Funkcje
+
+- Oceny, w tym oceny opisowe i symulator średniej.
+- Frekwencja i kalendarz obecności.
+- Plan lekcji z oznaczeniem aktualnej lekcji/przerwy.
+- Wiadomości i ogłoszenia.
+- Zadania domowe, terminarz, uwagi i szczęśliwy numerek.
+- Pełna treść wiadomości pobierana na żądanie.
+- Automatyczna synchronizacja w tle i powiadomienia, jeśli Android pozwala na pracę w tle.
+- Kontrola połączenia wykonywana podczas rzeczywistych operacji; pulpit nie wymaga ręcznego sprawdzania serwera.
+
+Niektóre funkcje, szczególnie operacje dostępne wyłącznie dla rodzica, wymagają profilu rodzica. Konto ucznia jest odrębnym profilem i nie otrzymuje uprawnień rodzicielskich.
+
+## Bezpieczeństwo i migracja
+
+- Nie zmieniamy identyfikatora aplikacji Androida `pl.domreksio.librusallinone`, aby zachować możliwość aktualizacji istniejącej instalacji.
+- Nie zmieniamy projektu Supabase, backendu ani klucza podpisu APK.
+- Dane logowania Librusa są przechowywane lokalnie w zaszyfrowanym magazynie.
+- Sesja Supabase jest wspólna dla instalacji urządzenia; po wyczyszczeniu danych aplikacji lub reinstalacji wymaga ponownego utworzenia.
 
 ## Budowanie i kontrola jakości
 
-Projekt zawiera Gradle Wrapper 8.11.1. Lokalnie budowanie uruchamiaj przez `./gradlew assembleDebug` (Linux/macOS) lub `gradlew.bat assembleDebug` (Windows); nie trzeba instalować osobnej wersji Gradle.
+Projekt zawiera Gradle Wrapper 8.11.1. Lokalnie budowanie uruchamiaj przez `./gradlew assembleDebug` (Linux/macOS) lub `gradlew.bat assembleDebug` (Windows).
 
-GitHub Actions uruchamia Android Lint, testy jednostkowe Androida, budowanie APK i weryfikację stałego podpisu wydawniczego. Backend ma osobny workflow: kontrolę zależności, `pip-audit`, kompilację i testy regresyjne `unittest`.
+GitHub Actions uruchamia Android Lint, testy jednostkowe, budowanie APK RELEASE oraz weryfikację stałego odcisku certyfikatu podpisu. Backend ma osobny workflow kontroli zależności, `pip-audit`, kompilacji i testów regresyjnych.
 
-Szczegóły zmian niezawodności oraz znane ograniczenia opisuje [audyt techniczny](docs/AUDIT-RELIABILITY.md).
-
+Szczegóły niezawodności oraz znane ograniczenia opisuje [audyt techniczny](docs/AUDIT-RELIABILITY.md).
 
 ## Informacje o źródłach
 

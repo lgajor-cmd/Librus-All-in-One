@@ -1,4 +1,4 @@
-name: Build Librus APK
+name: Build EduFlow APK
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
@@ -121,7 +121,7 @@ jobs:
         if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Librus-All-in-One-APK-RELEASE
+          name: EduFlow-APK-RELEASE
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -134,7 +134,7 @@ jobs:
         if: steps.signing.outputs.available != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: Librus-All-in-One-APK-DEBUG-ONLY
+          name: EduFlow-APK-DEBUG-ONLY
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
@@ -144,9 +144,9 @@ jobs:
         shell: bash
         run: |
           if [ "${{ steps.signing.outputs.available }}" = "true" ]; then
-            echo "### Librus APK: RELEASE" >> "$GITHUB_STEP_SUMMARY"
+            echo "### EduFlow APK: RELEASE" >> "$GITHUB_STEP_SUMMARY"
             echo "APK jest podpisany stalym kluczem wydawniczym." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "### Librus APK: DEBUG ONLY" >> "$GITHUB_STEP_SUMMARY"
+            echo "### EduFlow APK: DEBUG ONLY" >> "$GITHUB_STEP_SUMMARY"
             echo "Brak sekretow podpisu. Ten plik sluzy tylko do testow i nie jest stabilnym wydaniem." >> "$GITHUB_STEP_SUMMARY"
           fi
