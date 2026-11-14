@@ -237,7 +237,7 @@ class MainActivity : Activity() {
             setPadding(28, 40, 28, 40)
             setBackgroundColor(bgColor)
         }
-        content.addView(label("LIBRUS / ALL-IN-ONE", 13f, muted, true))
+        content.addView(label("EDUFLOW", 13f, muted, true))
         content.addView(label("Witaj!", 32f, white, true), params(0, 12, 0, 8))
         content.addView(label("Nie potrzebujesz osobnego konta ani adresu e-mail. Aplikacja tworzy bezpieczną sesję urządzenia, a następnie połączysz ją z Librusem.", 15f, muted))
         content.addView(label(message, 14f, muted), params(0, 18, 0, 8))
@@ -5531,7 +5531,7 @@ class MainActivity : Activity() {
                 intArrayOf(Color.TRANSPARENT, Color.argb(220, 10, 18, 34)))
         }
         heroText.addView(label("POZNAJ TWÓRCĘ", 10f, Color.rgb(133, 205, 255), true))
-        heroText.addView(label("Librus All-in-One", 25f, Color.WHITE, true), params(0, 3, 0, 0))
+        heroText.addView(label("EduFlow", 25f, Color.WHITE, true), params(0, 3, 0, 0))
         heroText.addView(label("Technologia, edukacja i wygoda w jednym miejscu", 12f, Color.rgb(205, 220, 240)))
         hero.addView(heroText, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT, Gravity.BOTTOM))
@@ -5575,7 +5575,7 @@ class MainActivity : Activity() {
         emailRow.setOnClickListener {
             val intent = Intent(Intent.ACTION_SENDTO).apply {
                 data = android.net.Uri.parse("mailto:LGajor@gmail.com")
-                putExtra(Intent.EXTRA_SUBJECT, "Kontakt — Librus All-in-One")
+                putExtra(Intent.EXTRA_SUBJECT, "Kontakt — EduFlow")
             }
             try {
                 startActivity(intent)
@@ -5595,6 +5595,7 @@ class MainActivity : Activity() {
         infoCard.addView(label("O PROJEKCIE", 10f, accentColor, true))
         infoCard.addView(label("Librus All-in-One to niezależna aplikacja pomocnicza. Nie jest oficjalnym produktem ani aplikacją firmy Librus. Dane szkolne są pobierane z konta użytkownika w zakresie udostępnianym przez dziennik i szkołę.", 12f, Color.rgb(190, 204, 224)), params(0, 5, 0, 0))
         content.addView(infoCard, params(0, 0, 0, 12))
+        content.addView(actionButton("ZMIEN PROFIL / DODAJ KONTO") { showProfileSwitcher() }, params(0, 4, 0, 8))
         content.addView(actionButton("‹  WRÓĆ DO PULPITU") { showHome() }, params(0, 4, 0, 0))
 
         val scroll = ScrollView(this).apply { addView(content) }
