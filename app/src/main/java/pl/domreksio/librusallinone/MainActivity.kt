@@ -3,7 +3,6 @@ package pl.domreksio.librusallinone
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -37,13 +36,8 @@ import android.widget.ProgressBar
 import android.widget.Toast
 import android.util.Base64
 import android.webkit.MimeTypeMap
-import com.russhwolf.settings.SharedPreferencesSettings
-import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.auth.SettingsCodeVerifierCache
-import io.github.jan.supabase.auth.SettingsSessionManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
-import io.github.jan.supabase.createSupabaseClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,12 +54,6 @@ import java.util.Locale
 import java.util.Calendar
 import kotlin.concurrent.thread
 
-private const val SUPABASE_URL =
-    "https://alegkhpqxdzuqjuuoawp.supabase.co"
-
-private const val SUPABASE_PUBLISHABLE_KEY =
-    "sb_publishable_gchAnvMxlFgvzdenD0QqWg_YoOtsTPe"
-
 internal const val BACKEND_URL =
     "https://librus-all-in-one-api.onrender.com"
 
@@ -74,33 +62,7 @@ class MainActivity : Activity() {
     private val activityScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // Use an explicit Android context instead of the no-arg Settings() initializer.
-    // The preference file and keys match supabase-kt's previous defaults, preserving sessions.
-    private val supabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        val appContext = applicationContext
-        val settings = SharedPreferencesSettings(
-            appContext.getSharedPreferences(
-                "${appContext.packageName}_preferences",
-                Context.MODE_PRIVATE
-            )
-        )
-        val settingsKeyPrefix = "sb-${SUPABASE_URL.removeSuffix("/").replace('/', '-').replace('.', '-')}"
-        createSupabaseClient(
-            supabaseUrl = SUPABASE_URL,
-            supabaseKey = SUPABASE_PUBLISHABLE_KEY
-        ) {
-            install(Auth) {
-                sessionManager = SettingsSessionManager(
-                    settings = settings,
-                    key = "$settingsKeyPrefix-${SettingsSessionManager.SETTINGS_KEY}"
-                )
-                codeVerifierCache = SettingsCodeVerifierCache(
-                    settings = settings,
-                    key = "$settingsKeyPrefix-${SettingsCodeVerifierCache.SETTINGS_KEY}"
-                )
-            }
-        }
-    }
+    private val supabase get() = SupabaseClientProvider.get(applicationContext)
 
     private lateinit var backendStatusText: TextView
 
