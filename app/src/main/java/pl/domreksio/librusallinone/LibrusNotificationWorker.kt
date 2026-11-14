@@ -134,8 +134,9 @@ class LibrusNotificationWorker(
         val profileId = inputData.getString("profile_id")
             ?.takeIf { it == LibrusProfileStore.LEGACY_PROFILE_ID || it.matches(Regex("[a-f0-9]{32}")) }
             ?: LibrusProfileStore.LEGACY_PROFILE_ID
-        val profileName = LibrusProfileStore(applicationContext).getProfile(profileId)?.displayName
-            ?: "Konto Librus"
+        val profile = LibrusProfileStore(applicationContext).getProfile(profileId)
+        val profileName = profile?.displayName ?: "Konto Librus"
+        val profileType = profile?.accountType ?: LibrusProfileStore.TYPE_PARENT
         LibrusNotificationDiagnostics.record(applicationContext, "running")
         val vault = LibrusCredentialVault(applicationContext, profileId)
         val vaultResult = vault.loadDetailed()
@@ -206,7 +207,7 @@ class LibrusNotificationWorker(
             connection = activeConnection
 
             val payload = JSONObject().apply {
-                put("profile", "parent")
+                put("profile", profileType)
                 put("notifications_only", true)
                 put("login", credentials.login)
                 put("password", credentials.password)
