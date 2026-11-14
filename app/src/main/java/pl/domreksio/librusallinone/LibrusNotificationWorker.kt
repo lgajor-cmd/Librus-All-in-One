@@ -50,12 +50,19 @@ internal object LibrusNotificationDiagnostics {
             .putLong("last_attempt", System.currentTimeMillis())
             .putString("last_status", status)
             .putString("last_detail", detail.take(400))
-        if (status == "success" || status == "partial_success") {
-            edit.putLong("last_success", System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        if (status == "success") {
+            edit.putLong("last_success", now)
                 .putLong("success_count", prefs.getLong("success_count", 0L) + 1L)
         }
-        if (status == "error" || status == "auth_required" || status == "blocked" || status == "partial_success" || status == "vault_error") {
+        if (status == "partial_success") {
+            edit.putLong("warning_count", prefs.getLong("warning_count", 0L) + 1L)
+        }
+        if (status == "error" || status == "auth_required" || status == "blocked" || status == "vault_error") {
             edit.putLong("error_count", prefs.getLong("error_count", 0L) + 1L)
+                .putLong("last_error_at", now)
+                .putString("last_error_detail", detail.take(400))
+                .putString("last_error_status", status)
         }
         edit.commit()
     }
@@ -64,6 +71,20 @@ internal object LibrusNotificationDiagnostics {
         context: Context,
         profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID
     ): String = preferences(context, profileId).getString("last_status", "").orEmpty()
+
+    /** Manual device tests are separate from background Librus sync attempts. */
+    fun recordLocalTest(
+        context: Context,
+        status: String,
+        detail: String = "",
+        profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID
+    ) {
+        preferences(context, profileId).edit()
+            .putLong("last_test_attempt", System.currentTimeMillis())
+            .putString("last_test_status", status)
+            .putString("last_test_detail", detail.take(400))
+            .commit()
+    }
 
     fun summary(
         context: Context,
@@ -82,8 +103,17 @@ internal object LibrusNotificationDiagnostics {
             "Ostatnie udane sprawdzenie: ${time("last_success")}\n" +
             "Status: $status\n" +
             "Udane sprawdzenia: ${prefs.getLong("success_count", 0L)}\n" +
+            "Ostrzeżenia: ${prefs.getLong("warning_count", 0L)}\n" +
             "Błędy: ${prefs.getLong("error_count", 0L)}" +
-            if (detail.isBlank()) "" else "\nSzczegóły: $detail"
+            (if (prefs.getString("last_error_detail", "").orEmpty().isBlank()) "" else
+                "\nOstatni błąd (${prefs.getString("last_error_status", "error")}): " +
+                    time("last_error_at") + "\n" + prefs.getString("last_error_detail", "").orEmpty()) +
+            (if (detail.isBlank()) "" else "\nSzczegóły ostatniej próby: $detail") +
+            (if (prefs.getString("last_test_status", "").orEmpty().isBlank()) "" else
+                "\nTest lokalny: ${prefs.getString("last_test_status", "")} (" +
+                    time("last_test_attempt") + ")" +
+                    (if (prefs.getString("last_test_detail", "").orEmpty().isBlank()) "" else
+                        "\nSzczegóły testu: " + prefs.getString("last_test_detail", "").orEmpty()))
     }
 
     fun sendTest(
@@ -94,7 +124,7 @@ internal object LibrusNotificationDiagnostics {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
         ) {
-            record(context, "blocked", "Brak uprawnienia Android POST_NOTIFICATIONS.", profileId)
+            recordLocalTest(context, "blocked", "Brak uprawnienia Android POST_NOTIFICATIONS.", profileId)
             return false
         }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -105,7 +135,7 @@ internal object LibrusNotificationDiagnostics {
             (Build.VERSION.SDK_INT >= 26 &&
                 manager.getNotificationChannel("librus_updates")?.importance == NotificationManager.IMPORTANCE_NONE)
         ) {
-            record(context, "blocked", "Powiadomienia aplikacji lub kanał Aktualizacje EduFlow są wyłączone w Androidzie.", profileId)
+            recordLocalTest(context, "blocked", "Powiadomienia aplikacji lub kanał Aktualizacje EduFlow są wyłączone w Androidzie.", profileId)
             return false
         }
         val notification = NotificationCompat.Builder(context, "librus_updates")
@@ -115,7 +145,7 @@ internal object LibrusNotificationDiagnostics {
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context).notify(41001, notification)
-        record(context, "test_sent", "Wysłano test lokalny; nie sprawdza on jeszcze synchronizacji Librusa.", profileId)
+        recordLocalTest(context, "success", "Wysłano test lokalny; nie sprawdza on jeszcze synchronizacji Librusa.", profileId)
         return true
     }
 }

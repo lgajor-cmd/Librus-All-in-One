@@ -41,6 +41,13 @@ class LibrusCredentialVault(
         val credentials: Credentials? = null
     )
 
+    init {
+        require(
+            profile == LibrusProfileStore.LEGACY_PROFILE_ID ||
+                profile.matches(Regex("[a-f0-9]{32}"))
+        ) { "Nieprawidłowy identyfikator profilu." }
+    }
+
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(
         "librus_secure_vault",

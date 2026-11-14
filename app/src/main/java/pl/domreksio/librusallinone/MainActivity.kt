@@ -5846,7 +5846,7 @@ class MainActivity : Activity() {
         }
         root.addView(label("KALKULATOR ŚREDNIEJ", 11f, accentColor, true))
         root.addView(label("Policz średnią arytmetyczną z ocen", 23f, white, true), params(0, 7, 0, 8))
-        root.addView(label("Wpisz oceny oddzielone średnikiem lub spacją. Możesz używać połówek i przecinków, np. 5; 4,5; 3.", 13f, muted), params(0, 0, 0, 16))
+        root.addView(label("Wpisz oceny oddzielone średnikiem lub spacją. Obsługiwane są połówki, przecinki oraz plusy i minusy, np. 5; 4,5; 4+; 3.", 13f, muted), params(0, 0, 0, 16))
         val input = EditText(this).apply {
             hint = "Np. 5; 4,5; 3; 6"
             setTextColor(white)
@@ -5863,18 +5863,14 @@ class MainActivity : Activity() {
         resultCard.addView(result, params(0, 7, 0, 0))
         root.addView(resultCard, params(0, 0, 0, 12))
         root.addView(actionButton("OBLICZ ŚREDNIĄ") {
-            val raw = input.text.toString().trim()
-            val tokens = raw.split(Regex("[;\\s]+")).filter { it.isNotBlank() }
-            val grades = tokens.mapNotNull { token ->
-                token.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..6.0 }
-            }
-            if (tokens.isEmpty() || grades.size != tokens.size) {
-                result.text = "Sprawdź wpisane oceny. Dozwolony zakres to 1–6."
+            val calculation = GradeAverageCalculator.calculate(input.text.toString())
+            if (calculation == null) {
+                result.text = "Sprawdź wpisane oceny. Dozwolony zakres to 1–6, np. 5; 4,5; 4+."
                 result.setTextColor(errorColor)
             } else {
-                val average = grades.average()
-                val formatted = java.text.DecimalFormat("0.00", java.text.DecimalFormatSymbols(Locale("pl", "PL"))).format(average)
-                result.text = "$formatted  •  ${grades.size} ocen"
+                val formatted = java.text.DecimalFormat("0.00", java.text.DecimalFormatSymbols(Locale.forLanguageTag("pl-PL")))
+                    .format(calculation.average)
+                result.text = "$formatted  •  " + calculation.grades.size + " ocen"
                 result.setTextColor(successColor)
             }
         }, params(0, 0, 0, 12))
