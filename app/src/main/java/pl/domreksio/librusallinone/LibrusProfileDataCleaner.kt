@@ -47,5 +47,13 @@ internal object LibrusProfileDataCleaner {
         check(preferences.edit().clear().commit()) {
             "Nie udało się wyczyścić lokalnych danych profilu."
         }
+        if (baseName == "librus_school_profile" &&
+            profileId == LibrusProfileStore.LEGACY_PROFILE_ID
+        ) {
+            check(context.getSharedPreferences(baseName, Context.MODE_PRIVATE)
+                .edit().clear().commit()) {
+                "Nie udało się usunąć przeniesionych danych szkoły profilu."
+            }
+        }
     }
 }
