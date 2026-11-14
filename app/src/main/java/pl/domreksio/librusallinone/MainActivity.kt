@@ -5842,56 +5842,75 @@ class MainActivity : Activity() {
         val density = resources.displayMetrics.density
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding((16 * density).toInt(), (18 * density).toInt(), (16 * density).toInt(), (24 * density).toInt())
+            setPadding((16 * density).toInt(), (18 * density).toInt(), (16 * density).toInt(), (28 * density).toInt())
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, pageGradient)
         }
-        root.addView(label("CENTRUM NARZĘDZI", 11f, Color.rgb(180, 205, 239), true))
-        root.addView(label("Wszystko, czego potrzebujesz", 23f, white, true), params(0, 5, 0, 3))
-        root.addView(label("Szkoła, organizacja dnia i prywatne sprawy w jednym miejscu.", 13f, muted), params(0, 0, 0, 16))
 
-        val quickPanel = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((14 * density).toInt(), (12 * density).toInt(), (14 * density).toInt(), (12 * density).toInt())
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.rgb(36, 69, 104), Color.rgb(43, 52, 91))).apply {
-                cornerRadius = 18f * density
-                setStroke((1 * density).toInt(), Color.rgb(78, 111, 158))
+        // Hero: bardziej przypomina centrum aplikacji niż zwykłą listę ustawień.
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * density).toInt(), (20 * density).toInt(), (20 * density).toInt(), (20 * density).toInt())
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(35, 83, 128), Color.rgb(61, 61, 116), Color.rgb(34, 48, 75))
+            ).apply {
+                cornerRadius = 25f * density
+                setStroke((1 * density).toInt(), Color.rgb(92, 128, 184))
             }
+            elevation = 3f * density
         }
-        quickPanel.addView(TextView(this).apply { text = "✦"; textSize = 25f; setTextColor(Color.rgb(133, 195, 255)) },
-            LinearLayout.LayoutParams((36 * density).toInt(), -2))
-        val quickText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        quickText.addView(label("SZYBKI DOSTĘP", 10f, Color.rgb(170, 205, 245), true))
-        quickText.addView(label("Notatki i zakupy zawsze pod ręką", 13f, white, true))
-        quickPanel.addView(quickText, LinearLayout.LayoutParams(0, -2, 1f))
-        quickPanel.addView(label("›", 26f, white, true))
-        quickPanel.isClickable = true
-        quickPanel.isFocusable = true
-        quickPanel.setOnClickListener { showPersonalNotes() }
-        root.addView(quickPanel, params(0, 0, 0, 18))
+        hero.addView(label("EDUFLOW  /  TWOJE CENTRUM", 10f, Color.rgb(190, 218, 255), true))
+        hero.addView(label("Więcej możliwości.", 25f, Color.WHITE, true), params(0, 7, 0, 3))
+        hero.addView(label("Szkoła, planowanie i codzienne sprawy — wszystko w jednym miejscu.", 12f, Color.rgb(222, 232, 248)), params(0, 0, 0, 14))
+        val heroActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val profileButton = actionButton("👤  PROFILE") { showProfileSwitcher() }
+        val notesButton = actionButton("✎  NOTATKI") { showPersonalNotes() }
+        heroActions.addView(profileButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * density).toInt() })
+        heroActions.addView(notesButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = (6 * density).toInt() })
+        hero.addView(heroActions)
+        root.addView(hero, params(0, 0, 0, 20))
 
-        root.addView(sectionHeader("MODUŁY SZKOLNE"), params(0, 0, 0, 8))
-        addMoreModuleCard(root, "DANE KONTA I SZKOŁY", "Uczeń, klasa, szkoła i nauczyciele", "🏫", Color.rgb(47, 111, 157)) { loadLibrusSection("PROFILE") }
-        addMoreModuleCard(root, "OCENY I POSTĘPY", "Oceny bieżące, opisowe i wyniki nauki", "📊", Color.rgb(67, 103, 177)) { loadLibrusSection("OCENY") }
-        addMoreModuleCard(root, "PLAN LEKCJI", "Dzienny i tygodniowy harmonogram zajęć", "⏰", Color.rgb(42, 119, 145)) { loadLibrusSection("PLAN LEKCJI") }
-        addMoreModuleCard(root, "WIADOMOŚCI", "Wiadomości od szkoły i ogłoszenia", "✉️", Color.rgb(119, 78, 153)) { loadLibrusSection("WIADOMOŚCI") }
-        addMoreModuleCard(root, "FREKWENCJA", "Obecności, nieobecności i spóźnienia", "📅", Color.rgb(39, 126, 117)) { loadLibrusSection("FREKWENCJA") }
-        addMoreModuleCard(root, "ZADANIA DOMOWE", "Prace do wykonania i terminy", "📚", Color.rgb(103, 86, 158)) { loadLibrusSection("ZADANIA DOMOWE") }
-        addMoreModuleCard(root, "TERMINARZ", "Sprawdziany, wydarzenia i kalendarz", "🗓", Color.rgb(55, 112, 159)) { loadLibrusSection("TERMINARZ") }
-        addMoreModuleCard(root, "UWAGI", "Pozytywne, neutralne i negatywne", "📝", Color.rgb(153, 105, 57)) { loadLibrusSection("UWAGI") }
-        addMoreModuleCard(root, "SZCZĘŚLIWY NUMEREK", "Numer obowiązujący danego dnia", "🍀", Color.rgb(63, 130, 91)) { loadLibrusSection("SZCZĘŚLIWY NUMEREK") }
-        addMoreModuleCard(root, "KATALOG NAUCZYCIELI", "Nauczyciele, przedmioty i kontakt", "👩‍🏫", Color.rgb(70, 104, 157)) { loadLibrusSection("NAUCZYCIELE") }
+        root.addView(sectionHeader("SZKOŁA I NAUKA"), params(0, 0, 0, 7))
+        addMoreModuleRow(root,
+            "OCENY I POSTĘPY", "Oceny, średnie i wyniki", "📊", Color.rgb(67, 103, 177), { loadLibrusSection("OCENY") },
+            "PLAN LEKCJI", "Dzień, tydzień i godziny", "⏰", Color.rgb(42, 119, 145), { loadLibrusSection("PLAN LEKCJI") })
+        addMoreModuleRow(root,
+            "ZADANIA DOMOWE", "Prace i terminy do wykonania", "📚", Color.rgb(103, 86, 158), { loadLibrusSection("ZADANIA DOMOWE") },
+            "TERMINARZ", "Sprawdziany i wydarzenia", "🗓", Color.rgb(55, 112, 159), { loadLibrusSection("TERMINARZ") })
+        addMoreModuleRow(root,
+            "FREKWENCJA", "Miesięczny kalendarz obecności", "📅", Color.rgb(39, 126, 117), { loadLibrusSection("FREKWENCJA") },
+            "SZCZĘŚLIWY NUMEREK", "Numer na dzisiejszy dzień", "🍀", Color.rgb(63, 130, 91), { loadLibrusSection("SZCZĘŚLIWY NUMEREK") })
+        addMoreModuleRow(root,
+            "WIADOMOŚCI", "Kontakt ze szkołą i nauczycielami", "✉️", Color.rgb(119, 78, 153), { loadLibrusSection("WIADOMOŚCI") },
+            "KATALOG NAUCZYCIELI", "Osoby, przedmioty i kontakt", "👩‍🏫", Color.rgb(70, 104, 157), { loadLibrusSection("NAUCZYCIELE") })
+        addMoreModuleRow(root,
+            "DANE KONTA I SZKOŁY", "Uczeń, klasa i szkoła", "🏫", Color.rgb(47, 111, 157), { loadLibrusSection("PROFILE") },
+            "UWAGI", "Informacje o zachowaniu", "📝", Color.rgb(153, 105, 57), { loadLibrusSection("UWAGI") })
 
-        root.addView(sectionHeader("ORGANIZACJA I PRYWATNE"), params(0, 16, 0, 8))
-        addMoreModuleCard(root, "NOTATKI", "Pomysły, ważne informacje i szablony", "📝", Color.rgb(105, 83, 151)) { showPersonalNotes() }
-        addMoreModuleCard(root, "LISTA ZAKUPÓW", "Szybkie produkty i własne listy", "🛒", Color.rgb(45, 125, 104)) { showShoppingList() }
-        addMoreModuleCard(root, "KALENDARZ OSOBISTY", "Prywatne wydarzenia i przypomnienia w terminarzu", "📆", Color.rgb(51, 112, 151)) { loadLibrusSection("TERMINARZ") }
+        root.addView(sectionHeader("ORGANIZACJA NA CO DZIEŃ"), params(0, 17, 0, 7))
+        addMoreModuleRow(root,
+            "NOTATKI", "Własne zapiski i szablony", "✍️", Color.rgb(105, 83, 151), { showPersonalNotes() },
+            "LISTA ZAKUPÓW", "Listy i odhaczanie produktów", "🛒", Color.rgb(45, 125, 104), { showShoppingList() })
+        addMoreModuleRow(root,
+            "KALENDARZ OSOBISTY", "Twoje wydarzenia i przypomnienia", "📆", Color.rgb(51, 112, 151), { loadLibrusSection("TERMINARZ") },
+            "SZYBKI DOSTĘP", "Wróć do ekranu głównego", "⌂", Color.rgb(74, 113, 139), { showHome() })
 
-        root.addView(sectionHeader("USTAWIENIA I INFORMACJE"), params(0, 16, 0, 8))
-        addMoreModuleCard(root, "POWIADOMIENIA", "Ustaw alerty i harmonogram sprawdzania", "🔔", Color.rgb(153, 103, 62)) { showNotificationSettings() }
-        addMoreModuleCard(root, "WYGLĄD APLIKACJI", "Kolory, motyw i efekty interfejsu", "🎨", Color.rgb(91, 92, 158)) { showAppearanceSettings(activeSection) }
-        addMoreModuleCard(root, "O AUTORZE", "Informacje o projekcie EduFlow", "✦", Color.rgb(76, 101, 130)) { showAbout() }
+        root.addView(sectionHeader("USTAWIENIA I APLIKACJA"), params(0, 17, 0, 7))
+        addMoreModuleRow(root,
+            "POWIADOMIENIA", "Alerty i harmonogram sprawdzania", "🔔", Color.rgb(153, 103, 62), { showNotificationSettings() },
+            "DIAGNOSTYKA", "Sprawdź działanie powiadomień", "🩺", Color.rgb(56, 128, 135), { showNotificationDiagnostics() })
+        addMoreModuleRow(root,
+            "WYGLĄD APLIKACJI", "Motyw i kolory interfejsu", "🎨", Color.rgb(91, 92, 158), { showAppearanceSettings(activeSection) },
+            "ZARZĄDZAJ PROFILAMI", "Dodaj lub przełącz konto", "👥", Color.rgb(74, 105, 151), { showProfileSwitcher() })
+        addMoreModuleRow(root,
+            "O AUTORZE", "Twórca i informacje o EduFlow", "✦", Color.rgb(76, 101, 130), { showAbout() },
+            "ODŚWIEŻ DANE", "Pobierz aktualne informacje z Librusa", "↻", Color.rgb(43, 128, 111), {
+                if (syncInProgress) {
+                    Toast.makeText(this, "Synchronizacja już trwa.", Toast.LENGTH_SHORT).show()
+                } else {
+                    syncLibrusData()
+                }
+            })
 
         root.addView(label("EduFlow  •  Twoja szkoła i codzienność w jednym miejscu", 10f, muted).apply {
             gravity = Gravity.CENTER
@@ -5899,52 +5918,63 @@ class MainActivity : Activity() {
         showPersonalToolPage(root, "WIĘCEJ")
     }
 
-    private fun addMoreModuleCard(
+    private fun addMoreModuleRow(
+        parent: LinearLayout,
+        firstTitle: String, firstDescription: String, firstEmoji: String, firstAccent: Int, firstAction: () -> Unit,
+        secondTitle: String, secondDescription: String, secondEmoji: String, secondAccent: Int, secondAction: () -> Unit
+    ) {
+        val density = resources.displayMetrics.density
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+        }
+        addMoreModuleTile(row, firstTitle, firstDescription, firstEmoji, firstAccent, firstAction,
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginEnd = (5 * density).toInt() })
+        addMoreModuleTile(row, secondTitle, secondDescription, secondEmoji, secondAccent, secondAction,
+            LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = (5 * density).toInt() })
+        parent.addView(row, params(0, 0, 0, 10))
+    }
+
+    private fun addMoreModuleTile(
         parent: LinearLayout,
         title: String,
         description: String,
         emoji: String,
         accent: Int,
-        action: () -> Unit
+        action: () -> Unit,
+        layoutParams: LinearLayout.LayoutParams
     ) {
         val density = resources.displayMetrics.density
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding((14 * density).toInt(), (11 * density).toInt(), (13 * density).toInt(), (11 * density).toInt())
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(
-                    Color.rgb(Color.red(accent) * 2 / 5 + 18, Color.green(accent) * 2 / 5 + 18, Color.blue(accent) * 2 / 5 + 18),
-                    Color.rgb(27, 39, 57)
-                )).apply {
-                cornerRadius = 17f * density
-                setStroke((1 * density).toInt(), Color.argb(125, Color.red(accent), Color.green(accent), Color.blue(accent)))
+        val tile = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.START
+            setPadding((13 * density).toInt(), (14 * density).toInt(), (12 * density).toInt(), (14 * density).toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(
+                Color.rgb(Color.red(accent) * 2 / 5 + 18, Color.green(accent) * 2 / 5 + 18, Color.blue(accent) * 2 / 5 + 18),
+                Color.rgb(25, 36, 55)
+            )).apply {
+                cornerRadius = 19f * density
+                setStroke((1 * density).toInt(), Color.argb(150, Color.red(accent), Color.green(accent), Color.blue(accent)))
             }
             isClickable = true
             isFocusable = true
             setOnClickListener { action() }
+            minimumHeight = (126 * density).toInt()
         }
-        val iconTile = TextView(this).apply {
+        val icon = TextView(this).apply {
             text = emoji
-            textSize = 23f
+            textSize = 22f
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
-                setColor(Color.argb(65, Color.red(accent), Color.green(accent), Color.blue(accent)))
+                setColor(Color.argb(80, Color.red(accent), Color.green(accent), Color.blue(accent)))
                 cornerRadius = 13f * density
             }
         }
-        card.addView(iconTile, LinearLayout.LayoutParams((46 * density).toInt(), (46 * density).toInt()))
-        val textBox = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((12 * density).toInt(), 0, 0, 0)
-            addView(label(title, 12f, white, true))
-            addView(label(description, 11f, Color.rgb(194, 208, 228)))
-        }
-        card.addView(textBox, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(label("›", 25f, Color.rgb(174, 198, 225), true))
-        parent.addView(card, params(0, 4, 0, 4))
+        tile.addView(icon, LinearLayout.LayoutParams((42 * density).toInt(), (42 * density).toInt()))
+        tile.addView(label(title, 11f, Color.WHITE, true), params(0, 10, 0, 3))
+        tile.addView(label(description, 10f, Color.rgb(190, 205, 225)), params(0, 0, 0, 0))
+        parent.addView(tile, layoutParams)
     }
-
 
     // ---------------------------------------------------------
     // PRYWATNE NARZĘDZIA — dane zapisywane lokalnie na urządzeniu
