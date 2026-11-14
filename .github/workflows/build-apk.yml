@@ -104,24 +104,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          script: |
-            set -o pipefail
-            collect_diagnostics() {
-              mkdir -p "$RUNNER_TEMP"
-              adb devices -l > "$RUNNER_TEMP/android-adb-devices.txt" 2>&1 || true
-              adb logcat -d -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" 2>&1 || true
-              adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" 2>&1 || true
-              adb shell dumpsys meminfo > "$RUNNER_TEMP/android-emulator-meminfo.txt" 2>&1 || true
-            }
-            trap collect_diagnostics EXIT
-            adb wait-for-device
-            adb shell 'for i in $(seq 1 60); do [ "$(getprop sys.boot_completed)" = "1" ] && exit 0; sleep 2; done; exit 1'
-            sleep 5
-            # Build APKs and run instrumentation directly to avoid UTP's additionalTestOutputDir permission issue.
-            ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1 && cat "$RUNNER_TEMP/android-instrumentation-result.txt" && grep -Eq "OK \\([0-9]+ tests?\\)" "$RUNNER_TEMP/android-instrumentation-result.txt" && ! grep -q "FAILURES!!!" "$RUNNER_TEMP/android-instrumentation-result.txt" || { cat "$RUNNER_TEMP/android-instrumentation-result.txt"; echo "Instrumentation smoke test failed."; exit 1; }
+          script: bash -c 'set -e; trap "mkdir -p \"$RUNNER_TEMP\"; adb devices -l > \"$RUNNER_TEMP/android-adb-devices.txt\" 2>&1 || true; adb logcat -d -v threadtime > \"$RUNNER_TEMP/android-emulator-logcat.txt\" 2>&1 || true; adb shell dumpsys activity activities > \"$RUNNER_TEMP/android-emulator-activities.txt\" 2>&1 || true; adb shell dumpsys meminfo > \"$RUNNER_TEMP/android-emulator-meminfo.txt\" 2>&1 || true" EXIT; adb wait-for-device; adb shell \'for i in $(seq 1 60); do [ "$(getprop sys.boot_completed)" = "1" ] && exit 0; sleep 2; done; exit 1\'; sleep 5; ./gradlew assembleDebug assembleDebugAndroidTest --stacktrace; adb install -r app/build/outputs/apk/debug/app-debug.apk; adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk; adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner > "$RUNNER_TEMP/android-instrumentation-result.txt" 2>&1; cat "$RUNNER_TEMP/android-instrumentation-result.txt"; grep -Eq "OK \\([0-9]+ tests?\\)" "$RUNNER_TEMP/android-instrumentation-result.txt"; ! grep -q "FAILURES!!!" "$RUNNER_TEMP/android-instrumentation-result.txt"'
 
       - name: Upload Android instrumentation diagnostics
         if: always()
