@@ -101,12 +101,12 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          emulator-boot-timeout: 900
+          emulator-boot-timeout: 1200
           cores: 4
           ram-size: 4096M
           heap-size: 512M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -no-snapshot-save -wipe-data
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           target: google_apis
           arch: x86_64
           profile: pixel_2
