@@ -193,6 +193,7 @@ class LibrusNotificationWorker(
         return try {
             // Supabase may still be restoring the device session after process start.
             // Bound the wait so a background worker cannot remain suspended indefinitely.
+            val supabase = SupabaseClientProvider.get(applicationContext)
             val sessionState = withTimeoutOrNull(20_000L) {
                 supabase.auth.sessionStatus.first {
                     it !is SessionStatus.Initializing
