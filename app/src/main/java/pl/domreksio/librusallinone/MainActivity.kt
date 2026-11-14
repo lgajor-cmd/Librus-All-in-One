@@ -5285,7 +5285,7 @@ class MainActivity : Activity() {
     private fun showNotificationSettings() {
         val keys = arrayOf("grades", "messages", "notes", "behaviour_notes")
         val labels = arrayOf("Nowe oceny", "Wiadomości", "Uwagi", "Uwagi o zachowaniu")
-        val prefs = getSharedPreferences("librus_notification_settings", MODE_PRIVATE)
+        val prefs = LibrusNotificationSettings.preferences(applicationContext, activeProfileId)
         val checked = BooleanArray(keys.size) { prefs.getBoolean(keys[it], true) }
         AlertDialog.Builder(this)
             .setTitle("Powiadomienia EduFlow")
