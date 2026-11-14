@@ -126,9 +126,7 @@ jobs:
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || exit $?
 
             set +e
-            adb shell am instrument -w -r \
-              pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner \
-              2>&1 | tee "$RUNNER_TEMP/android-instrumentation-result.txt"
+            adb shell am instrument -w pl.domreksio.librusallinone.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$RUNNER_TEMP/android-instrumentation-result.txt"
             TEST_EXIT=${PIPESTATUS[0]}
             set -e
 
