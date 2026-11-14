@@ -1,5 +1,11 @@
 # EduFlow
 
+## Najnowsze wydanie — 0.4.9
+
+- Rozbudowane centrum „Więcej” o bezpośrednie skróty do ocen, planu lekcji i wiadomości.
+- Zachowano dotychczasowe moduły szkolne, notatki, listy zakupów, terminarz i ustawienia.
+- Numer wersji Android: `versionCode 22`.
+
 EduFlow to niezależna aplikacja Android do wygodnego przeglądania szkolnych informacji z kont Librus Synergia. Projekt wykorzystuje własny backend FastAPI, anonimową sesję urządzenia przez Supabase i komunikację HTTPS z usługą Render.
 
 ## Architektura
