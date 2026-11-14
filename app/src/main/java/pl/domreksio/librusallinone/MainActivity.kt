@@ -3621,12 +3621,34 @@ class MainActivity : Activity() {
             val key = messageKey(item, heading)
             val pinned = key in pinnedKeys
             val archived = key in archivedKeys
-            val card = card()
+            val isUnread = heading == "Wiadomości" &&
+                firstValue(item, "read_date", "readDate").isBlank()
+            // Każdy wpis ma własną, lekko odróżnioną powierzchnię.
+            // Nie zmieniamy wspólnego card(), aby nie naruszyć pozostałych zakładek.
+            val card = card().apply {
+                setPadding(16, 15, 16, 15)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    if (isUnread) {
+                        intArrayOf(Color.rgb(37, 48, 69), Color.rgb(25, 36, 55))
+                    } else {
+                        intArrayOf(Color.rgb(29, 41, 59), Color.rgb(21, 31, 47))
+                    }
+                ).apply {
+                    cornerRadius = 18f * resources.displayMetrics.density
+                    setStroke(
+                        (1 * resources.displayMetrics.density).toInt(),
+                        if (isUnread) blendColor(accentColor, Color.rgb(91, 112, 143), 0.48f)
+                        else Color.rgb(55, 70, 92)
+                    )
+                }
+                elevation = 3f * resources.displayMetrics.density
+            }
             val focusKey = messageKey(item, heading)
             if (pendingTimelineTargetKey == focusKey) card.tag = "timeline_target:$focusKey"
             card.addView(label(title, 15f, white, true))
-            if (sender.isNotBlank()) card.addView(label("Od: $sender", 12f, muted))
-            if (date.isNotBlank()) card.addView(label(date, 12f, successColor))
+            if (sender.isNotBlank()) card.addView(label("OD  $sender", 11f, Color.rgb(170, 188, 211), true))
+            if (date.isNotBlank()) card.addView(label(date, 11f, muted))
             if (heading == "Wiadomości") {
                 val messageReadDate = firstValue(item, "read_date", "readDate")
                 val readChip = statusChip(
@@ -3669,7 +3691,8 @@ class MainActivity : Activity() {
                 onChanged()
             }, LinearLayout.LayoutParams(0, -2, 1f))
             card.addView(actions, params(0, 8, 0, 0))
-            parent.addView(card, params(0, 0, 0, 8))
+            // 12 dp odstępu zapobiega zlewaniu się kolejnych wiadomości na ekranie.
+            parent.addView(card, params(0, 0, 0, 12))
         }
     }
 
