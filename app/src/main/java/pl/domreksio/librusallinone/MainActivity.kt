@@ -5485,6 +5485,7 @@ class MainActivity : Activity() {
                     Toast.makeText(this, "Nie udało się bezpiecznie usunąć danych: ${it.message}", Toast.LENGTH_LONG).show()
                     return@setPositiveButton
                 }
+                LibrusProfileDataCleaner.clear(applicationContext, removedId)
                 LibrusNotificationScheduler.cancel(applicationContext, removedId)
                 if (profileStore.removeProfile(removedId)) {
                     val next = profileStore.getProfiles().first()
