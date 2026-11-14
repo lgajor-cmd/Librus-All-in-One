@@ -3167,7 +3167,7 @@ class MainActivity : Activity() {
         }
         val title = EditText(this).apply {
             hint = "Nazwa wydarzenia"
-            setText(existing?.optString("title", "").orEmpty())
+            setText(existing?.optString("title", "").orEmpty().ifBlank { initialTitle })
             setTextColor(white)
             setHintTextColor(muted)
             setSingleLine(true)
@@ -5928,7 +5928,10 @@ class MainActivity : Activity() {
             background = roundedBackground(panelLight, 13)
         }
         root.addView(search, params(0, 0, 0, 10))
-        root.addView(actionButton("+  DODAJ NOTATKĘ") { editPersonalNote(null) }, params(0, 0, 0, 12))
+        val noteActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        noteActions.addView(actionButton("+  DODAJ NOTATKĘ") { editPersonalNote(null) }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() })
+        noteActions.addView(actionButton("SZABLONY") { showNoteTemplates() }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(noteActions, params(0, 0, 0, 12))
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(list)
 
@@ -5994,6 +5997,11 @@ class MainActivity : Activity() {
                     saveLocalArray("personal_notes", updated)
                     redraw()
                 }, params(0, 8, 0, 0))
+                val updatedAt = note.optLong("updated", 0L)
+                if (updatedAt > 0L) {
+                    val date = java.text.SimpleDateFormat("dd.MM.yyyy  •  HH:mm", Locale("pl", "PL")).format(java.util.Date(updatedAt))
+                    noteCard.addView(label("Ostatnia zmiana: $date", 10f, muted), params(0, 5, 0, 0))
+                }
                 noteCard.addView(label("Dotknij treści, aby edytować • przytrzymaj, aby usunąć", 10f, muted), params(0, 4, 0, 0))
                 list.addView(noteCard, params(0, 5, 0, 5))
             }
@@ -6007,7 +6015,24 @@ class MainActivity : Activity() {
         showPersonalToolPage(root, "WIĘCEJ")
     }
 
-    private fun editPersonalNote(existing: JSONObject?) {
+    private fun showNoteTemplates() {
+        val templates = arrayOf(
+            "Do zrobienia" to "☐ Zadanie:\n☐ Termin:\n☐ Ważne informacje:",
+            "Ważne informacje" to "Informacja:\n\nKontakt / numer:\nTermin:",
+            "Pomysł" to "Pomysł:\n\nCo będzie potrzebne:\nPierwszy krok:",
+            "Lista / plan" to "1. \n2. \n3. "
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Wybierz szablon notatki")
+            .setItems(templates.map { it.first }.toTypedArray()) { _, which ->
+                val template = templates[which]
+                editPersonalNote(null, template.first, template.second)
+            }
+            .setNegativeButton("Anuluj", null)
+            .show()
+    }
+
+    private fun editPersonalNote(existing: JSONObject?, initialTitle: String = "", initialBody: String = "") {
         val fields = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 8, 8, 0)
@@ -6021,7 +6046,7 @@ class MainActivity : Activity() {
         }
         val bodyInput = EditText(this).apply {
             hint = "Treść notatki"
-            setText(existing?.optString("body", "").orEmpty())
+            setText(existing?.optString("body", "").orEmpty().ifBlank { initialBody })
             setTextColor(white)
             setHintTextColor(muted)
             minLines = 5
@@ -6089,6 +6114,27 @@ class MainActivity : Activity() {
         val summary = label("", 13f, muted)
         root.addView(summary, params(0, 2, 0, 10))
         root.addView(actionButton("+  DODAJ PRODUKT") { addShoppingItem(activeId, null) }, params(0, 0, 0, 8))
+        root.addView(label("SZYBKIE DODAWANIE", 10f, Color.rgb(180, 205, 239), true), params(0, 2, 0, 5))
+        val frequentNames = listOf(
+            "Chleb" to "Pieczywo", "Marchew" to "Warzywa i owoce", "Jajka" to "Nabiał",
+            "Mleko" to "Nabiał", "Masło" to "Nabiał", "Ziemniaki" to "Warzywa i owoce",
+            "Banany" to "Warzywa i owoce", "Woda" to "Napoje"
+        )
+        val savedFrequent = readFrequentShoppingProducts()
+        val quickItems = (frequentNames + savedFrequent).distinctBy { it.first.lowercase(Locale.ROOT) }
+        val quickScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
+        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        quickItems.forEach { (productName, productCategory) ->
+            quickRow.addView(actionButton("+ $productName") {
+                addFrequentShoppingItem(activeId, productName, productCategory)
+            }.apply {
+                textSize = 11f
+                minHeight = (38 * resources.displayMetrics.density).toInt()
+                setPadding(10, 0, 10, 0)
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (6 * resources.displayMetrics.density).toInt() })
+        }
+        quickScroll.addView(quickRow)
+        root.addView(quickScroll, params(0, 0, 0, 10))
         val filterScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
         val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -6107,6 +6153,47 @@ class MainActivity : Activity() {
         root.addView(list)
         redrawShoppingItems(categoryFilter, activeId, summary, list)
         showPersonalToolPage(root, "WIĘCEJ")
+    }
+
+    private fun readFrequentShoppingProducts(): List<Pair<String, String>> {
+        val raw = uiPrefs.getString("frequent_shopping_products_v1", null) ?: return emptyList()
+        return runCatching {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val name = item.optString("name").trim()
+                val category = item.optString("category", "Pozostałe")
+                if (name.isBlank()) null else name to category
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveFrequentShoppingProduct(name: String, category: String) {
+        val items = (readFrequentShoppingProducts() + (name.trim() to category))
+            .distinctBy { it.first.lowercase(Locale.ROOT) }
+            .take(30)
+        val array = JSONArray()
+        items.forEach { (productName, productCategory) ->
+            array.put(JSONObject().put("name", productName).put("category", productCategory))
+        }
+        uiPrefs.edit().putString("frequent_shopping_products_v1", array.toString()).apply()
+    }
+
+    private fun addFrequentShoppingItem(listId: String, name: String, category: String) {
+        val all = readLocalArray("shopping_items")
+        val duplicate = (0 until all.length()).mapNotNull { all.optJSONObject(it) }
+            .firstOrNull { it.optString("listId") == listId && !it.optBoolean("done", false) &&
+                it.optString("name").trim().equals(name, ignoreCase = true) }
+        if (duplicate != null) {
+            Toast.makeText(this, "$name jest już na tej liście.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        all.put(JSONObject().put("id", java.util.UUID.randomUUID().toString())
+            .put("listId", listId).put("name", name).put("quantity", "1")
+            .put("category", category).put("done", false))
+        saveLocalArray("shopping_items", all)
+        uiPrefs.edit().putString("active_shopping_list", listId).apply()
+        showShoppingList()
     }
 
     private fun redrawShoppingItems(categoryFilter: String, activeId: String, summary: TextView, list: LinearLayout) {
@@ -6231,6 +6318,13 @@ class MainActivity : Activity() {
         }
         val categoryNames = arrayOf("Warzywa i owoce", "Nabiał", "Pieczywo", "Mięso i ryby", "Napoje", "Chemia", "Pozostałe")
         var category = existing?.optString("category", "Pozostałe") ?: "Pozostałe"
+        val rememberFrequent = CheckBox(this).apply {
+            text = "Zapamiętaj jako często kupowany produkt"
+            setTextColor(white)
+            buttonTintList = android.content.res.ColorStateList.valueOf(accentColor)
+            isChecked = readFrequentShoppingProducts().any { it.first.equals(existing?.optString("name", ""), true) }
+            isEnabled = existing == null
+        }
         lateinit var categoryButton: Button
         categoryButton = actionButton("Kategoria: " + category) {
             AlertDialog.Builder(this).setTitle("Kategoria")
@@ -6243,6 +6337,7 @@ class MainActivity : Activity() {
         fields.addView(name)
         fields.addView(quantity, params(0, 6, 0, 6))
         fields.addView(categoryButton, params(0, 6, 0, 0))
+        if (existing == null) fields.addView(rememberFrequent, params(0, 6, 0, 0))
         AlertDialog.Builder(this).setTitle(if (existing == null) "Dodaj produkt" else "Edytuj produkt").setView(fields)
             .setNegativeButton("Anuluj", null).setPositiveButton("Zapisz") { _, _ ->
                 val productName = name.text.toString().trim()
@@ -6259,6 +6354,7 @@ class MainActivity : Activity() {
                         .put("quantity", quantity.text.toString().trim().ifBlank { "1" }).put("category", category)
                         .put("done", existing?.optBoolean("done", false) ?: false))
                     saveLocalArray("shopping_items", updated)
+                    if (existing == null && rememberFrequent.isChecked) saveFrequentShoppingProduct(productName, category)
                     uiPrefs.edit().putString("active_shopping_list", listId).apply()
                     showShoppingList()
                 }
