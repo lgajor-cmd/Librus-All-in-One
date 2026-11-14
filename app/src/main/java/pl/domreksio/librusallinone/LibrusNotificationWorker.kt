@@ -333,7 +333,7 @@ class LibrusNotificationWorker(
     }
 
     private fun recordDiagnostic(profileId: String, status: String, detail: String = "") {
-        recordDiagnostic(profileId, status, detail, profileId)
+        LibrusNotificationDiagnostics.record(applicationContext, status, detail, profileId)
     }
 
     private fun detectNewItems(
