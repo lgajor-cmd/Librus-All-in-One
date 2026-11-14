@@ -111,9 +111,10 @@ jobs:
           arch: x86_64
           profile: pixel_2
           script: |
-            set -uo pipefail
+            set -eu
             adb wait-for-device
-            adb shell getprop sys.boot_completed | grep -q 1
+            BOOT_COMPLETED=$(adb shell getprop sys.boot_completed)
+            [ "$BOOT_COMPLETED" = "1" ]
 
             # Build the two APKs, then run instrumentation directly with adb.
             # This avoids UTP's additionalTestOutputDir creation under /sdcard/Android/media,
