@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: macos-15-intel
     timeout-minutes: 90
 
     steps:
