@@ -5582,12 +5582,28 @@ class MainActivity : Activity() {
                 scaleY = if (selected) 1.03f else 1f
             }
             if (selected) {
+                val motionEnabled = uiPrefs.getBoolean("motion", true)
                 val indicator = View(this).apply {
                     background = roundedBackground(accentColor, 4)
+                    if (motionEnabled) {
+                        alpha = 0f
+                        scaleX = 0.55f
+                        scaleY = 0.8f
+                    }
                 }
                 tile.addView(indicator, LinearLayout.LayoutParams((22 * density).toInt(), (3 * density).toInt()).apply {
                     bottomMargin = (2 * density).toInt()
                 })
+                if (motionEnabled) {
+                    indicator.post {
+                        indicator.animate()
+                            .alpha(1f)
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(190)
+                            .start()
+                    }
+                }
             } else {
                 tile.addView(View(this), LinearLayout.LayoutParams(1, (5 * density).toInt()))
             }
