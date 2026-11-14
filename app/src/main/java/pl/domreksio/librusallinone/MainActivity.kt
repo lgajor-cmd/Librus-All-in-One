@@ -27,6 +27,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.ProgressBar
@@ -316,14 +317,10 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, 22)
         }
-        val mark = TextView(this).apply {
-            text = "14"
-            textSize = 25f
-            setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(7, 27, 73))
-            background = roundedBackground(Color.WHITE, 14)
-            setPadding(12, 8, 12, 8)
+        val mark = ImageView(this).apply {
+            setImageResource(R.drawable.ic_launcher)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Logo EduFlow"
         }
         brand.addView(mark, LinearLayout.LayoutParams(56, 56))
         val school = LinearLayout(this).apply {
