@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
 
     steps:
@@ -100,10 +100,13 @@ jobs:
         timeout-minutes: 60
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          emulator-boot-timeout: 1800
+          api-level: 34
+          emulator-boot-timeout: 900
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 4096 -cores 4
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -no-snapshot-save -wipe-data
           target: google_apis
           arch: x86_64
           profile: pixel_2
