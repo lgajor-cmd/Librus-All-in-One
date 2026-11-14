@@ -107,8 +107,28 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          script: ./gradlew --no-daemon connectedDebugAndroidTest --stacktrace
+          script: |
+            set +e
+            ./gradlew --no-daemon connectedDebugAndroidTest --stacktrace
+            TEST_EXIT=$?
+            if [ "$TEST_EXIT" -ne 0 ]; then
+              adb logcat -d -v threadtime > "$RUNNER_TEMP/android-emulator-logcat.txt" || true
+              adb shell dumpsys activity activities > "$RUNNER_TEMP/android-emulator-activities.txt" || true
+            fi
+            exit "$TEST_EXIT"
 
+      - name: Upload Android instrumentation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-Instrumentation-Diagnostics
+          path: |
+            ${{ runner.temp }}/android-emulator-logcat.txt
+            ${{ runner.temp }}/android-emulator-activities.txt
+            app/build/reports/androidTests/connected/debug/**
+            app/build/outputs/androidTest-results/connected/**
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload Android lint report
         if: always()
         uses: actions/upload-artifact@v4
