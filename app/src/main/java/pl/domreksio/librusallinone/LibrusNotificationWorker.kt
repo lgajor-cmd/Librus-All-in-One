@@ -60,6 +60,11 @@ internal object LibrusNotificationDiagnostics {
         edit.commit()
     }
 
+    fun lastStatus(
+        context: Context,
+        profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID
+    ): String = preferences(context, profileId).getString("last_status", "").orEmpty()
+
     fun summary(
         context: Context,
         profileId: String = LibrusProfileStore.LEGACY_PROFILE_ID
@@ -300,10 +305,10 @@ class LibrusNotificationWorker(
             detectNewItems(data, listOf("messages"), "messages", "WIADOMOŚCI", "Nowa wiadomość", profileId, profileName)
             detectNewItems(data, listOf("notes"), "notes", "UWAGI", "Nowa uwaga", profileId, profileName)
             detectNewItems(data, listOf("behaviour_notes"), "behaviour_notes", "UWAGI", "Nowa uwaga", profileId, profileName)
-            val notificationStatus = applicationContext.getSharedPreferences(
-                "librus_notification_diagnostics",
-                Context.MODE_PRIVATE
-            ).getString("last_status", "")
+            val notificationStatus = LibrusNotificationDiagnostics.lastStatus(
+                applicationContext,
+                profileId
+            )
             val failedSections = data.optJSONArray("failed_sections")
             if (notificationStatus == "blocked") {
                 // Preserve the actionable Android permission/channel problem;
