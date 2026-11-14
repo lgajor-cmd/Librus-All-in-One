@@ -54,6 +54,24 @@ class LibrusNotificationDiagnosticsProfileTest {
         assertFalse(studentSummary.contains("diagnostyka-rodzica"))
     }
 
+    @Test
+    fun notificationTogglesAreIndependentBetweenProfiles() {
+        LibrusNotificationSettings.preferences(context, LibrusProfileStore.LEGACY_PROFILE_ID)
+            .edit().putBoolean("grades", false).commit()
+
+        val parentEnabled = LibrusNotificationSettings.preferences(
+            context,
+            LibrusProfileStore.LEGACY_PROFILE_ID
+        ).getBoolean("grades", true)
+        val studentEnabled = LibrusNotificationSettings.preferences(
+            context,
+            studentProfileId
+        ).getBoolean("grades", true)
+
+        assertFalse(parentEnabled)
+        assertTrue(studentEnabled)
+    }
+
     private fun clearDiagnostics() {
         context.getSharedPreferences("librus_notification_diagnostics", Context.MODE_PRIVATE)
             .edit().clear().commit()
@@ -61,5 +79,9 @@ class LibrusNotificationDiagnosticsProfileTest {
             "librus_notification_diagnostics_$studentProfileId",
             Context.MODE_PRIVATE
         ).edit().clear().commit()
+        LibrusNotificationSettings.preferences(context, LibrusProfileStore.LEGACY_PROFILE_ID)
+            .edit().clear().commit()
+        LibrusNotificationSettings.preferences(context, studentProfileId)
+            .edit().clear().commit()
     }
 }
